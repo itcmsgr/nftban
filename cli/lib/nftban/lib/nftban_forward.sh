@@ -280,7 +280,7 @@ nftban_forward_status() {
         out=$(printf '%s\n' "$_rs" | awk '/^table /{t=$2" "$3} /hook forward/ && t !~ / nftban$/ {print "  " t}' | sort -u)
         echo "Foreign forward-hook chains: ${out:+$'\n'$out}${out:-none}"
     else
-        echo "Foreign forward-hook chains: UNKNOWN (nft list ruleset failed)"
+        echo "Foreign forward-hook chains: UNKNOWN (ruleset read failed)"
     fi
     echo ""
     recs=$(nftban_forward_records 2>/dev/null || true)

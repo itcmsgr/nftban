@@ -342,9 +342,12 @@ nftban_immut_pkg_preflight() {
 _nfw_norm() {
     printf '%s\n' "$1" | sed -E 's/[[:space:]]+# handle [0-9]+$//; s/counter packets [0-9]+ bytes [0-9]+ ?//; s/[[:space:]]+/ /g; s/^ //; s/ $//'
 }
-_nfw_valid_ifname() { printf '%s' "$1" | grep -Eq '^[A-Za-z0-9_.:-]{1,15}$'; }
+_nfw_valid_ifname() {
+    case "$1" in ''|*[!A-Za-z0-9_.:-]*) return 1 ;; esac
+    [ "${#1}" -le 15 ]
+}
 _nfw_recognised_bridge() {
-    case "$1" in docker0) return 0 ;; br-*) printf '%s' "$1" | grep -Eq '^br-[0-9a-f]{12}$' ;; *) return 1 ;; esac
+    case "$1" in docker0|br-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) return 0 ;; *) return 1 ;; esac
 }
 _nfw_uplinks() {
     { ip -o -4 route show default 2>/dev/null; ip -o -6 route show default 2>/dev/null; } \
