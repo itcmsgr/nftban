@@ -1256,8 +1256,14 @@ _whitelist_session_add() {
     echo "Added: $ip  (expires $expires_at, reason=$reason)"
 
     # Trigger reload so the daemon picks up the new entry immediately.
+    # v1.235 audit K9-a: a refused reload (e.g. the forward-rule STOP) is SAID, never swallowed.
     if command -v nftban >/dev/null 2>&1; then
-        nftban firewall reload >/dev/null 2>&1 || true
+        local _rl_err
+        if ! _rl_err=$(nftban firewall reload 2>&1 >/dev/null); then
+            echo "  Stored, but NOT active now: the firewall reload was refused:" >&2
+            printf '    %s\n' "${_rl_err:-(no reason given)}" >&2
+            return 2
+        fi
     fi
     return 0
 }
@@ -1415,8 +1421,14 @@ _whitelist_session_remove() {
     fi
     ) 9>"$_NFTBAN_SESSION_WL_LOCK" || return 1
 
+    # v1.235 audit K9-a: a refused reload is SAID, never swallowed.
     if command -v nftban >/dev/null 2>&1; then
-        nftban firewall reload >/dev/null 2>&1 || true
+        local _rl_err
+        if ! _rl_err=$(nftban firewall reload 2>&1 >/dev/null); then
+            echo "  Removed from the store, but the live entry may REMAIN until a reload succeeds: the firewall reload was refused:" >&2
+            printf '    %s\n' "${_rl_err:-(no reason given)}" >&2
+            return 2
+        fi
     fi
     return 0
 }
@@ -1493,8 +1505,14 @@ _whitelist_session_cleanup() {
 
     if [[ "$removed" -gt 0 ]]; then
         echo "Removed $removed expired entries"
+        # v1.235 audit K9-a: a refused reload is SAID, never swallowed.
         if command -v nftban >/dev/null 2>&1; then
-            nftban firewall reload >/dev/null 2>&1 || true
+            local _rl_err
+            if ! _rl_err=$(nftban firewall reload 2>&1 >/dev/null); then
+                echo "  Expired entries removed from the store, but they may stay live until a reload succeeds: the firewall reload was refused:" >&2
+                printf '    %s\n' "${_rl_err:-(no reason given)}" >&2
+                return 2
+            fi
         fi
     else
         echo "(no expired entries — nothing to remove)"
