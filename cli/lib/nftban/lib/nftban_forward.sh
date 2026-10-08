@@ -269,7 +269,7 @@ nftban_forward_status() {
         untag=$(printf '%s\n' "$out" | grep -E '# handle [0-9]+$' | grep -vE '^[[:space:]]*(table|chain)[[:space:]]' | grep -vF 'comment "nftban:fwd:' || true)
         echo "  $fam: policy ${rc:-UNKNOWN}, ${tag} NFTBan rule(s)"
         if [[ -n "$untag" ]]; then
-            echo "  $fam: UNMANAGED rule(s) (not created by NFTBan; the next rebuild ERASES them, and an upgrade STOPS):"
+            echo "  $fam: UNMANAGED rule(s) (not created by NFTBan; rebuild/reset/reload/restore/takeover, update and package upgrade STOP until they are migrated: nftban firewall forward migrate):"
             printf '%s\n' "$untag" | sed 's/^[[:space:]]*/      /'
         fi
     done
