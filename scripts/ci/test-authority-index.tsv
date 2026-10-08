@@ -173,6 +173,7 @@ firewall_restore_scoped_v1235_test	cli/lib/nftban/tests/firewall_restore_scoped_
 firewall_transition_health_cli_v1921_test	cli/lib/nftban/tests/firewall_transition_health_cli_v1921_test.sh	firewall	test	firewall-transition-health	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 firewall_transition_health_v1921_test	cli/lib/nftban/tests/firewall_transition_health_v1921_test.sh	firewall	test	firewall-transition-health	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 forward_migration_v1235_test	cli/lib/nftban/tests/forward_migration_v1235_test.sh	firewall	test	forward-migration	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+forward_policy_netns_v1235_test	cli/lib/nftban/tests/forward_policy_netns_v1235_test.sh	firewall	test	forward-policy	ROOT_LAB	lab-manual	false	true	false	false	true	false			
 forward_store_render_v1235_test	cli/lib/nftban/tests/forward_store_render_v1235_test.sh	firewall	test	forward-policy	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 fpa_render_boot_v1229_13_test	cli/lib/nftban/tests/fpa_render_boot_v1229_13_test.sh	firewall	test	boot-projection	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 fsync_residual_guard_v176_test	cli/lib/nftban/tests/fsync_residual_guard_v176_test.sh	cross-cutting	test	durability-fsync	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
