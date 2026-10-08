@@ -636,6 +636,13 @@ jobs:
             set -euo pipefail
             INSTALL_LOG=$(mktemp)
 
+            # v1.235 F1 (owner 2026-10-08): prove the REAL install order on a host WITHOUT nftables.
+            echo "=== Phase 0: F1 precondition (no nft before the transaction) ==="
+            if command -v nft >/dev/null 2>&1 || rpm -q nftables >/dev/null 2>&1; then
+              echo "[NOT_EXECUTED] F1: the image already has nftables: precondition unmet, the install order cannot be proven here"; exit 1
+            fi
+            echo "[PASS] F1: nftables absent before the transaction"
+
             echo "=== Phase 1: Package Installation ==="
             if dnf install -y --allowerasing /packages/*.rpm > "$INSTALL_LOG" 2>&1; then
               echo "[PASS] Package installed cleanly"
@@ -646,6 +653,19 @@ jobs:
               cat "$INSTALL_LOG"
               INSTALL_CLEAN=false
             fi
+
+            # F1: %pre runs the forward preflight, which STOPS when nft is absent. The package is
+            # on disk only if %pre passed, i.e. nft was present when %pre ran; the transaction log
+            # must also show nftables installed BEFORE nftban-core (Requires(pre)).
+            echo "=== Phase 1b: F1 install order (HARD FAIL) ==="
+            if grep -q "nft binary is not installed" "$INSTALL_LOG"; then echo "[FAIL] F1: the preflight ran without nft"; cat "$INSTALL_LOG"; exit 1; fi
+            rpm -q nftban-core >/dev/null 2>&1 || { echo "[FAIL] F1: nftban-core not installed (%pre stopped?)"; cat "$INSTALL_LOG"; exit 1; }
+            # dnf4 "  Installing       : pkg" / "  Running scriptlet: pkg"; dnf5 "[ 3/20] Installing pkg"
+            n_dep=$(grep -n -m1 -E "(Installing *: |\] Installing )nftables-[0-9]" "$INSTALL_LOG" | cut -d: -f1 || true)
+            n_pkg=$(grep -n -m1 -E "(Running scriptlet *: |Installing *: |\] (Running [a-z]+ scriptlet|Installing) )nftban-core-[0-9]" "$INSTALL_LOG" | cut -d: -f1 || true)
+            echo "F1 transaction lines: nftables installed at ${n_dep:-none}, nftban-core first step at ${n_pkg:-none}"
+            if [ -n "$n_dep" ] && [ -n "$n_pkg" ] && [ "$n_dep" -lt "$n_pkg" ]; then echo "[PASS] F1: nftables installed before nftban-core %pre"
+            else echo "[FAIL] F1: install order not shown"; grep -nE "nftables|nftban-core" "$INSTALL_LOG" | head -20; exit 1; fi
 
             echo "=== Phase 2: Artifact Validation (HARD FAIL) ==="
             echo -n "CLI wrapper exists: "
@@ -857,6 +877,13 @@ jobs:
             set -euo pipefail
             INSTALL_LOG=$(mktemp)
 
+            # v1.235 F1 (owner 2026-10-08): prove the REAL install order on a host WITHOUT nftables.
+            echo "=== Phase 0: F1 precondition (no nft before the transaction) ==="
+            if command -v nft >/dev/null 2>&1 || dpkg -s nftables >/dev/null 2>&1; then
+              echo "[NOT_EXECUTED] F1: the image already has nftables: precondition unmet, the install order cannot be proven here"; exit 1
+            fi
+            echo "[PASS] F1: nftables absent before the transaction"
+
             echo "=== Phase 1: Package Installation ==="
             apt-get update -qq > /dev/null 2>&1
             if apt-get install -y /packages/*.deb > "$INSTALL_LOG" 2>&1; then
@@ -868,6 +895,18 @@ jobs:
               cat "$INSTALL_LOG"
               INSTALL_CLEAN=false
             fi
+
+            # F1: preinst runs the forward preflight, which STOPS when nft is absent. nftban-core
+            # is unpacked only if preinst passed, i.e. nft was present when preinst ran; the apt
+            # log must also show nftables SET UP before nftban-core is unpacked (Pre-Depends).
+            echo "=== Phase 1b: F1 install order (HARD FAIL) ==="
+            if grep -q "nft binary is not installed" "$INSTALL_LOG"; then echo "[FAIL] F1: the preflight ran without nft"; cat "$INSTALL_LOG"; exit 1; fi
+            n_dep=$(grep -n -m1 -E "^Setting up nftables " "$INSTALL_LOG" | cut -d: -f1 || true)
+            n_pkg=$(grep -n -m1 -E "^Preparing to unpack .*nftban-core" "$INSTALL_LOG" | cut -d: -f1 || true)
+            n_unp=$(grep -n -m1 -E "^Unpacking nftban-core " "$INSTALL_LOG" | cut -d: -f1 || true)
+            echo "F1 apt lines: nftables set up at ${n_dep:-none}, nftban-core preinst at ${n_pkg:-none}, unpacked at ${n_unp:-none}"
+            if [ -n "$n_dep" ] && [ -n "$n_pkg" ] && [ -n "$n_unp" ] && [ "$n_dep" -lt "$n_pkg" ]; then echo "[PASS] F1: nftables configured before nftban-core preinst; preinst passed"
+            else echo "[FAIL] F1: install order not shown"; grep -nE "nftables|nftban-core" "$INSTALL_LOG" | head -20; exit 1; fi
 
             echo "=== Phase 2: Artifact Validation (HARD FAIL) ==="
             echo -n "CLI wrapper exists: "

@@ -12,6 +12,7 @@ Vcs-Browser: https://github.com/itcmsgr/nftban
 
 Package: nftban-core
 Architecture: amd64
+Pre-Depends: nftables (>= 0.9.0)
 Depends: ${shlibs:Depends},
          ${misc:Depends},
          nftables (>= 0.9.0),

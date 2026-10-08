@@ -10,7 +10,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-07"
-# meta:description="C20 (owner D5, 2026-10-06): the package upgrade STOPS before the destructive change it cannot preserve and shows the rules. Drives the REAL nftban_forward_unmanaged_preflight (cli/lib/nftban/lib/nftban_immutable_owned.sh, the maintainer-script library inlined into the DEB scripts and the RPM scriptlets) under /bin/sh against a stub nft. Arms: F1 no nft -> proceed; F2 no nftban table -> proceed; F3 empty forward chain -> proceed; F4 ip forward rules -> STOP (rc 1), every rule listed in the migration plan (UNMAPPED without a route), 'STOPPED'; F5 ip6 rules only -> STOP; F6 forward chain absent -> proceed; F7 chain unreadable (other error) -> STOP as UNKNOWN; F8 NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1 -> proceed with the acceptance line; F9 EVERY install and upgrade (owner 2026-10-08): the DEB preinst calls it for install|upgrade with NO package-manager gate BEFORE the immutable-flag unlock, the RPM %pre unconditionally; a68f08c0 (upgrade-only gate) FAILS F9. Regression only; the packaged proof is an upgrade of a host with a hand-inserted forward rule."
+# meta:description="C20 (owner D5, 2026-10-06): the package upgrade STOPS before the destructive change it cannot preserve and shows the rules. Drives the REAL nftban_forward_unmanaged_preflight (cli/lib/nftban/lib/nftban_immutable_owned.sh, the maintainer-script library inlined into the DEB scripts and the RPM scriptlets) under /bin/sh against a stub nft. Arms: F1 no nft -> UNKNOWN STOP (owner 2026-10-08, F1); F1b DEB Pre-Depends / RPM Requires(pre) on nftables; F2 no nftban table -> proceed; F3 empty forward chain -> proceed; F4 ip forward rules -> STOP (rc 1), every rule listed in the migration plan (UNMAPPED without a route), 'STOPPED'; F5 ip6 rules only -> STOP; F6 forward chain absent -> proceed; F7 chain unreadable (other error) -> STOP as UNKNOWN; F8 NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1 -> proceed with the acceptance line; F9 EVERY install and upgrade (owner 2026-10-08): the DEB preinst calls it for install|upgrade with NO package-manager gate BEFORE the immutable-flag unlock, the RPM %pre unconditionally; a68f08c0 (upgrade-only gate) FAILS F9. Regression only; the packaged proof is an upgrade of a host with a hand-inserted forward rule."
 # meta:inventory.files="cli/lib/nftban/lib/nftban_immutable_owned.sh,packaging/deb/preinst,packaging/build_nftban.sh"
 # meta:inventory.binaries="bash,sh,mktemp"
 # meta:inventory.env_vars=""
@@ -77,7 +77,14 @@ run() {
 
 # F1: PATH holds no nft at all
 reset; rc=0; env -i PATH="$SB/nonft" SBX="$SB" /bin/sh -c '. "$1"; nftban_forward_unmanaged_preflight' _ "$LIB" 2>"$SB/err" || rc=$?
-[[ $rc -eq 0 ]] && ok "F1 no nft -> proceed" || no "F1 no nft" "rc=$rc"
+# F1 (owner 2026-10-08): no nft = the kernel cannot be read = UNKNOWN -> STOP (it was "proceed").
+if [[ $rc -eq 1 ]] && grep -q "nft binary is not installed" "$SB/err" && grep -q "STOPPED before any change" "$SB/err"; then ok "F1 no nft -> UNKNOWN, STOP before any change (never 'no rules')"
+else no "F1 no nft" "rc=$rc $(cat "$SB/err")"; fi
+# F1b: the packages make nft present BEFORE their pre-install script (metadata half; the real
+# install order is proven by the package install scenarios, not here).
+SPEC_F1="$REPO/packaging/build_nftban.sh"
+if grep -q '^Pre-Depends: nftables (>= 0.9.0)$' "$SPEC_F1" && grep -q '^Requires(pre):  nftables >= 0.9.0$' "$SPEC_F1"; then ok "F1b DEB Pre-Depends + RPM Requires(pre) on nftables (build_nftban.sh)"
+else no "F1b pre-install dependency on nftables" "missing in $SPEC_F1"; fi
 
 reset; run "$SB/bin"
 [[ $rc -eq 0 ]] && ok "F2 no nftban table -> proceed (nothing to erase)" || no "F2 no table" "rc=$rc $(cat "$SB/err")"
