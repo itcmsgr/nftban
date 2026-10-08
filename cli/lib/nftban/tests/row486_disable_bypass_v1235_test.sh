@@ -560,6 +560,7 @@ e16(){  # <setup: none|on|off|maybe|unread> -> "rc<TAB>stderr"
         off) printf 'NFTBAN_ENABLED=true\n' > "$d/conf.d/services.conf"; printf 'NFTBAN_ENABLED=Off\n' > "$d/conf.d/services.conf.local" ;;
         maybe) printf 'NFTBAN_ENABLED=true\n' > "$d/conf.d/services.conf"; printf 'NFTBAN_ENABLED=maybe\n' > "$d/conf.d/services.conf.local" ;;
         unread) printf 'NFTBAN_ENABLED=true\n' > "$d/conf.d/services.conf"; mkdir -p "$d/conf.d/services.conf.local" ;;
+        readfail) printf 'NFTBAN_ENABLED=true\n' > "$d/conf.d/services.conf"; ln -s /proc/self/mem "$d/conf.d/services.conf.local" ;;
     esac
     local rc=0
     env -i PATH="/usr/bin:/bin" NFTBAN_CONFIG_DIR="$d" /bin/sh -c '. "$1"; nftban_master_switch_preflight' _ "$IMM" 2>"$SB/e16.err" || rc=$?
@@ -569,6 +570,7 @@ _e16=""
 for _c in none on off; do [[ "$(e16 $_c)" == 0 ]] || _e16+=" $_c->stop($(head -c 200 "$SB/e16.err"))"; done
 [[ "$(e16 maybe)" == 1 ]] && has "$SB/e16.err" "STOPPED before any change: NFTBan master switch is INVALID (NFTBAN_ENABLED=maybe in $SB/e16/conf.d/services.conf.local: set it to true or false)" || _e16+=" maybe->$(head -c 300 "$SB/e16.err")"
 [[ "$(e16 unread)" == 1 ]] && has "$SB/e16.err" "NFTBan master switch is UNKNOWN ($SB/e16/conf.d/services.conf.local exists but could not be read" || _e16+=" unread->$(head -c 300 "$SB/e16.err")"
+[[ "$(e16 readfail)" == 1 ]] && has "$SB/e16.err" "NFTBan master switch is UNKNOWN ($SB/e16/conf.d/services.conf.local exists but could not be read" || _e16+=" readfail(EIO)->$(head -c 300 "$SB/e16.err")"
 _pre="$REPO_ROOT/packaging/deb/preinst"
 _l_case=$(grep -n -m1 '^    install|upgrade)$' "$_pre" | cut -d: -f1 || true)
 _l_sw=$(grep -n -m1 'if ! nftban_master_switch_preflight; then' "$_pre" | cut -d: -f1 || true)
@@ -661,7 +663,15 @@ else
     rc=0; svc_root 'nftban_enable_all' || rc=$?
     { [[ $rc -ne 0 ]] && has "$SB/svc.out" "master switch is UNKNOWN (" && ! has "$SB/calls.log" "firewall rebuild"; } || _e15+=" enable(rc=$rc)"
     [[ -d "$SB/etc/conf.d/services.conf.local" ]] || _e15+=" switch-file-replaced"
-    if [[ -z "$_e15" ]]; then ok "E15 unreadable services.conf.local -> UNKNOWN in state, rc 2, status text = --json (null), lifecycle facts; disable/enable REFUSED, nothing changed"
+    # A REAL read failure of a regular file, for any user including root (owner 2026-10-08):
+    # /proc/self/mem fails to read at offset 0 (EIO). The precondition is proven, not assumed.
+    if ! cat /proc/self/mem >/dev/null 2>&1 && [[ -f /proc/self/mem ]]; then
+        rm -rf "$SB/etc/conf.d/services.conf.local"; ln -s /proc/self/mem "$SB/etc/conf.d/services.conf.local"
+        rc=0; svc 'nftban_master_switch_state' || rc=$?
+        _l=""; IFS= read -r _l < "$SB/svc.out" || true
+        [[ "$_l" == "unknown"$'\t\t'"$SB/etc/conf.d/services.conf.local" ]] || _e15+=" read-failure(EIO)='$_l'"
+    else _e15+=" precondition:/proc/self/mem-readable(NOT_EXECUTED)"; fi
+    if [[ -z "$_e15" ]]; then ok "E15 unreadable services.conf.local (a directory; and a regular file whose READ fails: /proc/self/mem, EIO) -> UNKNOWN in state, rc 2, status text = --json (null), lifecycle facts; disable/enable REFUSED, nothing changed"
     else ko "E15 read failure not UNKNOWN everywhere:${_e15}"; fi
 fi
 

@@ -78,4 +78,16 @@ func TestMasterSwitchFiles(t *testing.T) {
 	if p := SwitchProblem(st, "", file); p != "UNKNOWN ("+local+" exists but could not be read: make it a readable file)" {
 		t.Fatalf("SwitchProblem(unknown) = %q", p)
 	}
+	// Owner 2026-10-08: a REAL read failure of a regular file, for root too: /proc/self/mem is a
+	// regular file whose read at offset 0 fails (EIO) for every process. Precondition proven here.
+	if _, err := os.ReadFile("/proc/self/mem"); err == nil {
+		t.Skip("precondition: /proc/self/mem is readable here (NOT_EXECUTED)")
+	}
+	_ = os.Remove(local)
+	if err := os.Symlink("/proc/self/mem", local); err != nil {
+		t.Fatal(err)
+	}
+	if st, _, file, known = MasterSwitch(dir); st != SwitchUnknown || known || file != local {
+		t.Fatalf("read failure (EIO): got (%s,%q,%v), want (unknown,%q,false)", st, file, known, local)
+	}
 }

@@ -93,8 +93,9 @@ nftban_refuse_under_bypass() {
 
 # >>> NFTBAN_ENABLED reader (v1.235 K2, owner 2026-10-08) >>>
 # The ONE meaning of NFTBAN_ENABLED, POSIX sh so the SAME text also runs in the DEB preinst / RPM
-# %pre. BYTE-IDENTICAL in lib/nftban_immutable_owned.sh (inlined into the package scripts),
-# lib/service_control.sh and helpers/nftban-boot-early.sh (census: row486 E10); the Go twin is
+# %pre. ONE SOURCE: this block in lib/nftban_immutable_owned.sh (inlined into the package
+# scripts); build/generate-immutable-owned-blocks.sh writes it into lib/service_control.sh and
+# helpers/nftban-boot-early.sh and its --check (CI) fails on any divergence. The Go twin is
 # configloader.ParseSwitch / MasterSwitch. Cases: scripts/ci/data/master-switch-cases.tsv.
 _nftban_switch_word() {  # <declared value> -> on | off | invalid
     _nsw_v=$1
@@ -119,19 +120,24 @@ _nftban_switch_word() {  # <declared value> -> on | off | invalid
 # _nftban_switch_state_files <file>... : the STORED choice from these files (last declaration
 # wins; absent key = the documented default, on). Prints "on", "off",
 # "invalid<TAB><value><TAB><file>" or "unknown<TAB><TAB><file>" (K2-c: a file that EXISTS but is
-# not a readable regular file is UNKNOWN and wins: the choice was not read).
+# not a regular file, or whose READ fails, is UNKNOWN and wins: the choice was not read). The
+# read itself is the authority (owner 2026-10-08): a permission bit or test -r does not prove
+# that this process (root included) can read the file; cat's exit status does.
 _nftban_switch_state_files() {
     _nss_st=on; _nss_raw=; _nss_file=; _nss_unread=
     for _nss_f in "$@"; do
         [ -e "$_nss_f" ] || [ -L "$_nss_f" ] || continue
-        if [ ! -f "$_nss_f" ] || [ ! -r "$_nss_f" ]; then _nss_unread=$_nss_f; continue; fi
+        if [ ! -f "$_nss_f" ]; then _nss_unread=$_nss_f; continue; fi
+        if ! _nss_c=$(cat -- "$_nss_f" 2>/dev/null); then _nss_unread=$_nss_f; continue; fi
         while IFS= read -r _nss_l || [ -n "$_nss_l" ]; do
             _nss_l=${_nss_l#"${_nss_l%%[![:space:]]*}"}
             case $_nss_l in
                 NFTBAN_ENABLED=*) _nss_raw=${_nss_l#NFTBAN_ENABLED=}; _nss_file=$_nss_f
                                   _nss_st=$(_nftban_switch_word "$_nss_raw") ;;
             esac
-        done < "$_nss_f"
+        done <<_NFTBAN_SWITCH_EOF_
+$_nss_c
+_NFTBAN_SWITCH_EOF_
     done
     if [ -n "$_nss_unread" ]; then printf 'unknown\t\t%s\n' "$_nss_unread"
     elif [ "$_nss_st" = invalid ]; then printf 'invalid\t%s\t%s\n' "$_nss_raw" "$_nss_file"

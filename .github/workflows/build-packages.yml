@@ -775,7 +775,14 @@ jobs:
             rm -rf "$K2L"; printf "NFTBAN_ENABLED=maybe\n" > "$K2L"
             k2_check invalid "master switch is INVALID (NFTBAN_ENABLED=maybe in $K2L"
             rm -rf "$K2L"; mkdir -p "$K2L"
-            k2_check unreadable "master switch is UNKNOWN ($K2L exists but could not be read"
+            k2_check not-a-file "master switch is UNKNOWN ($K2L exists but could not be read"
+            # A REAL read failure for root (owner 2026-10-08): /proc/self/mem is a regular file
+            # whose read at offset 0 fails (EIO) even for root. The precondition is shown here.
+            rm -rf "$K2L"; ln -s /proc/self/mem "$K2L"
+            if [ -f "$K2L" ] && ! cat "$K2L" > /dev/null 2> /tmp/k2pre.err; then
+              echo "K2 precondition: root cannot read $K2L: $(cat /tmp/k2pre.err)"
+              k2_check read-failure "master switch is UNKNOWN ($K2L exists but could not be read"
+            else echo "[NOT_EXECUTED] K2 read-failure: root can read $K2L here"; exit 1; fi
             # The installer half (a switch that became unusable AFTER the pre-install check): the
             # real installer binary ends FAILED_CONFIG_INVALID, exit 2, nothing changed.
             rm -rf "$K2L"; printf "NFTBAN_ENABLED=maybe\n" > "$K2L"
@@ -786,6 +793,26 @@ jobs:
             if [ "$rc" -eq 2 ] && [ "$st" = "INSTALL_STATE=FAILED_CONFIG_INVALID" ] && [ "$b" = "$a" ]; then
               echo "[PASS] K2 installer: FAILED_CONFIG_INVALID, exit 2; rules and boot configuration byte-identical"
             else echo "[FAIL] K2 installer"; tail -30 /tmp/k2i.log; exit 1; fi
+            rm -rf "$K2L"
+            # The failure AFTER the pre-install check, carried through the REAL %post (owner
+            # 2026-10-08): rpm --nopre stands in for a switch that became unusable after %pre.
+            # Reported separately: installer exit, scriptlet exit, rpm exit + state. Whether rpm
+            # turns a failed %post into a non-zero exit is MEASURED here, not assumed.
+            echo "=== Phase 7b: K2 failure after %pre, through %post (installer/scriptlet HARD FAIL; rpm exit MEASURED) ==="
+            printf "NFTBAN_ENABLED=maybe\n" > "$K2L"
+            b=$(k2_snap); rc_p=0
+            rpm -Uvh --replacepkgs --nopre /packages/*.rpm > /tmp/k2p.log 2>&1 || rc_p=$?
+            a=$(k2_snap)
+            k2_inst=$(grep -o "NFTBAN_PACKAGE_INSTALLER_EXIT=[0-9]*" /tmp/k2p.log | tail -1 || true)
+            k2_scr=$(grep -oE "%post\(nftban-core[^)]*\) scriptlet failed, exit status [0-9]+" /tmp/k2p.log | tail -1 || true)
+            k2_st=$(grep "^INSTALL_STATE=" /var/lib/nftban/state/install_state || true)
+            echo "K2 7b: installer: ${k2_inst:-not printed} ($k2_st) | scriptlet: ${k2_scr:-no failure reported} | rpm rc=$rc_p, package state: $(rpm -q nftban-core 2>&1 || true)"
+            if [ "$k2_inst" = "NFTBAN_PACKAGE_INSTALLER_EXIT=2" ] && [ "$k2_st" = "INSTALL_STATE=FAILED_CONFIG_INVALID" ] \
+               && [ -n "$k2_scr" ] && [ "$b" = "$a" ]; then
+              echo "[PASS] K2 7b: installer refused, %post failed; rules and boot configuration byte-identical"
+            else echo "[FAIL] K2 7b"; tail -40 /tmp/k2p.log; exit 1; fi
+            if [ "$rc_p" -ne 0 ]; then echo "[MEASURED] K2 7b: rpm exit $rc_p (the %post failure reached the package manager)"
+            else echo "[MEASURED] K2-PM-NOT-PROPAGATED: rpm exit 0 although %post failed"; fi
             rm -rf "$K2L"
 
             rm -f "$INSTALL_LOG"
@@ -1056,7 +1083,14 @@ jobs:
             rm -rf "$K2L"; printf "NFTBAN_ENABLED=maybe\n" > "$K2L"
             k2_check invalid "master switch is INVALID (NFTBAN_ENABLED=maybe in $K2L"
             rm -rf "$K2L"; mkdir -p "$K2L"
-            k2_check unreadable "master switch is UNKNOWN ($K2L exists but could not be read"
+            k2_check not-a-file "master switch is UNKNOWN ($K2L exists but could not be read"
+            # A REAL read failure for root (owner 2026-10-08): /proc/self/mem is a regular file
+            # whose read at offset 0 fails (EIO) even for root. The precondition is shown here.
+            rm -rf "$K2L"; ln -s /proc/self/mem "$K2L"
+            if [ -f "$K2L" ] && ! cat "$K2L" > /dev/null 2> /tmp/k2pre.err; then
+              echo "K2 precondition: root cannot read $K2L: $(cat /tmp/k2pre.err)"
+              k2_check read-failure "master switch is UNKNOWN ($K2L exists but could not be read"
+            else echo "[NOT_EXECUTED] K2 read-failure: root can read $K2L here"; exit 1; fi
             # The installer half (a switch that became unusable AFTER the pre-install check): the
             # real installer binary ends FAILED_CONFIG_INVALID, exit 2, nothing changed.
             rm -rf "$K2L"; printf "NFTBAN_ENABLED=maybe\n" > "$K2L"
@@ -1068,6 +1102,27 @@ jobs:
               echo "[PASS] K2 installer: FAILED_CONFIG_INVALID, exit 2; rules and boot configuration byte-identical"
             else echo "[FAIL] K2 installer"; tail -30 /tmp/k2i.log; exit 1; fi
             rm -rf "$K2L"
+            # The failure AFTER the pre-install check, carried through the REAL postinst (owner
+            # 2026-10-08): unpack with a usable switch (preinst passes), make it unusable, then
+            # configure. Reported separately: installer exit, scriptlet exit, dpkg exit + state.
+            echo "=== Phase 7b: K2 failure after preinst, through postinst (HARD FAIL) ==="
+            b=$(k2_snap); rc_u=0
+            dpkg --unpack /packages/*.deb > /tmp/k2u.log 2>&1 || rc_u=$?
+            printf "NFTBAN_ENABLED=maybe\n" > "$K2L"
+            rc_c=0; dpkg --configure nftban-core > /tmp/k2c.log 2>&1 || rc_c=$?
+            a=$(k2_snap)
+            k2_inst=$(grep -o "NFTBAN_PACKAGE_INSTALLER_EXIT=[0-9]*" /tmp/k2c.log | tail -1 || true)
+            k2_scr=$(grep -o "post-installation script subprocess returned error exit status [0-9]*" /tmp/k2c.log | tail -1 || true)
+            k2_st=$(grep "^INSTALL_STATE=" /var/lib/nftban/state/install_state || true)
+            k2_pkg=$(dpkg-query -W -f="\${Status} \${Version}" nftban-core 2>&1 || true)
+            echo "K2 7b: unpack rc=$rc_u | installer: ${k2_inst:-not printed} ($k2_st) | scriptlet: ${k2_scr:-no failure reported} | dpkg --configure rc=$rc_c, package state: $k2_pkg"
+            if [ "$rc_u" -eq 0 ] && [ "$k2_inst" = "NFTBAN_PACKAGE_INSTALLER_EXIT=2" ] && [ "$k2_st" = "INSTALL_STATE=FAILED_CONFIG_INVALID" ] \
+               && [ -n "$k2_scr" ] && [ "$rc_c" -ne 0 ] && [ "$b" = "$a" ]; then
+              echo "[PASS] K2 7b: the installer refusal reached dpkg; rules and boot configuration byte-identical"
+            else echo "[FAIL] K2 7b"; tail -40 /tmp/k2c.log; exit 1; fi
+            # Recovery as documented: fix the setting, then dpkg --configure -a.
+            rm -rf "$K2L"; rc_r=0; dpkg --configure -a > /tmp/k2r.log 2>&1 || rc_r=$?
+            echo "K2 7b recovery: dpkg --configure -a rc=$rc_r, package state: $(dpkg-query -W -f="\${Status}" nftban-core 2>&1 || true)"
 
             rm -f "$INSTALL_LOG"
             echo "=== Install test PASSED ==="
