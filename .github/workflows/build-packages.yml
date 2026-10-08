@@ -742,6 +742,41 @@ jobs:
           retention-days: 30
 
   # ==========================================================================
+  # NEGATIVE CONTROL: an install that CANNOT read the kernel STOPS (owner 2026-10-08)
+  # ==========================================================================
+  # The install legs run with NET_ADMIN so the forward-rule preflight can read their own
+  # network namespace. This leg proves the other side on the real package: WITHOUT it, nft
+  # gets EPERM -> UNKNOWN -> the install STOPS before any change, and nftban is not installed.
+  test-deb-install-unknown-stops:
+    name: Test DEB install STOPS when the kernel is unreadable (ubuntu24.04)
+    needs: build-deb
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download DEB packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: deb-ubuntu24.04
+          path: ./packages
+      - name: Install without NET_ADMIN must STOP before any change
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$(pwd)/packages:/packages:ro" ubuntu:24.04 bash -c '
+            set -u
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq >/dev/null
+            rc=0; apt-get install -y /packages/*.deb > /tmp/install.log 2>&1 || rc=$?
+            echo "apt-get install rc=$rc"
+            grep -E "nftban: " /tmp/install.log || true
+            st=$(dpkg-query -W -f="\${Status}" nftban 2>/dev/null || echo "not-installed")
+            echo "dpkg status: $st"
+            [ "$rc" -ne 0 ] || { echo "FAIL: the install SUCCEEDED although the kernel could not be read"; exit 1; }
+            grep -q "STOPPED before any change by this package (forward chain UNKNOWN" /tmp/install.log \
+              || { echo "FAIL: no UNKNOWN STOP message"; exit 1; }
+            case "$st" in *"install ok installed"*) echo "FAIL: nftban ended up installed"; exit 1 ;; esac
+            echo "PASS: unreadable kernel -> STOP before any change; nftban not installed"
+          '
+
+  # ==========================================================================
   # TEST INSTALLATION (DEB)
   # ==========================================================================
   test-deb-install:

@@ -43,7 +43,7 @@ no(){ FAIL=$((FAIL+1)); echo "  ✗ $1${2:+ — $2}"; }
 echo "=== v1.235 forwarding store, render and CLI ==="
 [[ -f "$LIBDIR/lib/nftban_forward.sh" && -f "$TPL" ]] || { echo "  NOT_EXECUTED: subject missing"; echo "RESULT: NOT_EXECUTED"; exit 3; }
 SB="$(mktemp -d)"
-trap 'chmod -R u+w "$SB" 2>/dev/null; rm -rf "$SB"' EXIT
+trap 'rm -rf "$SB"' EXIT   # S5's mode-000 file sits in a writable dir: rm removes it
 mkdir -p "$SB/etc/forward.d" "$SB/bin"
 cat > "$SB/bin/id" <<'EOF'
 #!/bin/sh
