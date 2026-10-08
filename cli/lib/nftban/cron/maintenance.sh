@@ -171,6 +171,28 @@ trap release_lock EXIT
 # MAIN MAINTENANCE TASKS
 # =============================================================================
 
+# v1.235 (BUG-PORTSCAN-CLASSIC-CURSOR-SHARED-BY-DAEMON-AND-MAINTENANCE-PLANES): what the
+# daemon itself reports about its portscan plane, from its EXISTING `modules` IPC method
+# (the same read cmd_login.sh uses). Prints ACTIVE only when the reply lists portscan
+# running in classic mode; NOT_REPORTED, NOT_CLASSIC_RUNNING (<running> <mode>) or UNKNOWN
+# otherwise. Only ACTIVE lets maintenance step 7 skip ingestion.
+_maint_portscan_daemon_plane() {
+    local sock="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock" resp="" rm=""
+    if [[ -S "$sock" ]] && command -v socat >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 \
+       && resp="$(echo '{"method":"modules","params":{}}' | timeout 5 socat - "UNIX-CONNECT:${sock}" 2>/dev/null)" \
+       && rm="$(jq -r '[.data[]? | select(.name == "portscan") | "\(.running) \(.extra.mode // "")"][0] // "absent"' <<<"$resp" 2>/dev/null)" \
+       && [[ -n "$rm" ]]; then
+        case "$rm" in
+            "true classic") echo "ACTIVE" ;;
+            absent)         echo "NOT_REPORTED" ;;
+            *)              echo "NOT_CLASSIC_RUNNING (${rm})" ;;
+        esac
+    else
+        echo "UNKNOWN"
+    fi
+    return 0
+}
+
 main() {
     acquire_lock
 
@@ -828,8 +850,22 @@ EOF
 
         # Process kernel logs → emit micro-events for aggregation
         # Without this step, aggregate() finds no events to analyze
-        if declare -f nftban_portscan_classic_process_logs >/dev/null 2>&1; then
-            nftban_portscan_classic_process_logs 2>/dev/null || true
+        # v1.235 (BUG-PORTSCAN-CLASSIC-CURSOR-SHARED-BY-DAEMON-AND-MAINTENANCE-PLANES): the
+        # daemon's 60 s plane (internal/portscan/module.go runCycle -> nftban_portscan_run)
+        # reads the SAME journal cursor and file offsets with no lock, so running both read the
+        # same batch twice (duplicate micro-events). The daemon owns ingestion WHEN IT SAYS SO:
+        # skip here only if its existing `modules` IPC reply reports portscan running in
+        # classic mode. Daemon down, socket/socat/jq absent, no portscan entry, not running,
+        # another mode or an unreadable reply -> ingest here as before (never silently stop).
+        local _ps_plane
+        _ps_plane="$(_maint_portscan_daemon_plane)"
+        if [[ "$_ps_plane" == ACTIVE ]]; then
+            log "INFO" "Portscan ingestion: skipped here, the daemon plane reports portscan classic running (it owns the journal cursor)"
+        else
+            log "INFO" "Portscan ingestion: daemon plane state ${_ps_plane}: maintenance ingests"
+            if declare -f nftban_portscan_classic_process_logs >/dev/null 2>&1; then
+                nftban_portscan_classic_process_logs 2>/dev/null || true
+            fi
         fi
 
         # Run aggregation if function exists
@@ -1076,4 +1112,8 @@ EOF
 # RUN
 # =============================================================================
 
-main "$@"
+# Run when EXECUTED (nftban-maintenance.service ExecStart); sourcing only defines the
+# functions (v1.235: lets a test drive _maint_portscan_daemon_plane in isolation).
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

@@ -230,6 +230,7 @@ mail_netrc_auth_transport_v1227_test	cli/lib/nftban/tests/mail_netrc_auth_transp
 mail_recipient_subject_help_v1223_test	cli/lib/nftban/tests/mail_recipient_subject_help_v1223_test.sh	mail	test	mail	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 mail_subject_authority_v1227_test	cli/lib/nftban/tests/mail_subject_authority_v1227_test.sh	mail	test	mail-subject-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 maint_table_absent_noise_v1930_test	cli/lib/nftban/tests/maint_table_absent_noise_v1930_test.sh	firewall	test	maintenance-table-probe	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+maintenance_portscan_plane_v1235_test	cli/lib/nftban/tests/maintenance_portscan_plane_v1235_test.sh	portscan	test	portscan-classic-planes	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 maintenance_stats_config_precondition_v1229_8_test	cli/lib/nftban/tests/maintenance_stats_config_precondition_v1229_8_test.sh	core	test	maintenance-orchestration	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 managed_authority_invariant_v1229_3_test	cli/lib/nftban/tests/managed_authority_invariant_v1229_3_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 metrics_remote_submission_wired_v1229_10_test	cli/lib/nftban/tests/metrics_remote_submission_wired_v1229_10_test.sh	metrics	test	metrics-remote-submission	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
