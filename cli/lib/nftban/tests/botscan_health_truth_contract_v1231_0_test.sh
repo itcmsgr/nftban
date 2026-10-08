@@ -19,8 +19,8 @@
 # meta:ta.requires_nftables="false"
 # meta:ta.requires_package="false"
 # meta:description="v1.231.0 P0-C — encodes the owner-ruled BotScan HEALTH TRUTH CONTRACT as falsifiable arms over the real classifier (nftban_botscan_health_state) and the real readers (_nftban_health_botscan_facts / _nftban_health_render_botscan / nftban_health_check_botscan, extracted from source, never retyped). Clauses: (1) no valid progress evidence NEVER yields OK; (2) a stalled run with a capped/backpressured backlog is DEGRADED; (3) incomplete measurement authority is UNKNOWN or DEGRADED, never OK; (4) a consumer stale_backlog=false must not override independent stall evidence; (5) no fall-through OK — a health state must be POSITIVELY asserted. Arms that require a telemetry field with no producer at HEAD report NOT_EXECUTED naming the field (never PASS). Violations that are already present at HEAD are DECLARED in an explicit gap registry and reported [GAP-OPEN]; the registry is a TWO-WAY tripwire — an undeclared gap FAILS, a declared gap that reality has CLOSED FAILS with an instruction to promote the arm, and a declared gap no arm consumes FAILS. Negative controls are DECLARED INVERSIONS written in this file; no arm resolves an inversion through git."
-# meta:inventory.files="cli/lib/nftban/core/nftban_botscan_adaptive.sh,cli/lib/nftban/core/nftban_botscan.sh,cli/lib/nftban/core/nftban_health_checks_modules.sh,cli/lib/nftban/cli/cmd_health_analysis.sh"
-# meta:inventory.binaries="awk,jq,grep,sed"
+# meta:inventory.files="cli/lib/nftban/core/nftban_botscan_adaptive.sh,cli/lib/nftban/core/nftban_botscan.sh,cli/lib/nftban/core/nftban_health_checks_modules.sh,cli/lib/nftban/cli/cmd_health_analysis.sh,cli/lib/nftban/tests/health_strict_harness.sh"
+# meta:inventory.binaries="awk,jq,grep,sed,tr"
 # meta:inventory.privileges="none"
 # =============================================================================
 set -Eeuo pipefail
@@ -123,23 +123,37 @@ declare -F nftban_botscan_health_state >/dev/null \
   && ok "S.1 classifier nftban_botscan_health_state sourced from $ADAPT" \
   || { no "S.1 classifier not defined"; exit 1; }
 
-awk '/^_nftban_health_botscan_facts\(\)/{c=1} c{print} /^_nftban_health_render_botscan\(\)/{r=1} r&&/^}/{print "";exit}' \
-    "$HMOD" > "$SB/render.sh"
-awk '/^nftban_health_check_botscan\(\)/{c=1} c{print} c&&/^}/{exit}' "$HMOD" > "$SB/check.sh"
-[[ -s "$SB/render.sh" ]] && grep -q '_nftban_health_render_botscan' "$SB/render.sh" \
-  && ok "S.2 facts+render block extracted from nftban_health_checks_modules.sh" \
-  || { no "S.2 render extraction empty — every reader arm would be vacuous"; exit 1; }
-[[ -s "$SB/check.sh" ]] && grep -q 'NFTBAN_HEALTH_RESULTS' "$SB/check.sh" \
-  && ok "S.3 nftban_health_check_botscan extracted from nftban_health_checks_modules.sh" \
-  || { no "S.3 check extraction empty — every reader arm would be vacuous"; exit 1; }
+# The REAL module is sourced under the dispatcher's strict plane by the shared
+# harness (health_strict_harness.sh): set -Eeuo pipefail, lib/strict.sh, `main || exit`.
+# The earlier awk extraction ran the bodies under `set +e`, where an aborted facts
+# read (the H1 errexit class) rendered DISABLED and still satisfied the arms.
+# shellcheck source=cli/lib/nftban/tests/health_strict_harness.sh
+source "$SCRIPT_DIR/health_strict_harness.sh"
+hs_init "$SB" \
+  && ok "S.2 strict harness bound to nftban_health_checks_modules.sh" \
+  || { no "S.2 strict harness: subject files missing — every reader arm would be vacuous"; exit 1; }
+hs_fn_source _nftban_health_render_botscan nftban_health_check_botscan > "$SB/defs.sh" || true
+grep -q '^_nftban_health_render_botscan' "$SB/defs.sh" && grep -q 'NFTBAN_HEALTH_RESULTS' "$SB/defs.sh" \
+  && ok "S.3 _nftban_health_render_botscan and nftban_health_check_botscan defined by the module" \
+  || { no "S.3 reader functions not defined by the module — every reader arm would be vacuous"; exit 1; }
+
+# Every strict-plane call records an abort or an ERR-trap banner here; the readers
+# run inside $(...), where a counter increment is lost. Asserted once, in [R].
+hs_record(){ # <label> <rc>
+  if [[ "$2" -ne 0 ]] || hs_err_banner; then
+    printf '%s rc=%s %s\n' "$1" "$2" "$(hs_err_first)" >> "$SB/strict.fail"
+  fi
+  return 0
+}
 
 # ---------------------------------------------------------------------------
 # READER DRIVER.
 #   fixture <enabled> <health_state|NORUNSTATE> <run_age_sec> <handoff|MISSING> <stale>
 #   reader_check   -> prints "rc|<issue text>"      (machine verdict)
 #   reader_render  -> prints the operator-facing verdict block
-# errexit stays ARMED in this shell; the subject runs under `bash -c` with
-# `set +e` so a non-zero reader return is DATA, not a suite abort.
+# errexit stays ARMED in this shell. The subject runs in the strict harness child
+# (the dispatcher's plane); nftban_health_check_botscan's return is captured there
+# as DATA, and an abort of the child is recorded by hs_record, asserted in [R].
 # ---------------------------------------------------------------------------
 fixture(){
   local enabled="$1" hs="$2" age="$3" ho="$4" stale="$5"
@@ -153,25 +167,19 @@ fixture(){
       "$ho" "$stale" > "$SB/fx/data/botguard/botscan_consumer_status.json"
 }
 
-reader_check(){
-  NFTBAN_CONFIG_DIR="$SB/fx" NFTBAN_DATA_DIR="$SB/fx/data" SRC="$SB" bash -c '
-    set +e
-    systemctl(){ return 0; }          # timer ACTIVE — isolates the health axis
-    HEALTH_OK=0; HEALTH_WARNING=1
-    declare -A NFTBAN_HEALTH_RESULTS NFTBAN_HEALTH_ISSUES
-    . "$SRC/render.sh"; . "$SRC/check.sh"
-    nftban_health_check_botscan >/dev/null 2>&1
-    printf "%s|%s\n" "$?" "${NFTBAN_HEALTH_ISSUES[botscan]:-}"
-  '
+reader_check(){   # timer ACTIVE — isolates the health axis
+  local rc=0
+  NFTBAN_CONFIG_DIR="$SB/fx" NFTBAN_DATA_DIR="$SB/fx/data" HS_TIMER=active \
+    hs_call _hs_check_botscan || rc=$?
+  hs_record reader_check "$rc"
 }
 
 reader_render(){
-  NFTBAN_CONFIG_DIR="$SB/fx" NFTBAN_DATA_DIR="$SB/fx/data" SRC="$SB" bash -c '
-    set +e
-    systemctl(){ return 0; }
-    . "$SRC/render.sh"
-    _nftban_health_render_botscan 2>&1
-  '
+  local rc=0
+  NFTBAN_CONFIG_DIR="$SB/fx" NFTBAN_DATA_DIR="$SB/fx/data" HS_TIMER=active \
+    hs_call _nftban_health_render_botscan || rc=$?
+  cat "$HS_ERR"
+  hs_record reader_render "$rc"
 }
 
 # ---------------------------------------------------------------------------
@@ -338,7 +346,9 @@ thr_at(){   # $1 shipped value|MISSING   $2 .local value|MISSING
   rm -f "$C14B_DIR/conf.d/botguard/main.conf" "$C14B_DIR/conf.d/botguard/main.conf.local"
   [[ "$1" == MISSING ]] || printf 'HTTP_BOT_BOTSCAN_INTERVAL="%s"\n' "$1" > "$C14B_DIR/conf.d/botguard/main.conf"
   [[ "$2" == MISSING ]] || printf 'HTTP_BOT_BOTSCAN_INTERVAL="%s"\n' "$2" > "$C14B_DIR/conf.d/botguard/main.conf.local"
-  NFTBAN_CONFIG_DIR="$C14B_DIR" SRC="$SB" bash -c 'set +e; . "$SRC/render.sh"; _nftban_health_botscan_stale_threshold'
+  local rc=0
+  NFTBAN_CONFIG_DIR="$C14B_DIR" hs_call _nftban_health_botscan_stale_threshold || rc=$?
+  hs_record "thr_at($1,$2)" "$rc"
 }
 T_DEF=$(thr_at MISSING MISSING); T_300=$(thr_at 300 MISSING); T_LOC=$(thr_at 300 1200)
 if [[ "$T_DEF" =~ ^[0-9]+$ && "$T_300" =~ ^[0-9]+$ && "$T_LOC" =~ ^[0-9]+$ ]] \
@@ -554,8 +564,10 @@ echo "[C3] clause 3 — incomplete measurement authority is UNKNOWN or DEGRADED,
 # -> handoff/stale UNKNOWN. Assert that first, so a later failure is localised to
 # the VERDICT layer rather than to collection.
 fixture true NORUNSTATE 0 MISSING false
-C3F=$(NFTBAN_CONFIG_DIR="$SB/fx" NFTBAN_DATA_DIR="$SB/fx/data" SRC="$SB" bash -c '
-  set +e; systemctl(){ return 0; }; . "$SRC/render.sh"; _nftban_health_botscan_facts')
+C3F_RC=0
+C3F=$(NFTBAN_CONFIG_DIR="$SB/fx" NFTBAN_DATA_DIR="$SB/fx/data" HS_TIMER=active \
+  hs_call _nftban_health_botscan_facts) || C3F_RC=$?
+hs_record C3F "$C3F_RC"
 IFS='|' read -r _c3en _c3mo _c3ti C3HS _c3la _c3ba _c3sp C3HO C3ST <<<"$C3F"
 [[ "$C3HS" == "UNKNOWN" ]] \
   && ok "C3.1 POSITIVE: run-state absent -> facts emit health_state=UNKNOWN (never assumed clean)" \
@@ -566,8 +578,10 @@ IFS='|' read -r _c3en _c3mo _c3ti C3HS _c3la _c3ba _c3sp C3HO C3ST <<<"$C3F"
 
 # FALSIFIER: the facts layer must NOT report UNKNOWN when authority IS complete.
 fixture true OK_SCANNED_NO_BOTS 10 0 false
-C3F2=$(NFTBAN_CONFIG_DIR="$SB/fx" NFTBAN_DATA_DIR="$SB/fx/data" SRC="$SB" bash -c '
-  set +e; systemctl(){ return 0; }; . "$SRC/render.sh"; _nftban_health_botscan_facts')
+C3F2_RC=0
+C3F2=$(NFTBAN_CONFIG_DIR="$SB/fx" NFTBAN_DATA_DIR="$SB/fx/data" HS_TIMER=active \
+  hs_call _nftban_health_botscan_facts) || C3F2_RC=$?
+hs_record C3F2 "$C3F2_RC"
 IFS='|' read -r _ _ _ C3HS2 _ _ _ C3HO2 _ <<<"$C3F2"
 [[ "$C3HS2" != "UNKNOWN" && "$C3HO2" != "UNKNOWN" ]] \
   && ok "C3.3 FALSIFIER: with complete authority the same facts probe reports hs=$C3HS2 handoff=$C3HO2 (UNKNOWN is measured, not constant)" \
@@ -764,6 +778,11 @@ r="$(reader_check)"; r="${r%%|*}"
 # REGISTRY CLOSURE — no declared gap may go unconsumed.
 # ---------------------------------------------------------------------------
 echo "[R] gap-registry closure"
+if [[ -s "$SB/strict.fail" ]]; then
+  no "R.0 strict plane: a reader aborted or printed the ERR-trap banner" "$(tr '\n' ';' < "$SB/strict.fail")"
+else
+  ok "R.0 strict plane: every reader call exited 0 with no ERR-trap banner"
+fi
 for id in ${!GAPS_DECLARED[@]+"${!GAPS_DECLARED[@]}"}; do
   [[ -n "${GAPS_CONSUMED[$id]:-}" ]] \
     && ok "R.1 declared gap $id is consumed by at least one arm" \
