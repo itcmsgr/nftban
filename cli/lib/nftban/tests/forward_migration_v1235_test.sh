@@ -64,7 +64,9 @@ case "$5" in
 esac
 exit 0
 EOF
-chmod +x "$SB/bin/nft" "$SB/bin/ip"
+# `forward migrate --confirm` requires root; the sandbox answers `id -u` with 0 (as forward_store_render does).
+printf '#!/bin/sh\n[ "$1" = "-u" ] && { echo 0; exit 0; }\nexec /usr/bin/id "$@"\n' > "$SB/bin/id"
+chmod +x "$SB/bin/nft" "$SB/bin/ip" "$SB/bin/id"
 
 chain() {  # fam rules...
     local fam="$1"; shift
@@ -165,10 +167,10 @@ FWENV="NFTBAN_FORWARD_MIGRATE=$KID" fw rebuild
     && ok "K9b NFTBAN_FORWARD_MIGRATE=<plan id> on the rebuild -> plan recorded (+ approval marker), rebuild runs" || no "K9b" "rc=$rc"
 fresh; chain ip "${SRV1[@]}"
 env -i PATH="$SB/bin:/usr/bin:/bin" SBX="$SB" NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_LIB_DIR="$LIBDIR" \
-    bash -c 'source "$1/lib/nftban_forward.sh"; nftban_forward_migrate --confirm "$2"' _ "$LIBDIR" "$KID" >/dev/null 2>&1 || true
+    bash -c 'source "$1/lib/nftban_forward.sh"; nftban_forward_migrate --confirm "$2"' _ "$LIBDIR" "$KID" >"$SB/mig.out" 2>&1 || true
 FWENV="" fw rebuild
 [[ $rc -eq 0 && -e "$SB/ran" ]] && grep -q 'approved earlier' "$SB/fw.err" \
-    && ok "K9c forward migrate --confirm <id>, then a plain rebuild -> proceeds (the approved migration is not blocked)" || no "K9c migrate -> rebuild" "rc=$rc $(head -c 200 "$SB/fw.err")"
+    && ok "K9c forward migrate --confirm <id>, then a plain rebuild -> proceeds (the approved migration is not blocked)" || no "K9c migrate -> rebuild" "rc=$rc migrate=[$(tr '\n' ' ' < "$SB/mig.out")]"
 chain ip "${SRV1[@]}" 'ip saddr 10.9.0.0/16 accept # handle 99'
 FWENV="" fw rebuild
 [[ $rc -ne 0 && ! -e "$SB/ran" ]] && ok "K9d rules changed after the approval -> new plan id -> STOP (the old approval does not carry over)" || no "K9d changed plan" "rc=$rc"
