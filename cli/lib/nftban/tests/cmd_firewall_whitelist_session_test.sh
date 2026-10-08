@@ -56,6 +56,11 @@ SANDBOX=$(mktemp -d)
 trap 'rm -rf "$SANDBOX"' EXIT
 
 SESSION_FILE="$SANDBOX/00-session.conf"
+# Never the host's `nftban`: on an installed lab host `command -v nftban` found /usr/sbin/nftban
+# and add/remove ran the REAL `nftban firewall reload` (its failure was swallowed before K9-a).
+# A sandbox stub that succeeds comes first on PATH; the K9-a arms put a refusing one before it.
+mkdir -p "$SANDBOX/bin"; printf '#!/bin/sh\nexit 0\n' > "$SANDBOX/bin/nftban"; chmod +x "$SANDBOX/bin/nftban"
+export PATH="$SANDBOX/bin:$PATH"
 
 PASS=0
 FAIL=0
