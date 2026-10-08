@@ -726,7 +726,7 @@ nftban_cmd_port() {
                 return 1
             fi
 
-            local removed_count=0
+            local removed_count=0 _rm_lines=""
 
             for file in "${found_files[@]}"; do
                 echo "Removing port $port from: $file"
@@ -737,6 +737,9 @@ nftban_cmd_port() {
                 removed_proto=$(echo "$port_line" | cut -d'/' -f2)
                 removed_dir=$(echo "$port_line" | cut -d'/' -f3)
                 echo "  - $port_line (proto=$removed_proto, dir=$removed_dir)"
+
+                # v1.235 audit H6: remember exactly which proto/direction pairs this line held.
+                _rm_lines+="${port_line}"$'\n'
 
                 # Create backup
                 cp "$file" "${file}.backup.$(date +%Y%m%d-%H%M%S)"
@@ -757,9 +760,53 @@ nftban_cmd_port() {
                 echo "⚡ Applying removal to firewall via IPC..."
 
                 if nft_ipc_is_daemon_running 2>/dev/null; then
-                    # Use atomic delete_port IPC - remove from all sets (both protocols, both directions)
-                    if nft_ipc_delete_port "$port" "both" "both" 2>/dev/null; then
+                    # v1.235 audit H6: delete EXACTLY the proto/direction pairs the removed lines held
+                    # and nothing still requires: another ports.d line for this port (protected files
+                    # included) or the template baseline (tcp in 80/443, tcp out 53/80/443, udp out
+                    # 53/123). Was: "both both", which also cut the outbound 53/80/443 baseline.
+                    # Arrays only: this runs under the dispatcher IFS ($'\n\t'), so no space splitting.
+                    local _l _a _d _set _tpl _del_ok=true
+                    local -a _pa=() _da=() _rm_pairs=() _keep_pairs=()
+                    # <line-source> <array-name>: expand every "PORT/P/D" line into proto:dir pairs.
+                    while IFS= read -r _l; do
+                        [[ "$_l" =~ ^(KEEP\ )?${port}/([TUB])/(IO|I|O)$ ]] || continue
+                        case "${BASH_REMATCH[2]}" in T) _pa=(tcp) ;; U) _pa=(udp) ;; *) _pa=(tcp udp) ;; esac
+                        case "${BASH_REMATCH[3]}" in I) _da=(in) ;; O) _da=(out) ;; *) _da=(in out) ;; esac
+                        for _a in "${_pa[@]}"; do for _d in "${_da[@]}"; do
+                            if [[ -n "${BASH_REMATCH[1]:-}" ]]; then _keep_pairs+=("$_a:$_d"); else _rm_pairs+=("$_a:$_d"); fi
+                        done; done
+                    done < <(printf '%s' "$_rm_lines"; cat "${NFTBAN_CONFIG_DIR}"/ports.d/*.conf 2>/dev/null | sed -n "s|^${port}/|KEEP ${port}/|p")
+                    _tpl="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/templates/nftables.conf.tpl"
+                    if [[ -r "$_tpl" ]]; then
+                        for _set in tcp:in:tcp_ports_in tcp:out:tcp_ports_out udp:in:udp_ports_in udp:out:udp_ports_out; do
+                            if awk -v s="set ${_set##*:} {" -v p="$port" 'index($0, s) {c=1} c && /elements = \{/ {gsub(/[{},]/," "); for (i=1;i<=NF;i++) if ($i==p) f=1} c && /^    \}/ {c=0} END {exit !f}' "$_tpl"; then
+                                _keep_pairs+=("${_set%:*}")
+                            fi
+                        done
+                    else
+                        echo "  ⚠ Template baseline unreadable ($_tpl): nothing deleted live; the removal applies at the next 'nftban firewall rebuild'" >&2
+                        _rm_pairs=()
+                    fi
+                    local _pd _seen=" " _keep_str
+                    _keep_str=" $(printf '%s ' "${_keep_pairs[@]}")"   # IFS-independent join
+                    for _pd in "${_rm_pairs[@]}"; do
+                        [[ "$_seen" == *" $_pd "* ]] && continue
+                        _seen+="$_pd "
+                        if [[ "$_keep_str" == *" $_pd "* ]]; then
+                            echo "  ℹ Port $port ${_pd%:*} ${_pd#*:} kept (still required by another ports.d line or the baseline)"
+                            continue
+                        fi
+                        nft_ipc_delete_port "$port" "${_pd%:*}" "${_pd#*:}" 2>/dev/null || _del_ok=false
+                    done
+                    if [[ "$_del_ok" == "true" ]]; then
                         echo "  ✓ Port $port removed from firewall (IPv4 + IPv6)"
+                        # v1.235 audit H6: durable across reboot. The published boot projection still
+                        # holds the port and the daemon sync only ever adds: re-render it now.
+                        if declare -F nftban_cmd_firewall >/dev/null 2>&1; then
+                            nftban_cmd_firewall render-boot >/dev/null 2>&1 || echo "  ⚠ Boot projection not refreshed: run 'nftban firewall render-boot'" >&2
+                        else
+                            /usr/sbin/nftban firewall render-boot >/dev/null 2>&1 || echo "  ⚠ Boot projection not refreshed: run 'nftban firewall render-boot'" >&2
+                        fi
                         # v1.145 PR-B both-set parity: also remove from ssh_ports.
                         # Every SSH port is refused above (_nftban_port_live_ssh_reason),
                         # so this cannot drop brute-force protection for a live
