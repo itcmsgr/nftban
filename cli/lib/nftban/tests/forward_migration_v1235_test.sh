@@ -10,7 +10,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-08"
-# meta:description="Owner 2026-10-08 forward migration conditions. Drives the REAL package entry point nftban_forward_unmanaged_preflight and the shared mapper (cli/lib/nftban/lib/nftban_immutable_owned.sh) under /bin/sh with a stub nft (forward chain listing) and a stub ip (routes), plus the CLI nftban_forward_migrate (lib/nftban_forward.sh). Arms: M1 srv1-shaped unmanaged rules without approval -> STOP, plan + id + exact approve command printed, store NOT written; M2 NFTBAN_FORWARD_MIGRATE=<that id> -> proceed, store holds egress for both bridges + the uplink (deduplicated), every DIFF printed; M3 wrong id -> STOP, store unchanged; M4 an UNMAPPED rule -> STOP even with that plan's id; M5 a prefix that is not exactly one interface -> UNMAPPED -> STOP; M6 an invalid existing record -> STOP, store bytes unchanged; M7 only NFTBan-tagged rules -> proceed, no plan; M8 store dir not writable -> STOP, nothing written; M9 the plan id ignores rule handles (stable); M10 the CLI migrate prints the SAME plan id as the package path. Regression only; continuity of traffic is proven in the Docker lab."
+# meta:description="Owner 2026-10-08 forward migration conditions. Drives the REAL package entry point nftban_forward_unmanaged_preflight and the shared mapper (cli/lib/nftban/lib/nftban_immutable_owned.sh) under /bin/sh with a stub nft (forward chain listing) and a stub ip (routes), plus the CLI nftban_forward_migrate (lib/nftban_forward.sh). Arms: M1 srv1-shaped unmanaged rules without approval -> STOP, plan + id + exact approve command printed, store NOT written; M2 NFTBAN_FORWARD_MIGRATE=<that id> -> proceed, store holds egress for both bridges + the uplink (deduplicated), every DIFF printed; M3 wrong id -> STOP, store unchanged; M4 an UNMAPPED rule -> STOP even with that plan's id; M5 a prefix that is not exactly one interface -> UNMAPPED -> STOP; M6 an invalid existing record -> STOP, store bytes unchanged; M7 only NFTBan-tagged rules -> proceed, no plan; M8 store dir not writable -> STOP, nothing written; M9 the plan id ignores rule handles (stable); M10 the CLI migrate prints the SAME plan id as the package path; M10b the same with TWO uplinks and the CLI under the real strict.sh IFS (audit H10). Regression only; continuity of traffic is proven in the Docker lab."
 # meta:inventory.files="cli/lib/nftban/lib/nftban_immutable_owned.sh,cli/lib/nftban/lib/nftban_forward.sh"
 # meta:inventory.binaries="bash,sh,mktemp,sha256sum"
 # meta:inventory.env_vars=""
@@ -132,6 +132,16 @@ fresh; chain ip "${SRV1[@]}"; pre; pid=$(plan_id)
 cid=$(env -i PATH="$SB/bin:/usr/bin:/bin" SBX="$SB" NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_LIB_DIR="$LIBDIR" \
     bash -c 'source "$1/lib/nftban_forward.sh"; nftban_forward_migrate' _ "$LIBDIR" 2>/dev/null | sed -n 's/^Migration plan \([0-9a-f]\{12\}\) .*/\1/p' | sed -n 1p)
 [[ -n "$pid" && "$cid" == "$pid" ]] && ok "M10 CLI migrate prints the SAME plan id as the package path ($pid)" || no "M10 CLI vs package" "cli=$cid pkg=$pid"
+
+# M10b (audit H10, 2026-10-08): TWO uplinks, and the CLI side under the REAL CLI shell setup
+# (lib/strict.sh: IFS=$'\n\t'). The mapper splits the uplink list on whitespace; under the CLI's
+# IFS a space-separated list did not split, so the CLI and the package could print different ids.
+fresh; printf 'default via 2001:db8::1 dev eth1 proto static metric 1024\n' > "$SB/default-6"
+chain ip "${SRV1[@]}"; pre; pid2=$(plan_id); nrec=$(grep -c 'RECORD uplink|' "$SB/err" || true)
+cid2=$(env -i PATH="$SB/bin:/usr/bin:/bin" SBX="$SB" NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_LIB_DIR="$LIBDIR" \
+    bash -c 'source "$1/lib/strict.sh" >/dev/null 2>&1; source "$1/lib/nftban_forward.sh"; nftban_forward_migrate' _ "$LIBDIR" 2>/dev/null | sed -n 's/^Migration plan \([0-9a-f]\{12\}\) .*/\1/p' | sed -n 1p)
+[[ "$nrec" -eq 2 && -n "$pid2" && "$cid2" == "$pid2" ]] && ok "M10b two uplinks: the package records both, and the CLI under strict.sh prints the SAME plan id ($pid2)" \
+    || no "M10b two uplinks" "package uplink records=$nrec cli=$cid2 pkg=$pid2"
 
 echo ""
 echo "RESULT: $([[ $FAIL -eq 0 ]] && echo PASS || echo FAIL) (pass=$PASS fail=$FAIL)"
