@@ -885,7 +885,11 @@ nftban_cmd_firewall() {
                     *)             _cc_id="$_cc_a" ;;
                 esac
             done
-            if [[ "$_cc_mode" == "abandon" ]]; then cc_abandon "$_cc_id"; else cc_rollback "$_cc_id" "$_cc_mode"; fi
+            # v1.235 audit H2: --boot (the boot unit) is cc_boot: it re-raises the D10 alarm and
+            # keeps a failed rollback held; only a PENDING apply is rolled back at boot.
+            if [[ "$_cc_mode" == "abandon" ]]; then cc_abandon "$_cc_id"
+            elif [[ "$_cc_mode" == "--boot" ]]; then cc_boot
+            else cc_rollback "$_cc_id" "$_cc_mode"; fi
             ;;
         record)
             shift

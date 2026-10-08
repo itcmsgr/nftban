@@ -344,6 +344,11 @@ cc_rollback() {
         pending|rollback-failed) : ;;
         *) echo "Unknown commit-confirm state '$st'; nothing done." >&2; cc_unlock; return 1 ;;
     esac
+    # Owner D10 / audit H2: a FAILED rollback is resolved only by the operator (retry or
+    # --abandon), never by a boot. The boot path re-raises the alarm (cc_boot) and returns.
+    if [[ "$st" == "rollback-failed" && "$mode" == "--boot" ]]; then
+        cc_unlock; return 0
+    fi
     # A crash after confirm's commit point: complete the confirm, never roll back. Both
     # are required: the recorded confirm for THIS apply ID and the candidate projection.
     if [[ "$st" == "pending" && "$(cc_get confirm_requested)" == "$rec_id" ]] && cc_projection_is_candidate; then
