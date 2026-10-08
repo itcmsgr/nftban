@@ -201,6 +201,31 @@ func (m *NFTManager) AddIPWithTimeout(set *nftables.Set, ipStr string, timeout t
 		element.Timeout = timeout
 	}
 
+	// v1.235 audit H11: a PERMANENT add over an existing timed element must drop the timeout.
+	// A plain add of an existing element is a no-op in the kernel (measured lab4: the old
+	// timeout stays, so the "permanent" ban expired). Replace it in ONE transaction (delete +
+	// add, the IP is never absent); if the element does not exist, the plain add below runs.
+	if timeout == 0 {
+		swap, err := m.txConn() // INV-NFT-TX-01: its own private transaction
+		if err != nil {
+			return err
+		}
+		if err := swap.SetDeleteElements(set, []nftables.SetElement{{Key: key}}); err != nil {
+			return fmt.Errorf("failed to queue element replace: %w", err)
+		}
+		if err := swap.SetAddElements(set, []nftables.SetElement{element}); err != nil {
+			return fmt.Errorf("failed to queue element replace: %w", err)
+		}
+		err = swap.Flush()
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("failed to replace element: %w", err)
+		}
+		// Not present: fall through to the plain add.
+	}
+
 	if err := conn.SetAddElements(set, []nftables.SetElement{element}); err != nil {
 		return fmt.Errorf("failed to add element: %w", err)
 	}
@@ -229,6 +254,34 @@ func (m *NFTManager) addIPWithTimeoutCLI(set *nftables.Set, ipStr string, timeou
 		elementStr = fmt.Sprintf("{ %s timeout %ds }", ipStr, int(timeout.Seconds()))
 	} else {
 		elementStr = fmt.Sprintf("{ %s }", ipStr)
+	}
+
+	// v1.235 audit H11: a PERMANENT add must drop the timeout of an existing element (a plain
+	// add keeps it). ONE `nft -f` transaction: delete + add (never absent in between). If the
+	// IP is not its own element (absent, or covered by a range in this interval set) the
+	// transaction fails as not-existing and the plain add below keeps today's behaviour.
+	if timeout == 0 {
+		script := fmt.Sprintf("delete element %s %s %s %s\nadd element %s %s %s %s\n",
+			family, set.Table.Name, set.Name, elementStr, family, set.Table.Name, set.Name, elementStr)
+		tmp, err := os.CreateTemp("", "nftban-elemrepl-*.nft")
+		if err != nil {
+			return fmt.Errorf("failed to create temp file: %w", err)
+		}
+		defer os.Remove(tmp.Name())
+		if _, err := tmp.WriteString(script); err != nil {
+			tmp.Close()
+			return fmt.Errorf("failed to write element-replace script: %w", err)
+		}
+		if err := tmp.Close(); err != nil {
+			return fmt.Errorf("failed to close temp file: %w", err)
+		}
+		out, err := runNftFile(tmp.Name())
+		if err == nil {
+			return nil
+		}
+		if !isIgnorableNftError(string(out), ErrElementNotExist, ErrNoSuchFile) {
+			return fmt.Errorf("failed to replace element %s in %s: %w: %s", ipStr, set.Name, err, out)
+		}
 	}
 
 	// Use centralized add element (ignores interval overlaps and file exists)
