@@ -785,7 +785,11 @@ nftban_cmd_firewall() {
             ;;
         init)
             # v1.38.0: BUG-002 — alias to rebuild (firewall init was never implemented)
+            # v1.235 audit H4: an alias loads rules exactly like rebuild, so it carries the same
+            # guards (R-DEC bypass, D10 rollback-failed).
             shift
+            _fw_bypass_guard "firewall init" || return 1
+            _fw_cc_guard "firewall init" || return 1
             nftban_ssh_pre_rebuild_lockout_guard init "$@" || true
             firewall_rebuild "$@"
             ;;
