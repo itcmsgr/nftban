@@ -846,7 +846,8 @@ ${rpm_immut_lib}
 trap '_nftban_rc=\$?; if [ "\$_nftban_rc" -ne 0 ]; then nftban_immut_relock_owned | sed "s/^/[NFTBan] immutable flag /" >&2; fi' EXIT
 # v1.235 C20 (owner D5): stop before the rebuild would erase forward rules NFTBan did
 # not create (srv1-class Docker hosts). Nothing has changed yet; the trap above relocks.
-nftban_forward_unmanaged_preflight || exit 1
+# UPGRADE only (\$1 >= 2): a first install has no NFTBan forward chain to erase.
+if [ "\$1" -ge 2 ]; then nftban_forward_unmanaged_preflight || exit 1; fi
 # =============================================================================
 # v108-item7c: Deprecated nftban-ui / GOTH GUI unit cleanup (NEW-package-side)
 # =============================================================================

@@ -529,8 +529,13 @@ case "$1" in
         fi
         # v1.235 C20 (owner D5): stop before the rebuild would erase forward rules
         # NFTBan did not create (srv1-class Docker hosts). Nothing has changed yet.
-        if ! nftban_forward_unmanaged_preflight; then
-            exit 1
+        # UPGRADE only ($1=upgrade, or install with a previous version still recorded in
+        # $2): a first install has no NFTBan forward chain to erase, and the fail-closed
+        # UNKNOWN branch would refuse every first install where nft cannot read the kernel.
+        if [ "$1" = upgrade ] || [ -n "${2:-}" ]; then
+            if ! nftban_forward_unmanaged_preflight; then
+                exit 1
+            fi
         fi
         ;;
 esac
