@@ -755,7 +755,7 @@ nftban_cmd_port() {
             echo ""
 
             # Apply removal to nftables via IPC (if firewall is active)
-            # Delete from ALL protocol/direction combinations since config removal is global
+            # v1.235 audit H6: delete only the proto/direction pairs the removed lines held (see below)
             if nft list table "${NFTBAN_TABLE_IPV4}" >/dev/null 2>&1; then
                 echo "⚡ Applying removal to firewall via IPC..."
 
