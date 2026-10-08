@@ -163,7 +163,7 @@ if [[ -n "${BOTSCAN_LOG_PATHS:-}" ]]; then
 fi
 
 declare -A seen=()
-count=0 collected=0 skipped=0
+count=0 collected=0 skipped=0 tail_skipped_bytes=0
 for g in "${globs[@]}"; do
     while IFS= read -r f; do
         [[ -f "$f" ]] || continue
@@ -197,7 +197,15 @@ for g in "${globs[@]}"; do
         # stdout goes — so this changes MEMORY only, not cursor/rotation/crash semantics.
         spf="$SPOOL_DIR/$(printf '%s' "$canon" | tr '/' '_')"
         _bsz="$(stat -c %s "$spf" 2>/dev/null || echo 0)"
+        # v1.235: the reader's stderr is discarded here, so the tail-skip it reports (part a) is
+        # read from its exported counter in THIS shell and written to the audit channel.
+        _ts0="${NFTBAN_HTTP_TAIL_SKIPPED_BYTES:-0}"
         if ! nftban_http_read_incremental "$canon" 2>/dev/null >> "$spf"; then audit "spool-write-failed: $spf"; continue; fi
+        _ts1="${NFTBAN_HTTP_TAIL_SKIPPED_BYTES:-0}"
+        if (( _ts1 > _ts0 )); then
+            audit "tail-skip: $canon $(( _ts1 - _ts0 ))B (records in that range not read; not recovered)"
+            tail_skipped_bytes=$(( tail_skipped_bytes + _ts1 - _ts0 ))
+        fi
         sz="$(stat -c %s "$spf" 2>/dev/null || echo 0)"
         # No NEW bytes appended this cycle → nothing collected (mirrors the old `[[ -z "$new" ]]`).
         [[ "$sz" -le "$_bsz" ]] && continue
@@ -229,5 +237,5 @@ if mkdir -p "${SPOOL_STATUS_FILE%/*}" 2>/dev/null; then
     } > "${SPOOL_STATUS_FILE}.tmp" 2>/dev/null && mv -f "${SPOOL_STATUS_FILE}.tmp" "$SPOOL_STATUS_FILE" 2>/dev/null || true
 fi
 
-audit "panel=${panel:-none} sources=$count collected=$collected skipped=$skipped backpressure=$backpressure spool_bytes=${_post_total:-0} spool=$SPOOL_DIR"
+audit "panel=${panel:-none} sources=$count collected=$collected skipped=$skipped backpressure=$backpressure spool_bytes=${_post_total:-0} tail_skipped_bytes=$tail_skipped_bytes spool=$SPOOL_DIR"
 exit 0

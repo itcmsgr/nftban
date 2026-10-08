@@ -429,12 +429,21 @@ nftban_http_classify_candidates() {
 
 # Canonical cursor key for a subject. Path-independent when a namespace is set.
 nftban_http_cursor_key() {
-    local file="$1"
+    local file="$1" key
     if [[ -n "${NFTBAN_HTTP_CURSOR_NS:-}" ]]; then
-        printf '%s%s' "${NFTBAN_HTTP_CURSOR_NS}" "$(basename -- "$file")"
+        key="${NFTBAN_HTTP_CURSOR_NS}$(basename -- "$file")"
     else
-        printf '%s' "$file" | tr '/' '_'
+        key="$(printf '%s' "$file" | tr '/' '_')"
     fi
+    # v1.235 (BUG-HTTP-READ-INCREMENTAL-…-KEY-COLLISION, part c1): the key is a FILE NAME
+    # (plus .tmp/.rd/.skip suffixes). A key longer than NAME_MAX (255) can never be written,
+    # so its cursor never persisted and the object was re-read every cycle. Keys over 200
+    # bytes become a deterministic truncated prefix + a hash of the full path. Only keys that
+    # could never persist change: no existing cursor is orphaned, no migration.
+    if (( ${#key} > 200 )); then
+        key="${key:0:150}~$(printf '%s' "$file" | sha256sum | cut -c1-40)"
+    fi
+    printf '%s' "$key"
 }
 
 # Legacy cursor keys that may hold this subject's pre-migration state.
@@ -728,8 +737,16 @@ nftban_http_read_incremental() {
     local file="$1"
     [[ -f "$file" && -r "$file" ]] || return 0
     local size inode key statefile prev_off prev_ino start
-    size="$(stat -c %s "$file" 2>/dev/null || echo 0)"
-    inode="$(stat -c %i "$file" 2>/dev/null || echo 0)"
+    # v1.235 (BUG-HTTP-READ-INCREMENTAL-STAT-FAILURE-PERSISTS-0-0…, part b): a stat failure
+    # used to become size=0 inode=0, persisted as "0:0", so the next cycle saw an inode change
+    # and re-read the object from the beginning (forward: replay) or jumped to its tail
+    # (collector). Now nothing is read and the cursor is NOT touched; the return code stays 0
+    # (the existing "unreadable -> success, zero output" contract every consumer relies on).
+    if ! size="$(stat -c %s "$file" 2>/dev/null)" || ! inode="$(stat -c %i "$file" 2>/dev/null)" \
+       || [[ ! "$size" =~ ^[0-9]+$ || ! "$inode" =~ ^[0-9]+$ ]]; then
+        echo "[http-logs] stat failed for ${file}; cursor left unchanged, nothing read this cycle" >&2
+        return 0
+    fi
     # v1.229.10: identity comes from the SHARED resolver so the reader and the
     # BotScan reaper can never drift into two separate cursor authorities again.
     key="$(nftban_http_cursor_key "$file")"
@@ -807,7 +824,24 @@ nftban_http_read_incremental() {
     else
         # Default (tail-biased): read the newest MAX_BYTES if the gap is huge; offset → size.
         if [[ $((size - start)) -gt ${NFTBAN_HTTP_LOG_MAX_BYTES} ]]; then
-            start=$((size - NFTBAN_HTTP_LOG_MAX_BYTES))
+            # v1.235 (BUG-HTTP-READ-INCREMENTAL-…, part a): `size - MAX` lands MID-RECORD, so the
+            # first emitted "line" was a fragment parsed as a record (a false observation, the
+            # 2628d8aa class), and the jumped range vanished silently. Start at the next RECORD
+            # start instead, with the existing record-boundary helper (2628d8aa): scanning from
+            # tail-1 returns tail itself when byte[tail-1] is a newline (already a record start,
+            # nothing more dropped), else the position after the next newline. The skipped
+            # range is counted and reported. This prevents false observations from cut lines
+            # and makes the loss VISIBLE; it does NOT recover the skipped records and is NOT a
+            # backlog fix.
+            local _tail _aligned _skipped
+            _tail=$(( size - NFTBAN_HTTP_LOG_MAX_BYTES ))
+            _aligned="$(_nftban_http_skip_oversized "$file" "$(( _tail - 1 ))" "$size" \
+                        "${NFTBAN_HTTP_LOG_MAX_BYTES}" "${statefile}.skip")"
+            [[ "$_aligned" =~ ^[0-9]+$ && "$_aligned" -ge "$_tail" ]] || _aligned="$size"
+            _skipped=$(( _aligned - start ))
+            export NFTBAN_HTTP_TAIL_SKIPPED_BYTES=$(( ${NFTBAN_HTTP_TAIL_SKIPPED_BYTES:-0} + _skipped ))
+            echo "[http-logs] tail read skipped ${_skipped} B of backlog in ${file} (cursor ${start} -> record start ${_aligned}); records in that range are NOT read" >&2
+            start="$_aligned"
         fi
         if [[ "$size" -gt "$start" ]]; then
             # P0-A: identical pipeline SHAPE as the forward branch, so identical
