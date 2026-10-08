@@ -472,8 +472,16 @@ for _f in "$_post" "$_spec"; do
     _rl=$(grep -n -m1 'nftban firewall reload --quiet' "$_f" | cut -d: -f1 || true)
     _gate=$(grep -n -m1 '_nftban_switch=.*service_control.sh.*nftban_is_enabled' "$_f" | cut -d: -f1 || true)
     _off=$(grep -n -m1 '_nftban_switch" = "off" \]; then' "$_f" | cut -d: -f1 || true)
-    [[ -n "$_rl" && -n "$_gate" && -n "$_off" && "$_gate" -lt "$_off" && "$_off" -lt "$_rl" && $((_rl - _gate)) -le 10 ]] \
-        || { _h3=1; echo "      $_f: reload line=${_rl:-?} switch read=${_gate:-none} off-branch=${_off:-none}"; }
+    # The reload must sit in the SAME if/elif chain as the off-branch: no "fi" at the chain's
+    # indentation between the off-branch and the reload (K2-c added branches; a line-count window
+    # was only a proxy for this).
+    _chainfi=""
+    if [[ -n "$_rl" && -n "$_off" ]]; then
+        _ind=$(sed -n "${_off}p" "$_f" | sed -E 's/^([[:space:]]*).*/\1/')
+        _chainfi=$(sed -n "$((_off + 1)),$((_rl - 1))p" "$_f" | grep -n -x -m1 -- "${_ind}fi" || true)
+    fi
+    [[ -n "$_rl" && -n "$_gate" && -n "$_off" && "$_gate" -lt "$_off" && "$_off" -lt "$_rl" && $((_off - _gate)) -le 2 && -z "$_chainfi" ]] \
+        || { _h3=1; echo "      $_f: reload line=${_rl:-?} switch read=${_gate:-none} off-branch=${_off:-none} chain closed before reload=${_chainfi:-no}"; }
 done
 if [[ $_h3 -eq 0 ]]; then ok "E6 DEB postinst and RPM %post upgrade reload are skipped while NFTBan is disabled (shared reader nftban_is_enabled)"
 else ko "E6 upgrade reload not gated by the master switch"; fi
@@ -569,12 +577,14 @@ else
         _e14n=$((_e14n+1))
         fresh; mkdir -p "$SB/log" "$SB/cache"
         printf 'NFTBAN_ENABLED=%s\n' "$_k2in" > "$SB/etc/conf.d/services.conf"
-        case "$_k2want" in on) _jw=true; _tw="ENABLED" ;; off) _jw=false; _tw="DISABLED (config)" ;; *) _jw=null; _tw="INVALID (" ;; esac
+        # INVALID must name the EXACT declared value (the empty one included) and the file.
+        case "$_k2want" in on) _jw=true; _tw="ENABLED" ;; off) _jw=false; _tw="DISABLED (config)" ;;
+            *) _jw=null; _tw="INVALID (NFTBAN_ENABLED=${_k2in} in $SB/etc/conf.d/services.conf: set it to true or false)" ;; esac
         st_run _status_section_firewall > "$SB/e14.txt" || true   # file, not a pipe (EPIPE gate)
         _txt=$(grep -m1 'Master Control' "$SB/e14.txt" || true)
         [[ "$_txt" == *"Master Control...... $_tw"* ]] || _e14bad+=" text[$_k2in]='${_txt##*......}'(want $_tw)"
         st_run output_json > "$SB/e14.json" || true
-        jq -e --argjson w "$_jw" '.master_enabled == $w and (.master_switch | type == "string")' "$SB/e14.json" >/dev/null 2>&1 \
+        jq -e --argjson w "$_jw" --arg t "$_tw" '.master_enabled == $w and (.master_switch | type == "string") and ($w != null or .master_switch == $t)' "$SB/e14.json" >/dev/null 2>&1 \
             || _e14bad+=" json[$_k2in]=$(jq -c '.master_enabled' "$SB/e14.json" 2>/dev/null || echo PARSE-ERROR)(want $_jw)"
     done < "$_k2tbl"
     if [[ $_e14n -ge 30 && -z "$_e14bad" ]]; then ok "E14 nftban status text + --json follow the shared table for all $_e14n cases (JSON parses; true/false/null)"
@@ -587,7 +597,8 @@ else
     printf 'NFTBAN_ENABLED=true\n' > "$SB/etc/conf.d/services.conf"; mkdir -p "$SB/etc/conf.d/services.conf.local"
     _e15=""
     rc=0; svc 'nftban_master_switch_state; nftban_master_switch_on; echo "rc=$?"' || rc=$?
-    head -1 "$SB/svc.out" | grep -q "^unknown"$'\t\t'"$SB/etc/conf.d/services.conf.local\$" || _e15+=" state='$(head -1 "$SB/svc.out")'"
+    _l=""; IFS= read -r _l < "$SB/svc.out" || true   # no pipe (EPIPE gate)
+    [[ "$_l" == "unknown"$'\t\t'"$SB/etc/conf.d/services.conf.local" ]] || _e15+=" state='$_l'"
     rc=0; svc 'nftban_master_switch_on || echo "rc=$?"' || rc=$?
     has "$SB/svc.out" "rc=2" || _e15+=" switch_on-rc-not-2"
     st_run _status_section_firewall > "$SB/e15.txt" || true

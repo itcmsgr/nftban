@@ -955,7 +955,7 @@ _status_section_firewall() {
 
     # v1.235 audit K2-a: the switch itself is decided by the ONE NFTBAN_ENABLED contract
     # (lib/service_control.sh nftban_master_switch_state), never by the raw sourced value.
-    local master_status="ENABLED" _sw="" _swraw="" _swfile=""
+    local master_status="ENABLED" _sw=""
     declare -F nftban_master_switch_state >/dev/null 2>&1 \
         || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" >/dev/null 2>&1 || true
     if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
@@ -963,7 +963,7 @@ _status_section_firewall() {
     elif ! declare -F nftban_master_switch_state >/dev/null 2>&1; then
         master_status="UNKNOWN (stored choice not read)"
     else
-        IFS=$'\t' read -r _sw _swraw _swfile <<<"$(nftban_master_switch_state)"
+        _sw="$(nftban_master_switch_state)"; _sw="${_sw%%$'\t'*}"
         case "$_sw" in
             on)  master_status="ENABLED" ;;
             off) master_status="DISABLED (config)" ;;
@@ -2513,13 +2513,13 @@ output_json() {
     # switch contract every acting reader uses (services.conf, then services.conf.local; the central
     # nftban.conf.local is not a switch source anywhere). The JSON value is always true/false/null (an
     # unquoted raw value broke --json, even for valid words such as "on"); INVALID is null + text.
-    local _sw="" _swraw="" _swfile="" _mjson="null" _mdesc="unknown"
+    local _sw="" _mjson="null" _mdesc="unknown"
     declare -F nftban_master_switch_state >/dev/null 2>&1 \
         || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" >/dev/null 2>&1 || true
     if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
         _mjson="false"; _mdesc="disabled (kernel nftban=disabled)"
     elif declare -F nftban_master_switch_state >/dev/null 2>&1; then
-        IFS=$'\t' read -r _sw _swraw _swfile <<<"$(nftban_master_switch_state)"
+        _sw="$(nftban_master_switch_state)"; _sw="${_sw%%$'\t'*}"
         case "$_sw" in
             on)  _mjson="true";  _mdesc="enabled" ;;
             off) _mjson="false"; _mdesc="disabled" ;;

@@ -137,8 +137,11 @@ nftban_master_switch_on() {
 # with its fix: "INVALID (NFTBAN_ENABLED=<value> in <file>: set it to true or false)" or
 # "UNKNOWN (<file> exists but could not be read: make it a readable file)".
 nftban_master_switch_invalid_text() {
-    local st raw file
-    IFS=$'\t' read -r st raw file <<<"$(nftban_master_switch_state)"
+    # Split on the TABs by expansion: `read` with IFS=$'\t' merges adjacent tabs (tab is IFS
+    # whitespace), which loses an EMPTY value field ("invalid<TAB><TAB><file>", "unknown...").
+    local s st raw file
+    s="$(nftban_master_switch_state)"
+    st="${s%%$'\t'*}"; s="${s#*$'\t'}"; raw="${s%%$'\t'*}"; file="${s#*$'\t'}"
     case "$st" in
         invalid) printf 'INVALID (NFTBAN_ENABLED=%s in %s: set it to true or false)\n' "$raw" "$file" ;;
         unknown) printf 'UNKNOWN (%s exists but could not be read: make it a readable file)\n' "$file" ;;
