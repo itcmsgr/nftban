@@ -44,6 +44,11 @@ trap 'rm -rf "$_HI"' EXIT
 export NFTBAN_CONFIG_DIR="$_HI/etc" NFTBAN_DATA_DIR="$_HI/data" NFTBAN_LOG_DIR="$_HI/log" \
        NFTBAN_CACHE_DIR="$_HI/cache" NFTBAN_RUN_DIR="$_HI/run" NFTBAN_STATE_DIR="$_HI/data/state"
 mkdir -p "$NFTBAN_CONFIG_DIR" "$NFTBAN_DATA_DIR/state" "$NFTBAN_LOG_DIR" "$NFTBAN_CACHE_DIR" "$NFTBAN_RUN_DIR"
+# The SUBJECT's own libraries, never the host's (audit I23, 2026-10-08): without this, nftban_ddos.sh
+# and nftban_portscan.sh loaded module_txn.sh from /usr/lib/nftban (default NFTBAN_LIB_DIR). On an
+# installed lab host that ran the INSTALLED code; on the CI runner nothing loaded, no transaction
+# committed, and the generation arm below failed.
+export NFTBAN_LIB_DIR="$ROOT/cli/lib/nftban"
 # Host guard: the HOST config paths this test once wrote must be unchanged at the end
 # (logs/state/cache are rewritten by a live product, so those are checked in the sandbox).
 _hg_state(){ local p; for p in "$@"; do if [[ ! -e "$p" ]]; then echo "$p ABSENT"; elif [[ -r "$p" ]]; then echo "$p $(sha256sum < "$p" | cut -c1-16) $(stat -c %Y "$p")"; else echo "$p UNREADABLE $(stat -c %Y "$p" 2>/dev/null)"; fi; done; }
