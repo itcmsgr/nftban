@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-06"
-# meta:description="BEHAVIORAL regression for v1.235 row 486 (contract NFTBAN_ROADMAP/CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md sections 2-3). Drives the REAL install/helpers/nftban-boot-early.sh (bypass / bypass-guard / normal modes), the REAL lib/boot_projection.sh state reader and inert body, and the REAL lib/service_control.sh nftban_disable_all / nftban_enable_all with stubbed systemctl, nft, nftban, mount, restorecon and ss on PATH in a sandbox. Asserts: the bypass makes the projection inert before nftables.service by bind mount, rename-swap or create, and the backstop deletes ONLY ip/ip6 nftban and reports it as a divergence; a disabled NFTBan never loads at boot (normal mode); disable writes the unit record once, does not stop nftban-firewall-init.service (its ExecStop deletes the tables; C7b, audit H5), never touches nftables.service or suricata.service, never unmasks, keeps the boot guards armed, publishes the inert projection and with --flush-rules DELETES (never flush-only) only the NFTBan tables; enable switches the stored choice ON before the rebuild, never enables nftables.service, keeps operator choices (module switched off, core unit recorded disabled, masked unit), forces no GeoIP setting, never calls `nftban login enable`, refuses under the bypass and under a failed commit-confirm rollback while enabled, and clears that state when NFTBan was disabled for recovery. Static census: every NFTBan unit carries both the bypass and the failed-rollback conditions; the early units add no ordering to nftables.service; every firewall dispatcher verb that loads or replaces rules (aliases included) calls both guards (E5, audit H4); the upgrade scriptlet reload is gated by the master switch (E6, audit H3); both scriptlet switch lines are executed for on / off / unreadable (E7)."
+# meta:description="BEHAVIORAL regression for v1.235 row 486 (contract NFTBAN_ROADMAP/CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md sections 2-3). Drives the REAL install/helpers/nftban-boot-early.sh (bypass / bypass-guard / normal modes), the REAL lib/boot_projection.sh state reader and inert body, and the REAL lib/service_control.sh nftban_disable_all / nftban_enable_all with stubbed systemctl, nft, nftban, mount, restorecon and ss on PATH in a sandbox. Asserts: the bypass makes the projection inert before nftables.service by bind mount, rename-swap or create, and the backstop deletes ONLY ip/ip6 nftban and reports it as a divergence; a disabled NFTBan never loads at boot (normal mode); disable writes the unit record once, does not stop nftban-firewall-init.service (its ExecStop deletes the tables; C7b, audit H5), never touches nftables.service or suricata.service, never unmasks, keeps the boot guards armed, publishes the inert projection and with --flush-rules DELETES (never flush-only) only the NFTBan tables; enable switches the stored choice ON before the rebuild, never enables nftables.service, keeps operator choices (module switched off, core unit recorded disabled, masked unit), forces no GeoIP setting, never calls `nftban login enable`, refuses under the bypass and under a failed commit-confirm rollback while enabled, and clears that state when NFTBan was disabled for recovery. Static census: every NFTBan unit carries both the bypass and the failed-rollback conditions; the early units add no ordering to nftables.service; every firewall dispatcher verb that loads or replaces rules (aliases included) calls both guards (E5, audit H4); the upgrade scriptlet reload is gated by the master switch (E6, audit H3); both scriptlet switch lines are executed for on / off / unreadable (E7); no operator text advises `nft flush ruleset` (E8, audit K14)."
 # meta:input="None (self-contained sandbox; stubbed system tools)"
 # meta:output="Pass/fail assertions on stdout; exit 0 on all-pass"
 # meta:depends="bash,awk,grep,sed,mktemp,cmp"
@@ -96,6 +96,11 @@ echo "nftban $*" >> "$SBX/calls.log"
 if [[ "$*" == "firewall rebuild"* ]]; then
     v=$(sed -n 's/^NFTBAN_ENABLED=//p' "$SBX/etc/conf.d/services.conf.local" 2>/dev/null)
     echo "rebuild-saw-switch ${v//\"/}" >> "$SBX/calls.log"
+fi
+# K5 arm: a render-boot refused by the D10 guard (as the real dispatcher does).
+if [[ "$*" == "firewall render-boot"* && -e "$SBX/refuse_render" ]]; then
+    echo "REFUSED: firewall render-boot: a commit-confirm rollback FAILED (D10 hold)" >&2
+    exit 1
 fi
 exit 0
 EOF
@@ -299,6 +304,15 @@ svc_root 'nftban_disable_all' || true
 if cmp -s "$rec" "$SB/rec.first"; then ok "C8 repeated disable never overwrites the original record"
 else ko "C8 record overwritten"; fi
 
+# C5b (audit K5, 2026-10-08): when the inert publish is refused (D10 hold), disable must SAY WHY;
+# the refusal was hidden (2>/dev/null) and only a generic warning remained.
+fresh; printf '%s\n' "$UNITS_BASE" > "$SB/units"; : > "$SB/active"; : > "$SB/refuse_render"
+rc=0; svc_root 'nftban_disable_all' || rc=$?
+if [[ $rc -ne 0 ]] && has "$SB/svc.out" "could NOT be published" && has "$SB/svc.out" "cause: REFUSED: firewall render-boot: a commit-confirm rollback FAILED (D10 hold)"; then
+    ok "C5b refused inert publish: disable reports the refusal's cause (rc != 0)"
+else ko "C5b refused inert publish (rc=$rc cause shown=$(has "$SB/svc.out" "cause: REFUSED" && echo y || echo n))"; fi
+rm -f "$SB/refuse_render"
+
 # C7b (audit H5, 2026-10-08): the stub `systemctl stop` runs no ExecStop, so C7 cannot see that a
 # real stop of nftban-firewall-init.service runs its ExecStop, which DELETES ip/ip6 nftban at once.
 # A plain disable must therefore not stop that unit (it is disabled: not started at the next boot).
@@ -458,6 +472,13 @@ for _src in deb rpm; do
 done
 if [[ $_e7_ok -eq 1 ]]; then ok "E7 both scriptlet switch lines EXECUTED: stored on -> on; disable's .local override -> off; unloadable reader -> unread (not 'disabled')"
 else ko "E7 scriptlet switch decision"; fi
+
+# E8 (audit K14, 2026-10-08): no shipped operator text ADVISES `nft flush ruleset` (it deletes
+# every table, Docker's included). Lines that warn against it (NOT / never / do not) are allowed.
+_k14=$(grep -rnE '(echo|printf).*nft flush ruleset' "$LIBDIR" --include='*.sh' 2>/dev/null \
+       | grep -v '/tests/' | grep -viE 'NOT|never|do not|don.t' || true)
+if [[ -z "$_k14" ]]; then ok "E8 no operator text advises 'nft flush ruleset'"
+else ko "E8 operator text advises 'nft flush ruleset': ${_k14:0:300}"; fi
 
 echo ""
 echo "TOTAL: pass=$pass fail=$fail"

@@ -113,7 +113,7 @@ nftban_lifecycle_collect() {
 
     # --- commit-confirm (contract §4/§6) --------------------------------------------------
     local cs="${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/commit-confirm.state" c_id="" c_dl="" c_st="" c_at="" now rem
-    LF_CC_STATUS=""; LF_CC_CONFLICTS=""
+    LF_CC_STATUS=""; LF_CC_CONFLICTS=""; LF_CC_KERNEL=""
     # Applied baseline: rebuild --confirm needs a recorded last-known-good.
     local am="${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/applied/meta" a_at=""
     if [[ ! -e "$am" ]]; then
@@ -137,6 +137,9 @@ nftban_lifecycle_collect() {
         local c_cf=""
         c_cf="$(grep -m1 -E '^conflicts=' "$cs" 2>/dev/null || true)"; c_cf="${c_cf#conflicts=}"
         LF_CC_CONFLICTS="$c_cf"
+        local c_k=""
+        c_k="$(grep -m1 -E '^kernel=' "$cs" 2>/dev/null || true)"; c_k="${c_k#kernel=}"
+        LF_CC_KERNEL="$c_k"
         case "$c_st" in
             pending)
                 if [[ "$c_dl" =~ ^[0-9]+$ ]]; then
@@ -211,8 +214,10 @@ nftban_lifecycle_collect() {
     fi
 
     # --- named mismatches ---------------------------------------------------------------
-    [[ "$LF_CC_STATUS" == rollback-failed ]] && LF_NOTES+=("DIVERGENCE: ROLLBACK FAILED: NFTBan rules removed, host NOT protected by NFTBan")
-    [[ -n "$LF_CC_CONFLICTS" ]] && LF_NOTES+=("EXPECTED: the rollback left file(s) edited again after the apply untouched: ${LF_CC_CONFLICTS}")
+    # v1.235 audit K6: D10 KEEPS the kernel state (owner); report the recorded kernel fact, never
+    # "rules removed". Unrestored conflicts mean the rollback is INCOMPLETE: a divergence.
+    [[ "$LF_CC_STATUS" == rollback-failed ]] && LF_NOTES+=("DIVERGENCE: ROLLBACK FAILED (D10 hold): NFTBan writers are held until the operator retries the rollback or abandons it; kernel: ${LF_CC_KERNEL:-UNKNOWN (not recorded)}")
+    [[ -n "$LF_CC_CONFLICTS" ]] && LF_NOTES+=("DIVERGENCE: rollback INCOMPLETE: file(s) edited again after the apply were NOT restored, left untouched: ${LF_CC_CONFLICTS}")
     [[ "$LF_CC" == UNKNOWN* ]] && LF_NOTES+=("UNKNOWN: commit-confirm record not read")
     if [[ "$LF_BYPASS" == DEGRADED* ]]; then
         LF_NOTES+=("DIVERGENCE: emergency bypass DEGRADED: ${LF_BYPASS#DEGRADED (}")

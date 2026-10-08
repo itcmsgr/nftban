@@ -2273,7 +2273,13 @@ _check_nft_collisions() {
             [[ "$json_mode" == "false" ]] && echo "       $line" || true
         done
         [[ "$json_mode" == "false" ]] && echo ""
-        [[ "$json_mode" == "false" ]] && echo "       Fix: nft flush ruleset && nftban firewall rebuild"
+        # v1.235 audit K14: never advise `nft flush ruleset` (it deletes EVERY table, Docker's and
+        # other managers' included; see the same warning in the rebuild path).
+        if [[ "$json_mode" == "false" ]]; then
+            echo "       Fix: find the owner of each table above (nft list table <family> <name>) and reconcile it"
+            echo "            with its manager; CSF/iptables/firewalld: nftban firewall takeover (reversible)."
+            echo "            Then: nftban firewall rebuild. Do NOT run 'nft flush ruleset': it deletes every table."
+        fi
         return 1
     else
         [[ "$json_mode" == "false" ]] && echo "[OK] NFTables hooks: No conflicting input hooks"
