@@ -414,8 +414,8 @@ else ko "E5 rule-loading verbs WITHOUT both guards: ${_unguarded:-none} (loader 
 _post="$REPO_ROOT/packaging/deb/postinst"; _spec="$REPO_ROOT/packaging/build_nftban.sh"
 _h3=0
 for _f in "$_post" "$_spec"; do
-    _rl=$(grep -n 'nftban firewall reload --quiet' "$_f" | head -1 | cut -d: -f1)
-    _gate=$(grep -n "nftban_is_enabled' >/dev/null 2>&1; then" "$_f" | head -1 | cut -d: -f1)
+    _rl=$(grep -n -m1 'nftban firewall reload --quiet' "$_f" | cut -d: -f1)
+    _gate=$(grep -n -m1 "nftban_is_enabled' >/dev/null 2>&1; then" "$_f" | cut -d: -f1)
     [[ -n "$_rl" && -n "$_gate" && "$_gate" -lt "$_rl" && $((_rl - _gate)) -le 6 ]] || { _h3=1; echo "      $_f: reload line=${_rl:-?} switch gate=${_gate:-none}"; }
 done
 if [[ $_h3 -eq 0 ]]; then ok "E6 DEB postinst and RPM %post upgrade reload are skipped while NFTBan is disabled (shared reader nftban_is_enabled)"
