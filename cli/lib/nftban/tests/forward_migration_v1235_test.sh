@@ -137,10 +137,10 @@ cid=$(env -i PATH="$SB/bin:/usr/bin:/bin" SBX="$SB" NFTBAN_CONFIG_DIR="$SB/etc" 
 # (lib/strict.sh: IFS=$'\n\t'). The mapper splits the uplink list on whitespace; under the CLI's
 # IFS a space-separated list did not split, so the CLI and the package could print different ids.
 fresh; printf 'default via 2001:db8::1 dev eth1 proto static metric 1024\n' > "$SB/default-6"
-chain ip "${SRV1[@]}"; pre; pid2=$(plan_id); nrec=$(grep -c 'RECORD uplink|' "$SB/err" || true)
+chain ip "${SRV1[@]}"; pre; pid2=$(plan_id); nrec=$(grep -o 'RECORD uplink|[A-Za-z0-9_.:-]*' "$SB/err" | sort -u | wc -l)
 cid2=$(env -i PATH="$SB/bin:/usr/bin:/bin" SBX="$SB" NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_LIB_DIR="$LIBDIR" \
     bash -c 'source "$1/lib/strict.sh" >/dev/null 2>&1; source "$1/lib/nftban_forward.sh"; nftban_forward_migrate' _ "$LIBDIR" 2>/dev/null | sed -n 's/^Migration plan \([0-9a-f]\{12\}\) .*/\1/p' | sed -n 1p)
-[[ "$nrec" -eq 2 && -n "$pid2" && "$cid2" == "$pid2" ]] && ok "M10b two uplinks: the package records both, and the CLI under strict.sh prints the SAME plan id ($pid2)" \
+[[ "$nrec" -eq 2 && -n "$pid2" && "$cid2" == "$pid2" ]] && ok "M10b two uplinks: the package records both distinct uplinks, and the CLI under strict.sh prints the SAME plan id ($pid2)" \
     || no "M10b two uplinks" "package uplink records=$nrec cli=$cid2 pkg=$pid2"
 
 echo ""
