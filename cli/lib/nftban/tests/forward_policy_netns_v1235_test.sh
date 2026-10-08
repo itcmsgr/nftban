@@ -166,10 +166,10 @@ unban(){ r nft delete element "$1" nftban "$2" "{ $3 }"; }
 # long <host> <src> [<family> <set> <addr>]: what reached the container ("a" or "ab"); the
 # optional element is added to the set after the flow is established, before the second byte.
 long(){
-    local host="$1" src="$2" flag="$WORK/flag.$RANDOM" out="$WORK/long.$RANDOM" port i lp
+    local host="$1" src="$2" flag="$WORK/flag.$RANDOM" out="$WORK/long.$RANDOM" port lp
     c python3 "$WORK/t.py" long "$host" 8080 "$src" "$flag" > "$out" &
     lp=$!
-    for i in $(seq 1 30); do [[ -s "$out" ]] && break; sleep 0.1; done
+    for _ in $(seq 1 30); do [[ -s "$out" ]] && break; sleep 0.1; done
     port="$(cat "$out" 2>/dev/null || true)"
     [[ "$port" =~ ^[0-9]+$ ]] || { kill "$lp" 2>/dev/null || true; echo "NOCONN"; return 0; }
     if [[ $# -eq 5 ]]; then ban "$3" "$4" "$5"; fi
