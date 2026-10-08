@@ -209,9 +209,15 @@ echo "--- behavioral: logrotate -d parses each rendered config (host-sanitized) 
 # PARSE check validates config STRUCTURE independent of whether the nftban /
 # suricata users exist on the test host. Ownership correctness is covered by the
 # static asserts above + the lab-VM fresh-install validation.
+# The log ROOT is rebased into the sandbox for the same reason: on an installed host
+# /var/log/nftban is nftban:nftban 0750, and logrotate 3.21 run by a caller that cannot read
+# it reports "cannot allocate memory [readConfigFile():1844]" for any stanza listing two or
+# more globs there (bisected on lab2 2026-10-08: same globs in a readable dir, one glob, or
+# root -> no error). That measured the host's directory modes, not this config.
 sanitize() {
-    sed -E 's/(create[[:space:]]+[0-9]+)[[:space:]]+[A-Za-z0-9_-]+[[:space:]]+[A-Za-z0-9_-]+/\1/; /^[[:space:]]*su[[:space:]]+[A-Za-z0-9_-]+[[:space:]]+[A-Za-z0-9_-]+[[:space:]]*$/d; s/(createolddir[[:space:]]+[0-9]+)[[:space:]]+[A-Za-z0-9_-]+[[:space:]]+[A-Za-z0-9_-]+/\1/' "$1"
+    sed -E -e "s#/var/log/nftban#$SANDBOX/log/nftban#g" -e 's/(create[[:space:]]+[0-9]+)[[:space:]]+[A-Za-z0-9_-]+[[:space:]]+[A-Za-z0-9_-]+/\1/; /^[[:space:]]*su[[:space:]]+[A-Za-z0-9_-]+[[:space:]]+[A-Za-z0-9_-]+[[:space:]]*$/d; s/(createolddir[[:space:]]+[0-9]+)[[:space:]]+[A-Za-z0-9_-]+[[:space:]]+[A-Za-z0-9_-]+/\1/' "$1"
 }
+mkdir -p "$SANDBOX/log/nftban"
 if command -v logrotate >/dev/null 2>&1; then
     for cfg in "$LR_MAIN" "$LR_SURI"; do
         name=$(basename "$cfg")
