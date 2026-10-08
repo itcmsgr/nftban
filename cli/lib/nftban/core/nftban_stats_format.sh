@@ -478,9 +478,11 @@ nftban_stats_generate_dashboard() {
     # FIREWALL COUNTERS (nftables packet/byte counters since last reboot)
     # ─────────────────────────────────────────────────────────────────────
     local ipv4_pkt_count ipv6_pkt_count
-    ipv4_pkt_count=$(nft list table "${NFTBAN_TABLE_IPV4}" 2>/dev/null | grep 'blacklist_ipv4.*counter' | grep -oP 'packets \K[0-9]+' || true)
+    # v1.235: the forward chain's ban rules (comment "nftban:fwd:") carry their own anonymous
+    # counters; they are not this input-side figure and are excluded so it does not change meaning.
+    ipv4_pkt_count=$(nft list table "${NFTBAN_TABLE_IPV4}" 2>/dev/null | grep 'blacklist_ipv4.*counter' | grep -v 'nftban:fwd:' | grep -oP 'packets \K[0-9]+' || true)
     ipv4_pkt_count=${ipv4_pkt_count:-0}
-    ipv6_pkt_count=$(nft list table "${NFTBAN_TABLE_IPV6}" 2>/dev/null | grep 'blacklist_ipv6.*counter' | grep -oP 'packets \K[0-9]+' || true)
+    ipv6_pkt_count=$(nft list table "${NFTBAN_TABLE_IPV6}" 2>/dev/null | grep 'blacklist_ipv6.*counter' | grep -v 'nftban:fwd:' | grep -oP 'packets \K[0-9]+' || true)
     ipv6_pkt_count=${ipv6_pkt_count:-0}
     local total_pkt_blocked=$((ipv4_pkt_count + ipv6_pkt_count))
 

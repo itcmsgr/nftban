@@ -51,9 +51,13 @@ no(){ echo "FAIL $1 ${2:-}"; F=$((F+1)); }
 check_order() {
     local f="$1" label="$2"
     local -a lo inv
-    # RULE lines only — exclude comment/doc-table lines (LINENUM:<spaces>#…).
-    mapfile -t lo  < <(grep -nE 'iif "?lo"?[^,]*accept' "$f" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -oE '^[0-9]+')
-    mapfile -t inv < <(grep -nE 'ct state invalid[^,]*drop' "$f" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -oE '^[0-9]+')
+    # RULE lines only — exclude comment/doc-table lines (LINENUM:<spaces>#…) — and only
+    # INSIDE the input chains: v1.235 added a forward chain with its own invalid drop
+    # (nftban:fwd:invalid), which is not an input rule and has no loopback rule to precede.
+    local inchain
+    inchain="$(awk '/^[[:space:]]*chain input \{/{c=1} c{print NR":"$0} c&&/^[[:space:]]{4}\}/{c=0}' "$f")"
+    mapfile -t lo  < <(grep -E '^[0-9]+:.*iif "?lo"?[^,]*accept' <<<"$inchain" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -oE '^[0-9]+')
+    mapfile -t inv < <(grep -E '^[0-9]+:.*ct state invalid[^,]*drop' <<<"$inchain" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -oE '^[0-9]+')
     if [[ ${#lo[@]} -lt 2 || ${#inv[@]} -lt 2 ]]; then
         no "$label: expected 2 input-chain loopback+invalid rules (found lo=${#lo[@]} inv=${#inv[@]})"; return
     fi
