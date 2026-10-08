@@ -48,10 +48,13 @@ for b in nft ip python3; do command -v "$b" >/dev/null 2>&1 || ne "$b not availa
 
 T="fp$$"; NC="${T}c"; NR="${T}r"; NK="${T}k"
 WORK="$(mktemp -d)"
-PIDS=()
 cleanup(){
-    local p
-    for p in "${PIDS[@]:-}"; do [[ -n "$p" ]] && kill "$p" 2>/dev/null || true; done
+    local n p
+    # Every process started inside a test namespace is ended by namespace, not by a shell PID
+    # (a backgrounded function's $! is its subshell, not the server it runs).
+    for n in "$NC" "$NR" "$NK"; do
+        for p in $(ip netns pids "$n" 2>/dev/null); do kill "$p" 2>/dev/null || true; done
+    done
     ip netns del "$NC" 2>/dev/null || true; ip netns del "$NR" 2>/dev/null || true; ip netns del "$NK" 2>/dev/null || true
     rm -rf "$WORK"
 }
@@ -154,8 +157,8 @@ elif mode == "long":                   # long <host> <port> <src> <flag>: "a", w
         pass
     time.sleep(3); s.close()
 EOF
-k python3 "$WORK/t.py" serve "$WORK/log" 80 81 & PIDS+=("$!")
-c python3 "$WORK/t.py" serve "$WORK/log" 9000 & PIDS+=("$!")
+k python3 "$WORK/t.py" serve "$WORK/log" 80 81 >/dev/null 2>&1 &
+c python3 "$WORK/t.py" serve "$WORK/log" 9000 >/dev/null 2>&1 &
 sleep 1
 probe(){ local ns="$1"; shift; "$ns" python3 "$WORK/t.py" probe "$@"; }
 ban(){ r nft add element "$1" nftban "$2" "{ $3 }"; }
@@ -188,8 +191,8 @@ env -i PATH="/usr/sbin:/usr/bin:/sbin:/bin" HOME="$WORK" NFTBAN_CONFIG_DIR="$WOR
     bash -c 'source "$1/cli/cmd_firewall.sh" >/dev/null 2>&1; _firewall_substitute_placeholders "$2" "$3"' _ "$LIBDIR" "$TPL" "$WORK/rules.nft" \
     2>"$WORK/render.err" || ne "render failed: $(sed -n 1p "$WORK/render.err")"
 r nft -f "$WORK/rules.nft" 2>"$WORK/load.err" || ne "rendered ruleset did not load: $(sed -n 1p "$WORK/load.err")"
-fc="$(r nft list chain ip nftban forward 2>&1 || true)"
-[[ "$fc" == *"policy drop"* && "$fc" == *'"docker0"'* ]] || ne "forward chain/sets not as rendered after load"
+fc="$(r nft list chain ip nftban forward 2>&1 || true)"; fs="$(r nft list set ip6 nftban fwd_egress_ifaces 2>&1 || true)"
+[[ "$fc" == *"policy drop"* && "$fs" == *'"docker0"'* ]] || ne "forward chain/sets not as rendered after load"
 
 for fam in 4 6; do
     if [[ $fam == 4 ]]; then RT=198.51.100.1; CL=198.51.100.2; CL2=198.51.100.3; CT=172.17.0.2; F=ip; S=ipv4
