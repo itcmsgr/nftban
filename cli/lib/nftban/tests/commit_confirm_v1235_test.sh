@@ -359,6 +359,15 @@ _d31b=$(grep -c "^publish $SB/etc/generated/nftban-boot.nft$" "$SB/calls.log" ||
 if [[ "$_d31a" -ge 1 && "$_d31b" -ge 1 ]]; then ok "D31 confirm and rollback publish the boot projection through the publication authority"
 else ko "D31 publication authority (confirm=$_d31a rollback=$_d31b)"; fi
 
+# D32 (audit K1-a, 2026-10-08): a baseline projection that cannot be republished during the rollback
+# is an INCOMPLETE rollback: D10 hold (status rollback-failed, marker), rc != 0 — never "rolled-back".
+fresh; stage_pending 120; ID=$(get apply_id); echo 'drifted-projection' > "$SB/etc/generated/nftban-boot.nft"; : > "$SB/calls.log"
+rc=0; cc "_firewall_publish_conf(){ echo \"publish-FAILED \$2\" >> \"\$SBX/calls.log\"; return 1; }; cc_rollback $ID --auto" || rc=$?
+if [[ $rc -ne 0 && "$(get status)" == "rollback-failed" && -e "$SB/data/state/commit-confirm.rollback-failed" ]] \
+   && has "$SB/calls.log" "publish-FAILED" && has "$SB/cc.out" "NOT republished"; then
+    ok "D32 projection republish fails during rollback -> D10 hold (rollback-failed, marker), rc != 0"
+else ko "D32 projection republish failure (rc=$rc status=$(get status) marker=$([[ -e "$SB/data/state/commit-confirm.rollback-failed" ]] && echo y || echo n))"; fi
+
 # D29 (audit H1, 2026-10-08): a PLAIN rebuild during a pending window (also enable, installer,
 # autoheal: they all reach this call) must not re-record the applied baseline, or the timed
 # rollback would "restore" the unconfirmed change. Runs the REAL cmd_firewall.sh baseline step.
