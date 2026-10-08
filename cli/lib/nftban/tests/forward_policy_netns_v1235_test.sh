@@ -61,9 +61,10 @@ cleanup(){
 trap cleanup EXIT
 # Host guard. The shape of the host ruleset (tables, chains, rules) with the live values
 # normalised away: counters, expiry timers and set element lists change every few seconds on
-# a running host, so a raw hash proves nothing. The forwarding sysctls are compared verbatim.
+# a running host (named counter objects print theirs on a line of their own), so a raw
+# hash proves nothing. The forwarding sysctls are compared verbatim.
 host_shape(){
-    nft list ruleset 2>/dev/null | sed -E 's/counter packets [0-9]+ bytes [0-9]+//g; s/ expires [0-9a-z.]+//g' \
+    nft list ruleset 2>/dev/null | sed -E 's/(counter )?packets [0-9]+ bytes [0-9]+//g; s/ expires [0-9a-z.]+//g' \
         | awk '/elements = \{/{skip=1} !skip{print} skip && /\}/{skip=0}'
 }
 host_sysctl(){ cat /proc/sys/net/ipv4/ip_forward /proc/sys/net/ipv6/conf/all/forwarding 2>/dev/null; }
@@ -234,7 +235,7 @@ done
 
 echo "--- host guard ---"
 [[ "$(host_shape)" == "$H_SHAPE0" ]] && ok "H1 host ruleset shape unchanged (counters, expiry and element lists normalised)" \
-                                     || no "H1 host ruleset shape CHANGED during the test"
+                                     || { no "H1 host ruleset shape CHANGED during the test"; diff <(printf '%s\n' "$H_SHAPE0") <(host_shape) | sed -n '1,12p' | sed 's/^/      /'; }
 [[ "$(host_sysctl)" == "$H_SYS0" ]] && ok "H2 host forwarding sysctls unchanged" || no "H2 host forwarding sysctls CHANGED"
 mapfile -t _pys < <(pgrep -f "$WORK/t.py" || true)
 cleanup
