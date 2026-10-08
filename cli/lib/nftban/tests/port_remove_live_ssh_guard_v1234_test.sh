@@ -63,7 +63,7 @@ stubs(){
     cat <<'STUBS'
 nft(){ echo "nft $*" >> "$LOG"; return 0; }
 nft_ipc_is_daemon_running(){ return 0; }
-nft_ipc_delete_port(){ echo "IPC_DELETE_PORT $*" >> "$LOG"; return 0; }
+nft_ipc_delete_port(){ echo "IPC_DELETE_PORT ${1-} ${2-} ${3-}" >> "$LOG"; return 0; }   # explicit: $* joins on IFS[0] (newline under the dispatcher)
 nft_ipc_delete_element(){ echo "IPC_DELETE_ELEMENT $*" >> "$LOG"; return 0; }
 nftban_cmd_firewall(){ echo "FIREWALL $*" >> "$LOG"; return 0; }
 # One port per line like the real detector, independent of the caller's IFS.
