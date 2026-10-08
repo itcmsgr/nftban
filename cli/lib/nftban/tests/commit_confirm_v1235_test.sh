@@ -104,7 +104,11 @@ cc(){  # snippet with the REAL engine loaded
     local rc=0
     env -i PATH="$STUB:/usr/bin:/bin" SBX="$SB" HOME="$SB" \
         NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_LIB_DIR="$LIBDIR" \
-        bash -c 'set -Eeuo pipefail; source "$1"; shift; eval "$1"' _ "$CC" "$1" > "$SB/cc.out" 2>&1 || rc=$?
+        bash -c 'set -Eeuo pipefail; source "$1"; shift
+            # The publication authority (cmd_firewall.sh _firewall_publish_conf) is loaded wherever
+            # the engine runs in the product; here it is a recording stand-in (audit K1, D31).
+            _firewall_publish_conf(){ echo "publish $2" >> "$SBX/calls.log"; mv -f "$1" "$2"; }
+            eval "$1"' _ "$CC" "$1" > "$SB/cc.out" 2>&1 || rc=$?
     return "$rc"
 }
 REC="$SB/data/state/commit-confirm.state"
@@ -343,6 +347,17 @@ if command -v python3 >/dev/null 2>&1; then
 else
     echo "  [NOT_EXECUTED] D28 listening-port arm (python3 not available)"
 fi
+
+# D31 (audit K1, 2026-10-08): confirm and rollback publish the boot projection through the ONE
+# publication authority (owner of mode, owner and SELinux type), never a bare cp+mv.
+fresh; stage_pending 120; ID=$(get apply_id); : > "$SB/calls.log"
+cc "cc_confirm $ID" >/dev/null 2>&1 || true
+_d31a=$(grep -c "^publish $SB/etc/generated/nftban-boot.nft$" "$SB/calls.log" || true)
+fresh; stage_pending 120; ID=$(get apply_id); echo 'drifted-projection' > "$SB/etc/generated/nftban-boot.nft"; : > "$SB/calls.log"
+cc "cc_rollback $ID --auto" >/dev/null 2>&1 || true
+_d31b=$(grep -c "^publish $SB/etc/generated/nftban-boot.nft$" "$SB/calls.log" || true)
+if [[ "$_d31a" -ge 1 && "$_d31b" -ge 1 ]]; then ok "D31 confirm and rollback publish the boot projection through the publication authority"
+else ko "D31 publication authority (confirm=$_d31a rollback=$_d31b)"; fi
 
 # D29 (audit H1, 2026-10-08): a PLAIN rebuild during a pending window (also enable, installer,
 # autoheal: they all reach this call) must not re-record the applied baseline, or the timed

@@ -2259,7 +2259,9 @@ fi
 # v1.234.0: no file under /etc/nftban/patterns.d/botscan is package-owned (operator
 # surface); the shipped rules are /usr/lib/nftban/data/botscan_*.patterns (data/*).
 /usr/share/nftban/templates/patterns.d/botscan/custom.patterns
-%attr(644,root,nftban) /etc/nftban/distros/*.conf
+# v1.235 audit K19: operator-editable like every other /etc/nftban *.conf (DEB: conffile); an RPM
+# upgrade must not overwrite edits.
+%attr(644,root,nftban) %config(noreplace) /etc/nftban/distros/*.conf
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/suricata/profiles/*.yaml
 %config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/config/profile.conf
 # D3 (UNINSTALL-PR2): NOT %config — the package must not own operator state.
