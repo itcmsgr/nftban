@@ -1202,11 +1202,13 @@ _nftban_migrate_reports_to_log() {
             # answers on/off; anything else means the switch could NOT be read: the reload is
             # skipped and said so, never reported as "disabled" (the switch-aware installer already
             # rebuilt; this reload is defence in depth).
-            _nftban_switch=$(bash -c '. /usr/lib/nftban/lib/service_control.sh >/dev/null 2>&1 || exit 0; _r=0; nftban_is_enabled || _r=$?; case $_r in 0) echo on ;; 2) echo invalid ;; *) echo off ;; esac' 2>/dev/null) || _nftban_switch=""
+            _nftban_switch=$(bash -c '. /usr/lib/nftban/lib/service_control.sh >/dev/null 2>&1 || exit 0; _r=0; nftban_is_enabled || _r=$?; case $_r in 0) echo on ;; 2) case $(nftban_master_switch_state) in unknown*) echo unknown ;; *) echo invalid ;; esac ;; *) echo off ;; esac' 2>/dev/null) || _nftban_switch=""
             if [ "$INSTALL_MODE" = "upgrade" ] && [ -x /usr/sbin/nftban ] && [ "$_nftban_switch" = "off" ]; then
                 log_info "v1.235: NFTBan is disabled (stored choice or nftban=disabled): no firewall reload on upgrade."
             elif [ "$INSTALL_MODE" = "upgrade" ] && [ -x /usr/sbin/nftban ] && [ "$_nftban_switch" = "invalid" ]; then
                 log_warn "v1.235: NFTBAN_ENABLED is INVALID (set it to true or false): no firewall reload on upgrade; nothing switch-dependent was changed."
+            elif [ "$INSTALL_MODE" = "upgrade" ] && [ -x /usr/sbin/nftban ] && [ "$_nftban_switch" = "unknown" ]; then
+                log_warn "v1.235: NFTBAN_ENABLED is UNKNOWN (services.conf present but unreadable; make it readable): no firewall reload on upgrade; nothing switch-dependent was changed."
             elif [ "$INSTALL_MODE" = "upgrade" ] && [ -x /usr/sbin/nftban ] && [ "$_nftban_switch" != "on" ]; then
                 log_warn "v1.235: the NFTBan master switch could not be read: no firewall reload on upgrade (check it, then run: nftban firewall reload)."
             elif [ "$INSTALL_MODE" = "upgrade" ] && { [ "${INSTALLER_EXIT:-0}" -le 1 ] || [ "${INSTALLER_EXIT:-0}" -eq 14 ]; } && [ -x /usr/sbin/nftban ]; then

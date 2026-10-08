@@ -967,7 +967,7 @@ _status_section_firewall() {
         case "$_sw" in
             on)  master_status="ENABLED" ;;
             off) master_status="DISABLED (config)" ;;
-            *)   master_status="INVALID (NFTBAN_ENABLED=${_swraw} in ${_swfile}) — set it to true or false" ;;
+            *)   master_status="$(nftban_master_switch_invalid_text)" ;;
         esac
     fi
     printf "  %-20s %s\n" "Master Control......" "$master_status"
@@ -2523,7 +2523,7 @@ output_json() {
         case "$_sw" in
             on)  _mjson="true";  _mdesc="enabled" ;;
             off) _mjson="false"; _mdesc="disabled" ;;
-            *)   _mjson="null";  _mdesc="invalid: NFTBAN_ENABLED=${_swraw} in ${_swfile}" ;;
+            *)   _mjson="null";  _mdesc="$(nftban_master_switch_invalid_text)" ;;
         esac
     fi
     _mdesc="${_mdesc//\\/\\\\}"; _mdesc="${_mdesc//\"/\\\"}"

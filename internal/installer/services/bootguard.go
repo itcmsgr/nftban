@@ -78,14 +78,15 @@ func EnableBootGuards(exec executor.Executor, log *logging.Logger) {
 // MasterSwitchState returns the STORED choice NFTBAN_ENABLED under the ONE shared contract
 // (configloader.ParseSwitch, owner K2 2026-10-08): on (true/yes/1/on), off (false/no/0/off),
 // invalid (any other declared value, including empty). An ABSENT key keeps the documented
-// default (on). known=false when an existing config file could not be read (the caller must not
-// treat an unreadable choice as "enabled" for a lifecycle decision). raw/file name the last
+// default (on). An existing config file that cannot be read gives configloader.SwitchUnknown
+// (known=false, file = that path; K2-c: never treated as "enabled"). raw/file name the last
 // declaration (for the INVALID message).
 //
 // Files: <configDir>/conf.d/services.conf then <configDir>/conf.d/services.conf.local
 // (the same pair, in the same order, as the shell nftban_master_switch_state).
 func MasterSwitchState(exec executor.Executor, configDir string) (state configloader.SwitchState, raw, file string, known bool) {
 	state, known = configloader.SwitchOn, true
+	unread := ""
 	for _, name := range []string{"services.conf", "services.conf.local"} {
 		p := filepath.Join(configDir, "conf.d", name)
 		if !exec.FileExists(p) {
@@ -93,7 +94,7 @@ func MasterSwitchState(exec executor.Executor, configDir string) (state configlo
 		}
 		data, err := exec.ReadFile(p)
 		if err != nil {
-			known = false
+			known, unread = false, p
 			continue
 		}
 		for _, line := range strings.Split(string(data), "\n") {
@@ -105,6 +106,9 @@ func MasterSwitchState(exec executor.Executor, configDir string) (state configlo
 			file = p
 			state = configloader.ParseSwitch(raw)
 		}
+	}
+	if !known {
+		return configloader.SwitchUnknown, "", unread, false
 	}
 	return state, raw, file, known
 }

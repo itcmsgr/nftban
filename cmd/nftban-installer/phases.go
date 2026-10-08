@@ -118,8 +118,10 @@ type phaseData struct {
 	lifecycleResolved bool
 	nftbanDisabled    bool
 	bypassActive      bool
-	// v1.235 K2: NFTBAN_ENABLED declared with a value that is neither on nor off. Nothing
-	// switch-dependent changes (no rule load, no unit change, no boot projection publish).
+	// v1.235 K2 / K2-c: NFTBAN_ENABLED is neither on nor off: INVALID (a declared value that is
+	// not a switch word) or UNKNOWN (services.conf present but unreadable). Nothing
+	// switch-dependent changes (no rule load, no unit change, no boot projection publish) and
+	// the run ends FAILED, never COMMITTED or DEGRADED ("completed with warnings").
 	switchInvalid     bool
 	switchInvalidWhat string
 }
@@ -137,7 +139,7 @@ func (pd *phaseData) skipReason() string {
 	case pd.bypassActive:
 		return "EMERGENCY BYPASS ACTIVE (kernel nftban=disabled): files updated, no rules loaded, no units started; reboot without the parameter"
 	case pd.switchInvalid:
-		return "NFTBAN_ENABLED is INVALID (" + pd.switchInvalidWhat + "): files updated; no rules loaded, no units changed, boot projection NOT published — set it to true or false"
+		return "NFTBan master switch is " + pd.switchInvalidWhat + ": files updated; no rules loaded, no units changed, boot projection NOT published"
 	case pd.nftbanDisabled:
 		return "NFTBan is disabled (stored choice): files updated; firewall not applied — run 'nftban enable'"
 	}
@@ -147,22 +149,19 @@ func (pd *phaseData) skipReason() string {
 // resolveLifecycleMode reads the stored master switch and the kernel bypass
 // once per run. Called at the start of every phase that can mutate the
 // firewall or units, so a repair/resume that skips phaseDetect still gets it.
-// An UNREADABLE stored choice keeps the pre-v1.235 behaviour (enforce) and is
-// logged loudly; an unreadable choice is never silently read as "disabled".
+// An UNREADABLE stored choice is UNKNOWN (K2-c, owner 2026-10-08): it is read neither as
+// "enabled" nor as "disabled"; it takes the INVALID path (nothing switch-dependent changes).
 func resolveLifecycleMode(exec executor.Executor, pd *phaseData, log *logging.Logger) {
 	if pd.lifecycleResolved {
 		return
 	}
 	pd.lifecycleResolved = true
 	pd.bypassActive = services.EmergencyBypassActive(exec)
-	st, raw, file, known := services.MasterSwitchState(exec, fhs.EtcDir)
-	if !known {
-		log.Warn("stored master switch NFTBAN_ENABLED could not be read — proceeding as ENABLED (pre-v1.235 behaviour)")
-	}
-	pd.nftbanDisabled = known && st == configloader.SwitchOff
-	pd.switchInvalid = known && st == configloader.SwitchInvalid
+	st, raw, file, _ := services.MasterSwitchState(exec, fhs.EtcDir)
+	pd.nftbanDisabled = st == configloader.SwitchOff
+	pd.switchInvalid = st == configloader.SwitchInvalid || st == configloader.SwitchUnknown
 	if pd.switchInvalid {
-		pd.switchInvalidWhat = "NFTBAN_ENABLED=" + raw + " in " + file
+		pd.switchInvalidWhat = configloader.SwitchProblem(st, raw, file)
 	}
 	switch {
 	case pd.bypassActive:
@@ -1121,10 +1120,21 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 // validateDisabledRun is phaseValidate for a run that skipped enforcement
 // (v1.235 row 486). It never mutates the firewall or starts a unit.
 //
+//	switch INVALID / UNKNOWN     -> FAILED_NO_FIREWALL (K2 / K2-c), reason = the skip reason
 //	all disabled invariants pass -> COMMITTED, reason = the skip reason
 //	any fails                    -> DEGRADED,  reason = skip reason + failures
 func validateDisabledRun(exec executor.Executor, sf *state.StateFile, log *logging.Logger, pd *phaseData) error {
 	validate.RunPermissionsEnforce(exec, log)
+
+	if pd.switchInvalid {
+		// K2 / K2-c (owner 2026-10-08): DEGRADED is reported as "completed with warnings", which
+		// an install that applied NO firewall is not. The run ends FAILED_NO_FIREWALL (exit 2;
+		// the package scripts print "NFTBan — FAILED"); the existing firewall was left as it was.
+		validate.SetImmutableFlags(exec, log)
+		reason := pd.skipReason()
+		log.Error("%s", reason)
+		return sf.Transition(state.StateFailedNoFirewall, state.PhaseValidate, reason)
+	}
 
 	mode := validate.ModeStoredDisabled
 	if pd.bypassActive {
@@ -1132,14 +1142,7 @@ func validateDisabledRun(exec executor.Executor, sf *state.StateFile, log *loggi
 	}
 	opts := validate.AssertionOpts{}
 	opts.SystemdPayloadInputs = pd.inject.payload()
-	var results []validate.AssertionResult
-	if pd.switchInvalid {
-		// K2: the disabled invariants assume a valid choice; an INVALID one is reported as
-		// what it is, so the run ends DEGRADED and never COMMITTED.
-		results = []validate.AssertionResult{{Name: "NFTBAN_ENABLED has a valid value", Passed: false, Detail: pd.switchInvalidWhat}}
-	} else {
-		results = validate.RunDisabledAssertions(exec, log, mode, switchop.BootProjectionPath, opts)
-	}
+	results := validate.RunDisabledAssertions(exec, log, mode, switchop.BootProjectionPath, opts)
 
 	validate.SetImmutableFlags(exec, log)
 

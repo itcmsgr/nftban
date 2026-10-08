@@ -69,8 +69,8 @@ nftban_lifecycle_collect() {
         case "$rc" in
             0) LF_STORED=enabled ;;
             1) LF_STORED=disabled ;;
-            # v1.235 K2: INVALID is reported as such, never as enabled/disabled.
-            2) LF_STORED="INVALID ($(nftban_master_switch_invalid_text 2>/dev/null)) — set it to true or false" ;;
+            # v1.235 K2/K2-c: INVALID / UNKNOWN are reported as such, never as enabled/disabled.
+            2) LF_STORED="$(nftban_master_switch_invalid_text 2>/dev/null)" ;;
         esac
     fi
 

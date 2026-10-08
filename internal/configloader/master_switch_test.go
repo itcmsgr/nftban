@@ -64,4 +64,18 @@ func TestMasterSwitchFiles(t *testing.T) {
 	if st, _, _, _ := MasterSwitch(dir); st != SwitchOff {
 		t.Fatalf("local off overrides main true: got %s", st)
 	}
+	// K2-c: a services.conf.local that EXISTS but cannot be read (a directory: EISDIR even for
+	// root) is UNKNOWN, wins over main "true", and names the file.
+	local := filepath.Join(conf, "services.conf.local")
+	_ = os.Remove(local)
+	if err := os.Mkdir(local, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	st, _, file, known = MasterSwitch(dir)
+	if st != SwitchUnknown || known || file != local {
+		t.Fatalf("unreadable local: got (%s,%q,%v), want (unknown,%q,false)", st, file, known, local)
+	}
+	if p := SwitchProblem(st, "", file); p != "UNKNOWN ("+local+" exists but could not be read: make it a readable file)" {
+		t.Fatalf("SwitchProblem(unknown) = %q", p)
+	}
 }

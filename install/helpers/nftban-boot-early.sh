@@ -69,10 +69,12 @@ _nftban_switch_word() {  # <declared value> -> on | off | invalid  (the ONE NFTB
     case "${v,,}" in true|yes|1|on) echo on ;; false|no|0|off) echo off ;; *) echo invalid ;; esac
 }
 
-stored_switch_state() {  # on | off | invalid — NFTBAN_ENABLED in services.conf(.local), last wins; absent = on
+stored_switch_state() {  # on | off | invalid | unknown — services.conf(.local), last wins; absent = on
     local st="on" f line
     for f in "$SERVICES_CONF" "${SERVICES_CONF}.local"; do
-        [[ -r "$f" ]] || continue
+        [[ -e "$f" || -L "$f" ]] || continue
+        # K2-c: present but unreadable = UNKNOWN (wins; same rule as lib/service_control.sh).
+        if [[ ! -f "$f" || ! -r "$f" ]]; then printf 'unknown\n'; return 0; fi
         while IFS= read -r line || [[ -n "$line" ]]; do
             line="${line#"${line%%[![:space:]]*}"}"
             case "$line" in NFTBAN_ENABLED=*) st="$(_nftban_switch_word "${line#NFTBAN_ENABLED=}")" ;; esac
@@ -142,6 +144,8 @@ mode_normal() {
     _sw="$(stored_switch_state)"
     if [[ "$_sw" == invalid ]]; then
         log "WARNING: NFTBAN_ENABLED is INVALID: boot projection left as last published (not made inert, not changed)"
+    elif [[ "$_sw" == unknown ]]; then
+        log "WARNING: NFTBAN_ENABLED could not be read (services.conf present but unreadable): boot projection left as last published (not made inert, not changed)"
     fi
     if [[ "$_sw" == off ]] && [[ -e "$PROJ" ]] && ! grep -qxF -- "$MARKER" "$PROJ" 2>/dev/null; then
         if write_inert_at "$PROJ"; then log "NFTBan is disabled (stored choice): projection made inert before nftables.service"

@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-06"
-# meta:description="BEHAVIORAL regression for v1.235 row 486 (contract NFTBAN_ROADMAP/CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md sections 2-3). Drives the REAL install/helpers/nftban-boot-early.sh (bypass / bypass-guard / normal modes), the REAL lib/boot_projection.sh state reader and inert body, and the REAL lib/service_control.sh nftban_disable_all / nftban_enable_all with stubbed systemctl, nft, nftban, mount, restorecon and ss on PATH in a sandbox. Asserts: the bypass makes the projection inert before nftables.service by bind mount, rename-swap or create, and the backstop deletes ONLY ip/ip6 nftban and reports it as a divergence; a disabled NFTBan never loads at boot (normal mode); disable writes the unit record once, does not stop nftban-firewall-init.service (its ExecStop deletes the tables; C7b, audit H5), never touches nftables.service or suricata.service, never unmasks, keeps the boot guards armed, publishes the inert projection and with --flush-rules DELETES (never flush-only) only the NFTBan tables; enable switches the stored choice ON before the rebuild, never enables nftables.service, keeps operator choices (module switched off, core unit recorded disabled, masked unit), forces no GeoIP setting, never calls `nftban login enable`, refuses under the bypass and under a failed commit-confirm rollback while enabled, and clears that state when NFTBan was disabled for recovery. Static census: every NFTBan unit carries both the bypass and the failed-rollback conditions; the early units add no ordering to nftables.service; every firewall dispatcher verb that loads or replaces rules (aliases included) calls both guards (E5, audit H4); the upgrade scriptlet reload is gated by the master switch (E6, audit H3); both scriptlet switch lines are executed for on / off / unreadable (E7); no operator text advises `nft flush ruleset` (E8, audit K14). K2 (owner 2026-10-08): one NFTBAN_ENABLED contract: both shell readers answer the shared case table (E9) with byte-identical code (E10); INVALID refuses disable/enable before any change (E11/E12) and is null in status JSON (E13); `nftban status` text and --json follow the shared table (E14, audit K2-a); the scriptlets label INVALID as invalid (E7, K2-b); at boot INVALID leaves the last published projection, off is understood, and the bypass is never blocked (K2a-c)."
+# meta:description="BEHAVIORAL regression for v1.235 row 486 (contract NFTBAN_ROADMAP/CLI_AUDIT_V1235/ROW486_BEHAVIOUR_CONTRACT_V1235.md sections 2-3). Drives the REAL install/helpers/nftban-boot-early.sh (bypass / bypass-guard / normal modes), the REAL lib/boot_projection.sh state reader and inert body, and the REAL lib/service_control.sh nftban_disable_all / nftban_enable_all with stubbed systemctl, nft, nftban, mount, restorecon and ss on PATH in a sandbox. Asserts: the bypass makes the projection inert before nftables.service by bind mount, rename-swap or create, and the backstop deletes ONLY ip/ip6 nftban and reports it as a divergence; a disabled NFTBan never loads at boot (normal mode); disable writes the unit record once, does not stop nftban-firewall-init.service (its ExecStop deletes the tables; C7b, audit H5), never touches nftables.service or suricata.service, never unmasks, keeps the boot guards armed, publishes the inert projection and with --flush-rules DELETES (never flush-only) only the NFTBan tables; enable switches the stored choice ON before the rebuild, never enables nftables.service, keeps operator choices (module switched off, core unit recorded disabled, masked unit), forces no GeoIP setting, never calls `nftban login enable`, refuses under the bypass and under a failed commit-confirm rollback while enabled, and clears that state when NFTBan was disabled for recovery. Static census: every NFTBan unit carries both the bypass and the failed-rollback conditions; the early units add no ordering to nftables.service; every firewall dispatcher verb that loads or replaces rules (aliases included) calls both guards (E5, audit H4); the upgrade scriptlet reload is gated by the master switch (E6, audit H3); both scriptlet switch lines are executed for on / off / unreadable (E7); no operator text advises `nft flush ruleset` (E8, audit K14). K2 (owner 2026-10-08): one NFTBAN_ENABLED contract: both shell readers answer the shared case table (E9) with byte-identical code (E10); INVALID refuses disable/enable before any change (E11/E12) and is null in status JSON (E13); `nftban status` text and --json follow the shared table (E14, audit K2-a); the scriptlets label INVALID as invalid and an unreadable switch file as unknown (E7, K2-b/K2-c); a services.conf(.local) that exists but cannot be read is UNKNOWN for every shell reader and the boot helper: projection byte-identical, state-changing commands refused, status/JSON null (E15, K2d/K2e, K2-c); at boot INVALID leaves the last published projection, off is understood, and the bypass is never blocked (K2a-c)."
 # meta:input="None (self-contained sandbox; stubbed system tools)"
 # meta:output="Pass/fail assertions on stdout; exit 0 on all-pass"
 # meta:depends="bash,awk,grep,sed,mktemp,cmp"
@@ -253,6 +253,18 @@ else
     early bypass || true
     if [[ "$(st outcome)" == "primary" ]]; then ok "K2c boot bypass with NFTBAN_ENABLED=maybe -> the bypass still acts (outcome=primary)"
     else ko "K2c bypass blocked by an invalid value (outcome=$(st outcome))"; fi
+    # K2-c (owner 2026-10-08): services.conf.local PRESENT but unreadable (a directory: unreadable
+    # as a file even for root) = UNKNOWN: the projection is left exactly as published, a warning
+    # names it, the readable "false" in services.conf does NOT win; the bypass still acts.
+    fresh; printf '%s' "$ACTIVE_PROJ" > "$P"; mkdir -p "$SB/etc/conf.d/services.conf.local"; printf 'NFTBAN_ENABLED=false\n' > "$SB/etc/conf.d/services.conf"
+    cp "$P" "$SB/proj.before"
+    early normal || true
+    if cmp -s "$P" "$SB/proj.before" && has "$SB/early.out" "could not be read"; then ok "K2d boot (normal), unreadable services.conf.local -> UNKNOWN: projection byte-identical, warning logged (readable 'false' does not win)"
+    else ko "K2d boot normal with an unreadable services.conf.local (projection changed or no warning)"; fi
+    fresh; printf '%s' "$ACTIVE_PROJ" > "$P"; mkdir -p "$SB/etc/conf.d/services.conf.local"
+    early bypass || true
+    if [[ "$(st outcome)" == "primary" ]]; then ok "K2e boot bypass with an unreadable services.conf.local -> the bypass still acts"
+    else ko "K2e bypass blocked by an unreadable switch file (outcome=$(st outcome))"; fi
 fi
 
 # ---------------------------------------------------------------- B. projection library
@@ -486,9 +498,11 @@ for _src in deb rpm; do
     mkdir -p "$SB/e7/inv/conf.d"; printf 'NFTBAN_ENABLED=maybe\n' > "$SB/e7/inv/conf.d/services.conf"
     a1=$(e7 "$_line" "$SB/e7/on" "$LIBDIR"); a2=$(e7 "$_line" "$SB/e7/off" "$LIBDIR"); a3=$(e7 "$_line" "$SB/e7/on" "$SB/e7/no-such-lib")
     a4=$(e7 "$_line" "$SB/e7/inv" "$LIBDIR")
-    [[ "$a1" == on && "$a2" == off && -z "$a3" && "$a4" == invalid ]] || { _e7_ok=0; echo "      $_src: stored-on=[$a1] local-off=[$a2] unreadable=[$a3] invalid=[$a4] (want on / off / empty / invalid)"; }
+    mkdir -p "$SB/e7/unk/conf.d/services.conf.local"; printf 'NFTBAN_ENABLED=true\n' > "$SB/e7/unk/conf.d/services.conf"
+    a5=$(e7 "$_line" "$SB/e7/unk" "$LIBDIR")
+    [[ "$a1" == on && "$a2" == off && -z "$a3" && "$a4" == invalid && "$a5" == unknown ]] || { _e7_ok=0; echo "      $_src: stored-on=[$a1] local-off=[$a2] reader-unloadable=[$a3] invalid=[$a4] switch-file-unreadable=[$a5] (want on / off / empty / invalid / unknown)"; }
 done
-if [[ $_e7_ok -eq 1 ]]; then ok "E7 both scriptlet switch lines EXECUTED: stored on -> on; disable's .local override -> off; unloadable reader -> unread (not 'disabled'); NFTBAN_ENABLED=maybe -> invalid (K2-b, not 'off')"
+if [[ $_e7_ok -eq 1 ]]; then ok "E7 both scriptlet switch lines EXECUTED: stored on -> on; disable's .local override -> off; unloadable reader -> unread (not 'disabled'); NFTBAN_ENABLED=maybe -> invalid (K2-b, not 'off'); unreadable services.conf.local -> unknown (K2-c, not 'on')"
 else ko "E7 scriptlet switch decision"; fi
 
 # E8 (audit K14, 2026-10-08): no shipped operator text ADVISES `nft flush ruleset` (it deletes
@@ -565,6 +579,33 @@ else
     done < "$_k2tbl"
     if [[ $_e14n -ge 30 && -z "$_e14bad" ]]; then ok "E14 nftban status text + --json follow the shared table for all $_e14n cases (JSON parses; true/false/null)"
     else ko "E14 status reader diverges from the switch contract (cases=$_e14n):${_e14bad:0:1500}"; fi
+    # E15 (K2-c, owner 2026-10-08): READ FAILURE through every shell reader. services.conf says
+    # true, services.conf.local EXISTS but cannot be read (a directory) -> UNKNOWN everywhere:
+    # state, rc 2, status text + --json (null, agreeing with the text), lifecycle facts, and
+    # disable/enable REFUSED with nothing changed. Never "enabled".
+    fresh; mkdir -p "$SB/log" "$SB/cache"; printf '%s\n' "$UNITS_BASE" > "$SB/units"
+    printf 'NFTBAN_ENABLED=true\n' > "$SB/etc/conf.d/services.conf"; mkdir -p "$SB/etc/conf.d/services.conf.local"
+    _e15=""
+    rc=0; svc 'nftban_master_switch_state; nftban_master_switch_on; echo "rc=$?"' || rc=$?
+    head -1 "$SB/svc.out" | grep -q "^unknown"$'\t\t'"$SB/etc/conf.d/services.conf.local\$" || _e15+=" state='$(head -1 "$SB/svc.out")'"
+    rc=0; svc 'nftban_master_switch_on || echo "rc=$?"' || rc=$?
+    has "$SB/svc.out" "rc=2" || _e15+=" switch_on-rc-not-2"
+    st_run _status_section_firewall > "$SB/e15.txt" || true
+    _t=$(grep -m1 'Master Control' "$SB/e15.txt" || true)
+    [[ "$_t" == *"Master Control...... UNKNOWN ($SB/etc/conf.d/services.conf.local exists but could not be read"* ]] || _e15+=" text='${_t##*......}'"
+    st_run output_json > "$SB/e15.json" || true
+    jq -e '.master_enabled == null and (.master_switch | startswith("UNKNOWN ("))' "$SB/e15.json" >/dev/null 2>&1 \
+        || _e15+=" json=$(jq -c '[.master_enabled,.master_switch]' "$SB/e15.json" 2>/dev/null || echo PARSE-ERROR)"
+    rc=0; svc '. "$NFTBAN_LIB_DIR/lib/lifecycle_facts.sh" >/dev/null 2>&1; nftban_lifecycle_collect >/dev/null 2>&1 || true; echo "LF_STORED=$LF_STORED"' || rc=$?
+    has "$SB/svc.out" "LF_STORED=UNKNOWN (" || _e15+=" lifecycle='$(grep -m1 LF_STORED "$SB/svc.out")'"
+    : > "$SB/calls.log"
+    rc=0; svc_root 'nftban_disable_all' || rc=$?
+    { [[ $rc -ne 0 ]] && has "$SB/svc.out" "master switch is UNKNOWN (" && ! grep -qE 'systemctl (stop|disable)' "$SB/calls.log"; } || _e15+=" disable(rc=$rc)"
+    rc=0; svc_root 'nftban_enable_all' || rc=$?
+    { [[ $rc -ne 0 ]] && has "$SB/svc.out" "master switch is UNKNOWN (" && ! has "$SB/calls.log" "firewall rebuild"; } || _e15+=" enable(rc=$rc)"
+    [[ -d "$SB/etc/conf.d/services.conf.local" ]] || _e15+=" switch-file-replaced"
+    if [[ -z "$_e15" ]]; then ok "E15 unreadable services.conf.local -> UNKNOWN in state, rc 2, status text = --json (null), lifecycle facts; disable/enable REFUSED, nothing changed"
+    else ko "E15 read failure not UNKNOWN everywhere:${_e15}"; fi
 fi
 
 echo ""
