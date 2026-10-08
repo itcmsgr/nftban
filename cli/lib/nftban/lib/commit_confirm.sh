@@ -257,9 +257,11 @@ cc_commit_projection() {
     local proj="${CC_CONFIG}/generated/nftban-boot.nft" tmp
     tmp="${proj}.confirm.$$"
     cp -f "$CC_WORK/candidate-projection.nft" "$tmp" || { rm -f "$tmp"; return 1; }
-    chmod 0644 "$tmp" 2>/dev/null || true
-    mv -f "$tmp" "$proj" || { rm -f "$tmp"; return 1; }
-    command -v restorecon >/dev/null 2>&1 && restorecon -F "$proj" 2>/dev/null
+    # v1.235 audit K1: ONE publication authority (mv + mode + owner + SELinux type, verified):
+    # a bare mv keeps the temp file's type, which nftables.service cannot read on EL.
+    declare -F _firewall_publish_conf >/dev/null 2>&1 \
+        || { echo "ERROR: boot projection publication authority not loaded (_firewall_publish_conf)" >&2; rm -f "$tmp"; return 1; }
+    _firewall_publish_conf "$tmp" "$proj" || { rm -f "$tmp"; return 1; }
     return 0
 }
 
@@ -395,8 +397,14 @@ cc_rollback() {
     fi
     # 3. Projection: it was never published; make sure it is the baseline's.
     if [[ -f "$CC_BASE/projection.nft" ]] && [[ "$(cc_sha "${CC_CONFIG}/generated/nftban-boot.nft")" != "$(cc_sha "$CC_BASE/projection.nft")" ]]; then
-        cp -f "$CC_BASE/projection.nft" "${CC_CONFIG}/generated/nftban-boot.nft.rb.$$" \
-          && mv -f "${CC_CONFIG}/generated/nftban-boot.nft.rb.$$" "${CC_CONFIG}/generated/nftban-boot.nft"
+        # v1.235 audit K1: through the single publication authority (see cc_commit_projection).
+        if declare -F _firewall_publish_conf >/dev/null 2>&1 \
+           && cp -f "$CC_BASE/projection.nft" "${CC_CONFIG}/generated/nftban-boot.nft.rb.$$"; then
+            _firewall_publish_conf "${CC_CONFIG}/generated/nftban-boot.nft.rb.$$" "${CC_CONFIG}/generated/nftban-boot.nft" \
+                || { rm -f "${CC_CONFIG}/generated/nftban-boot.nft.rb.$$"; echo "ERROR: baseline boot projection NOT republished" >&2; }
+        else
+            echo "ERROR: baseline boot projection NOT republished (publication authority not loaded)" >&2
+        fi
     fi
     systemctl stop "nftban-commit-rollback-${rec_id}.timer" >/dev/null 2>&1 || true
     # Owner 2026-10-07: an UNRESOLVED conflict means the rollback could not restore the
