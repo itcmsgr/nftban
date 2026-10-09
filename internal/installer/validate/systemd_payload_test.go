@@ -19,6 +19,9 @@
 package validate
 
 import (
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -658,5 +661,57 @@ func TestSystemdPayload_D13ValidateUnit_InDefaultInventory(t *testing.T) {
 	})
 	if !res.PayloadInventoryOK() {
 		t.Errorf("PAYLOAD-INVENTORY-001 must pass for the D13 validate unit; got UnknownPayloadRefs=%v", res.UnknownPayloadRefs)
+	}
+}
+
+// TestSystemdPayload_RepoUnits_InDefaultInventory closes the class behind D13 and the v1.235
+// boot units: one per-unit test per miss never caught the NEXT unit. Every unit shipped from
+// install/systemd is parsed and run through PAYLOAD-INVENTORY-001 against the production
+// inventory; any nftban-owned Exec* target missing from defaultInventoryPaths() fails here
+// instead of latching DEGRADED on a native systemd host.
+func TestSystemdPayload_RepoUnits_InDefaultInventory(t *testing.T) {
+	dir := filepath.Join("..", "..", "..", "install", "systemd")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read %s: %v", dir, err)
+	}
+	paths := make([]string, 0, len(defaultInventoryPaths()))
+	for p := range defaultInventoryPaths() {
+		paths = append(paths, p)
+	}
+	var units []ParsedUnit
+	names := map[string]bool{}
+	for _, e := range entries {
+		n := e.Name()
+		if e.IsDir() || !(strings.HasSuffix(n, ".service") || strings.HasSuffix(n, ".timer")) {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(dir, n)) // #nosec G304 -- fixed repository directory
+		if err != nil {
+			t.Fatalf("read %s: %v", n, err)
+		}
+		units = append(units, ParseUnitFile(n, "/usr/lib/systemd/system/"+n, string(b)))
+		names[n] = true
+	}
+	// Not vacuous: the unit set must be the real one, boot units included.
+	for _, must := range []string{"nftband.service", "nftban-boot-bypass.service", "nftban-boot-bypass-guard.service", "nftban-boot-normal.service"} {
+		if !names[must] {
+			t.Fatalf("%s not found in %s (%d units parsed) — the check would be vacuous", must, dir, len(units))
+		}
+	}
+	res := ValidateInstalledSystemdPayload(SystemdPayloadInputs{
+		Units:        units,
+		PathExists:   func(string) bool { return true },
+		Inventory:    inv(paths...),
+		AllUnitNames: names,
+	})
+	if !res.PayloadInventoryOK() {
+		var bad []string
+		for _, u := range res.UnknownPayloadRefs {
+			bad = append(bad, u.UnitFile+" -> "+u.Path)
+		}
+		sort.Strings(bad)
+		t.Errorf("shipped units reference nftban-owned paths missing from defaultInventoryPaths() (DEGRADED on every native install):\n  %s",
+			strings.Join(bad, "\n  "))
 	}
 }
