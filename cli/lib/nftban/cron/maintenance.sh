@@ -767,6 +767,29 @@ EOF
     fi
 
     # ==========================================================================
+    # 3b. Owed full sync (v1.235, owner 2026-10-08)
+    # ==========================================================================
+    # nft_ipc_sync leaves ${NFTBAN_RUN_DIR}/.sync_last.pending when a full sync was
+    # requested but did not run (all IPC attempts failed, or it was coalesced). Feeds,
+    # geoban and trust write their durable source BEFORE requesting the sync, so the
+    # sync is still owed; the legacy additive apply fallback is retired (P1S-A). This
+    # step is the backstop the marker always promised (nothing read it before): it
+    # re-requests the sync each cycle until one succeeds (success removes the marker).
+    if [[ -f "${NFTBAN_RUN_DIR:-/run/nftban}/.sync_last.pending" ]]; then
+        if [[ "$_nft_table_available" == "true" ]]; then
+            local _os_out="" _os_rc=0
+            _os_out=$(nft_ipc_sync 1 2>&1) || _os_rc=$?
+            if [[ $_os_rc -eq 0 ]]; then
+                log "INFO" "[3b/10] owed full sync completed${_os_out:+: ${_os_out}}"
+            else
+                log "ERROR" "[3b/10] owed full sync FAILED (rc=${_os_rc}) — feeds/geoban/trust changes are NOT in the kernel yet; retried next cycle"
+            fi
+        else
+            log "WARN" "[3b/10] a full sync is owed but the NFTBan table is not readable/present — retried next cycle"
+        fi
+    fi
+
+    # ==========================================================================
     # 4. Auto-Heal (Fix Permissions, Directories)
     # ==========================================================================
     log "INFO" "[4/10] Running auto-heal..."

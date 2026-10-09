@@ -466,6 +466,7 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 	// skipped (the union would be incomplete → don't partial-replace and wipe the
 	// skipped source's prior content) or in quickMode (feeds/geoban deferred). IPv4+IPv6.
 	var exemptSubtractedV4, exemptSubtractedV6 int
+	var exemptOmitted []string // exemption_split_limit: inputs NOT loaded at all (protection gap)
 	if !quickMode && !feedsSkipped && !geobanSkipped {
 		// P1S-A NEVER-BAN ON THE BULK PATH (v1.231.0).
 		//
@@ -484,8 +485,10 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 		// instead of dropping it, so one admin IP inside a wide feed prefix cannot
 		// disable that prefix's protection. Fail-safe: an unloaded or empty exempt
 		// snapshot subtracts nothing and the feed load proceeds unchanged.
-		unifiedBlacklistV4, exemptSubtractedV4 = d.backend.SubtractExempt(unifiedBlacklistV4)
-		unifiedBlacklistV6, exemptSubtractedV6 = d.backend.SubtractExempt(unifiedBlacklistV6)
+		var om4, om6 []string
+		unifiedBlacklistV4, exemptSubtractedV4, om4 = d.backend.SubtractExempt(unifiedBlacklistV4)
+		unifiedBlacklistV6, exemptSubtractedV6, om6 = d.backend.SubtractExempt(unifiedBlacklistV6)
+		exemptOmitted = append(om4, om6...)
 		if exemptSubtractedV4 > 0 || exemptSubtractedV6 > 0 {
 			log.Printf("[SYNC] NEVER-BAN: %d IPv4 + %d IPv6 input CIDRs covered a never-ban-exempt address and were split/dropped before the unified blacklist replace",
 				exemptSubtractedV4, exemptSubtractedV6)
@@ -563,6 +566,15 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 		// guard is not there" — a silent regression must be visible, not inferred.
 		"exempt_subtracted_ipv4": exemptSubtractedV4,
 		"exempt_subtracted_ipv6": exemptSubtractedV6,
+		// v1.235 (owner 2026-10-08): inputs dropped WHOLE at the split limit are a
+		// protection gap, never a normal split: own count, the prefixes, and the
+		// operation is reported DEGRADED (no false success).
+		"exempt_split_limit_omitted": len(exemptOmitted),
+	}
+	if len(exemptOmitted) > 0 {
+		respData["exempt_split_limit_prefixes"] = exemptOmitted
+		respData["degraded"] = true
+		respData["degraded_reason"] = "exemption_split_limit"
 	}
 
 	// Add protection status to response for CLI visibility
@@ -754,11 +766,14 @@ func (d *Daemon) loadCIDRsIntoSets(setType string, ipv4CIDRs, ipv6CIDRs []string
 	// whitelist form of this call must NOT be subtracted — removing an admin IP from
 	// a whitelist replace would be the very lockout this guard exists to prevent.
 	var exemptSubtracted int
+	var exemptOmitted []string // exemption_split_limit: inputs NOT loaded at all (protection gap)
 	if nftbackend.IsEnforcementSet(setNameV4) || nftbackend.IsEnforcementSet(setNameV6) {
 		var n4, n6 int
-		ipv4CIDRs, n4 = d.backend.SubtractExempt(ipv4CIDRs)
-		ipv6CIDRs, n6 = d.backend.SubtractExempt(ipv6CIDRs)
+		var om4, om6 []string
+		ipv4CIDRs, n4, om4 = d.backend.SubtractExempt(ipv4CIDRs)
+		ipv6CIDRs, n6, om6 = d.backend.SubtractExempt(ipv6CIDRs)
 		exemptSubtracted = n4 + n6
+		exemptOmitted = append(om4, om6...)
 		if exemptSubtracted > 0 {
 			log.Printf("[LOAD_CIDRS] NEVER-BAN: %d IPv4 + %d IPv6 input CIDRs covered a never-ban-exempt address and were split/dropped before loading into %s/%s",
 				n4, n6, setNameV4, setNameV6)
@@ -820,6 +835,13 @@ func (d *Daemon) loadCIDRsIntoSets(setType string, ipv4CIDRs, ipv6CIDRs []string
 		// split/dropped. Always present for an enforcement target so the guard's
 		// presence is observable, not inferred.
 		"exempt_subtracted": exemptSubtracted,
+		// v1.235 (owner 2026-10-08): see the sync handler: own count + DEGRADED.
+		"exempt_split_limit_omitted": len(exemptOmitted),
+	}
+	if len(exemptOmitted) > 0 {
+		data["exempt_split_limit_prefixes"] = exemptOmitted
+		data["degraded"] = true
+		data["degraded_reason"] = "exemption_split_limit"
 	}
 
 	// BUG-008 FIX: Update CIDR metrics for Prometheus

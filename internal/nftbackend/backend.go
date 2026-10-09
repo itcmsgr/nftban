@@ -109,7 +109,12 @@ type Stats struct {
 	// addresses. Exists so the guard's effect is observable: a silent regression
 	// of the prefix-aware authority shows up here as a stat that stops moving.
 	BlacklistExemptSubtractions int64
-	LastError                   string
+	// v1.235 (owner 2026-10-08): bulk inputs NOT loaded at all because splitting them
+	// around exempt addresses would exceed maxSplitPerPrefix (exemption_split_limit).
+	// Their non-exempt addresses are unprotected: counted apart from the ordinary
+	// splits above so the gap can never read as a successful split.
+	BlacklistExemptSplitLimitOmissions int64
+	LastError                          string
 }
 
 // EnableExemptionGuard wires the authoritative never-ban exemption guard. configDir is
@@ -632,23 +637,27 @@ func (b *Backend) IsExempt(ip string) (bool, string) {
 // Nil-safe and fail-safe: no backend, no resolver, or an unloaded/empty snapshot
 // returns the input unchanged with removed=0 — a broken resolver must never block a
 // legitimate feed load.
-func (b *Backend) SubtractExempt(cidrs []string) ([]string, int) {
+func (b *Backend) SubtractExempt(cidrs []string) (kept []string, removed int, omitted []string) {
 	if b == nil {
-		return cidrs, 0
+		return cidrs, 0, nil
 	}
 	b.mu.Lock()
 	r := b.exempt
 	b.mu.Unlock()
 	if r == nil {
-		return cidrs, 0
+		return cidrs, 0, nil
 	}
-	kept, removed := r.SubtractExempt(cidrs)
-	if removed > 0 {
+	kept, removed, omitted = r.SubtractExempt(cidrs)
+	for _, p := range omitted {
+		log.Printf("[NEVER-BAN] exemption_split_limit: %s NOT loaded (splitting it around never-ban addresses would exceed %d prefixes); its non-exempt addresses are UNPROTECTED until the exempt set or the feed changes", p, maxSplitPerPrefix)
+	}
+	if removed > 0 || len(omitted) > 0 {
 		b.mu.Lock()
 		b.stats.BlacklistExemptSubtractions += int64(removed)
+		b.stats.BlacklistExemptSplitLimitOmissions += int64(len(omitted))
 		b.mu.Unlock()
 	}
-	return kept, removed
+	return kept, removed, omitted
 }
 
 // exemptAddRejection reports whether adding element to set must be refused by the

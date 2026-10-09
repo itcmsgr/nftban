@@ -100,7 +100,7 @@ func TestP1SA_NC1_NoExemptAuthorityForFeedShapedElements(t *testing.T) {
 	// SUBJECT — the prefix-shaped authority must recognise every element shape the
 	// unified replace feeds to nft.AddCIDRElementsWithStats.
 	for _, elem := range feedShaped {
-		kept, removed := r.SubtractExempt([]string{elem})
+		kept, removed, _ := r.SubtractExempt([]string{elem})
 		if removed != 1 {
 			t.Errorf("P1S-A BYPASS: element %q covers never-ban-exempt %s but the exemption authority did not recognise it (removed=%d) — it would be written to blacklist_ipv4 unguarded (LOCKOUT)", elem, exemptFixtureIP, removed)
 			continue
@@ -140,7 +140,7 @@ func TestP1SA_NC2_ExemptIPSurvivesTheUnifiedReplaceFilterChain(t *testing.T) {
 
 	// ---- ARM B: SHIPPED CHAIN ------------------------------------------------
 	r := p1saLoadedResolver(t, exemptFixtureIP)
-	subtracted, removed := r.SubtractExempt(unified)
+	subtracted, removed, _ := r.SubtractExempt(unified)
 	if removed == 0 {
 		t.Fatalf("P1S-A BYPASS: the unified list contains %s yet the exemption authority subtracted nothing", exemptFixtureSlash)
 	}
@@ -163,7 +163,7 @@ func TestP1SA_NC2_ExemptIPSurvivesTheUnifiedReplaceFilterChain(t *testing.T) {
 func TestP1SA_NC3_SplitNotDropped(t *testing.T) {
 	r := p1saLoadedResolver(t, exemptFixtureIP)
 
-	kept, removed := r.SubtractExempt([]string{exemptFixtureNet})
+	kept, removed, _ := r.SubtractExempt([]string{exemptFixtureNet})
 	if removed != 1 {
 		t.Fatalf("INVALID_TEST: %s was not recognised as covering %s (removed=%d); product verdict NONE", exemptFixtureNet, exemptFixtureIP, removed)
 	}
@@ -181,7 +181,7 @@ func TestP1SA_NC3_SplitNotDropped(t *testing.T) {
 	}
 
 	// An element that is EXACTLY the exempt address is removed, not split.
-	kept, removed = r.SubtractExempt([]string{exemptFixtureSlash})
+	kept, removed, _ = r.SubtractExempt([]string{exemptFixtureSlash})
 	if removed != 1 || len(kept) != 0 {
 		t.Errorf("exempt /32 must be removed outright: kept=%v removed=%d", kept, removed)
 	}
@@ -195,31 +195,31 @@ func TestP1SA_NC4_FailSafeSnapshot(t *testing.T) {
 	// Never loaded: refresh is attempted, finds no sources in this hermetic context,
 	// and the load must not withhold anything.
 	unloaded := &exemptResolver{ttl: time.Hour}
-	kept, removed := unloaded.SubtractExempt(in)
+	kept, removed, _ := unloaded.SubtractExempt(in)
 	if removed != 0 || len(kept) != len(in) {
 		t.Errorf("FAIL-SAFE BROKEN: an unloaded snapshot subtracted %d element(s) (kept=%v); a resolver failure must never block a feed load", removed, kept)
 	}
 
 	// Loaded but empty.
 	empty := p1saLoadedResolver(t)
-	kept, removed = empty.SubtractExempt(in)
+	kept, removed, _ = empty.SubtractExempt(in)
 	if removed != 0 || len(kept) != len(in) {
 		t.Errorf("FAIL-SAFE BROKEN: an empty snapshot subtracted %d element(s) (kept=%v)", removed, kept)
 	}
 
 	// Nil resolver and nil backend.
 	var nilR *exemptResolver
-	if kept, removed = nilR.SubtractExempt(in); removed != 0 || len(kept) != len(in) {
+	if kept, removed, _ = nilR.SubtractExempt(in); removed != 0 || len(kept) != len(in) {
 		t.Errorf("FAIL-SAFE BROKEN: nil resolver subtracted %d element(s)", removed)
 	}
 	var nilB *Backend
-	if kept, removed = nilB.SubtractExempt(in); removed != 0 || len(kept) != len(in) {
+	if kept, removed, _ = nilB.SubtractExempt(in); removed != 0 || len(kept) != len(in) {
 		t.Errorf("FAIL-SAFE BROKEN: nil backend subtracted %d element(s)", removed)
 	}
 
 	// Unparseable input is passed through, not silently eaten.
 	junk := []string{"not-an-ip", ""}
-	if kept, removed = p1saLoadedResolver(t, exemptFixtureIP).SubtractExempt(junk); removed != 0 || len(kept) != 2 {
+	if kept, removed, _ = p1saLoadedResolver(t, exemptFixtureIP).SubtractExempt(junk); removed != 0 || len(kept) != 2 {
 		t.Errorf("unparseable input must pass through untouched: kept=%v removed=%d", kept, removed)
 	}
 }
@@ -235,7 +235,7 @@ func TestP1SA_NC5_FamilyParity(t *testing.T) {
 		t.Fatalf("INVALID_TEST: positive control failed — resolver does not recognise exempt IPv6 %s; product verdict NONE", v6IP)
 	}
 
-	kept, removed := r.SubtractExempt([]string{"2606:4700:4700::/64"})
+	kept, removed, _ := r.SubtractExempt([]string{"2606:4700:4700::/64"})
 	if removed != 1 {
 		t.Fatalf("IPv6 BYPASS: the /64 covering exempt %s was not recognised (removed=%d)", v6IP, removed)
 	}
@@ -249,11 +249,11 @@ func TestP1SA_NC5_FamilyParity(t *testing.T) {
 	// IPv4-mapped-IPv6: the snapshot stores the unmapped form (canonPrefix), and a
 	// mapped element must still be recognised through it.
 	rm := p1saLoadedResolver(t, exemptFixtureIP)
-	kept, removed = rm.SubtractExempt([]string{"::ffff:185.199.108.153/128"})
+	kept, removed, _ = rm.SubtractExempt([]string{"::ffff:185.199.108.153/128"})
 	if removed != 1 || len(kept) != 0 {
 		t.Errorf("IPv4-MAPPED BYPASS: mapped exempt /128 not removed (kept=%v removed=%d)", kept, removed)
 	}
-	kept, removed = rm.SubtractExempt([]string{"::ffff:185.199.108.0/120"})
+	kept, removed, _ = rm.SubtractExempt([]string{"::ffff:185.199.108.0/120"})
 	if removed != 1 {
 		t.Fatalf("IPv4-MAPPED BYPASS: mapped /120 covering %s not recognised", exemptFixtureIP)
 	}

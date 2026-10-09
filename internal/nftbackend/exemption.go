@@ -176,6 +176,12 @@ const maxSplitPerPrefix = 4096
 // or dropped. It is not the number of addresses withheld and not the number of
 // output prefixes; it is the count a silent regression would drive to zero.
 //
+// omitted lists the inputs dropped WHOLE because splitting them around the exempt
+// addresses would exceed maxSplitPerPrefix (reason "exemption_split_limit"). Their
+// NON-exempt addresses are then NOT loaded: a protection gap. It is returned (never
+// folded into removed alone) so every caller can log it, count it and report the
+// operation as degraded (owner 2026-10-08: no silent omission, no false success).
+//
 // FAIL-SAFE (this must never block a legitimate feed load): a nil resolver, an
 // empty input, a snapshot that has never loaded, or a snapshot with nothing in it
 // all subtract NOTHING and return the input unchanged. There is no error return —
@@ -187,9 +193,9 @@ const maxSplitPerPrefix = 4096
 // canonPrefix the snapshot is stored with — but a mapped input that gets split is
 // re-emitted in mapped form, because the caller has already routed it to the v6
 // set and rewriting its family there would corrupt the element.
-func (r *exemptResolver) SubtractExempt(cidrs []string) ([]string, int) {
+func (r *exemptResolver) SubtractExempt(cidrs []string) (kept []string, removed int, omitted []string) {
 	if r == nil || len(cidrs) == 0 {
-		return cidrs, 0
+		return cidrs, 0, nil
 	}
 	r.maybeRefresh()
 
@@ -208,11 +214,10 @@ func (r *exemptResolver) SubtractExempt(cidrs []string) ([]string, int) {
 	r.mu.RUnlock()
 
 	if !loaded || len(holes) == 0 {
-		return cidrs, 0
+		return cidrs, 0, nil
 	}
 
-	kept := make([]string, 0, len(cidrs))
-	removed := 0
+	kept = make([]string, 0, len(cidrs))
 	for _, raw := range cidrs {
 		p, mapped, ok := parseElementPrefix(raw)
 		if !ok {
@@ -229,13 +234,14 @@ func (r *exemptResolver) SubtractExempt(cidrs []string) ([]string, int) {
 		var out []netip.Prefix
 		subtractPrefix(p, holes, &out)
 		if len(out) > maxSplitPerPrefix {
+			omitted = append(omitted, raw)
 			continue
 		}
 		for _, q := range out {
 			kept = append(kept, formatElement(q, mapped))
 		}
 	}
-	return kept, removed
+	return kept, removed, omitted
 }
 
 // parseElementPrefix canonicalises one set element into the identity form the
