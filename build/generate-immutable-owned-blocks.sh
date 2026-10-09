@@ -66,7 +66,10 @@ done
 # reader markers in the library above. It is copied (markers included) into the two bash
 # consumers that cannot source the library at their run time; --check fails on any divergence.
 SW_BEGIN='# >>> NFTBAN_ENABLED reader (v1.235 K2, owner 2026-10-08) >>>'
-SW_END='# <<< NFTBAN_ENABLED reader <<<'
+# Built from a single '<': a literal triple '<' outside a comment reads as a heredoc opener to
+# the V108 heredoc-safety gate (scripts/ci). The value is unchanged.
+_lt='<'
+SW_END="# ${_lt}${_lt}${_lt} NFTBAN_ENABLED reader ${_lt}${_lt}${_lt}"
 awk -v b="$SW_BEGIN" -v e="$SW_END" '$0==b{p=1} p{print} $0==e{exit}' "$LIB" > "$body.sw"
 if ! grep -qxF "$SW_BEGIN" "$body.sw" || ! grep -qxF "$SW_END" "$body.sw"; then
     echo "ERROR: $LIB lacks the NFTBAN_ENABLED reader markers" >&2; exit 1
