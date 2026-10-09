@@ -64,4 +64,30 @@ func TestMasterSwitchFiles(t *testing.T) {
 	if st, _, _, _ := MasterSwitch(dir); st != SwitchOff {
 		t.Fatalf("local off overrides main true: got %s", st)
 	}
+	// K2-c: a services.conf.local that EXISTS but cannot be read (a directory: EISDIR even for
+	// root) is UNKNOWN, wins over main "true", and names the file.
+	local := filepath.Join(conf, "services.conf.local")
+	_ = os.Remove(local)
+	if err := os.Mkdir(local, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	st, _, file, known = MasterSwitch(dir)
+	if st != SwitchUnknown || known || file != local {
+		t.Fatalf("unreadable local: got (%s,%q,%v), want (unknown,%q,false)", st, file, known, local)
+	}
+	if p := SwitchProblem(st, "", file); p != "UNKNOWN ("+local+" exists but could not be read: make it a readable file)" {
+		t.Fatalf("SwitchProblem(unknown) = %q", p)
+	}
+	// Owner 2026-10-08: a REAL read failure of a regular file, for root too: /proc/self/mem is a
+	// regular file whose read at offset 0 fails (EIO) for every process. Precondition proven here.
+	if _, err := os.ReadFile("/proc/self/mem"); err == nil {
+		t.Skip("precondition: /proc/self/mem is readable here (NOT_EXECUTED)")
+	}
+	_ = os.Remove(local)
+	if err := os.Symlink("/proc/self/mem", local); err != nil {
+		t.Fatal(err)
+	}
+	if st, _, file, known = MasterSwitch(dir); st != SwitchUnknown || known || file != local {
+		t.Fatalf("read failure (EIO): got (%s,%q,%v), want (unknown,%q,false)", st, file, known, local)
+	}
 }

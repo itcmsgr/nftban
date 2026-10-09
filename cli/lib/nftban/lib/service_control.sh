@@ -91,48 +91,88 @@ nftban_refuse_under_bypass() {
     return 1
 }
 
-# v1.235 K2 (owner 2026-10-08): ONE meaning of NFTBAN_ENABLED for every reader (this file,
-# helpers/nftban-boot-early.sh — byte-identical copy —, the Go installer and nftban-core via
-# configloader.ParseSwitch). Cases: scripts/ci/data/master-switch-cases.tsv.
-_nftban_switch_word() {  # <declared value> -> on | off | invalid  (the ONE NFTBAN_ENABLED contract, owner K2)
-    local v="$1" q
-    v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
-    case "$v" in
-        \"*|\'*) q="${v:0:1}"; v="${v:1}"
-                 [[ "$v" == *"$q"* ]] || { echo invalid; return 0; }
-                 v="${v%%"$q"*}" ;;
-        *) if [[ "$v" =~ ^([^[:space:]]*)[[:space:]]+#.*$ ]]; then v="${BASH_REMATCH[1]}"; fi ;;
+# >>> NFTBAN_ENABLED reader (v1.235 K2, owner 2026-10-08) >>>
+# The ONE meaning of NFTBAN_ENABLED, POSIX sh so the SAME text also runs in the DEB preinst / RPM
+# %pre. ONE SOURCE: this block in lib/nftban_immutable_owned.sh (inlined into the package
+# scripts); build/generate-immutable-owned-blocks.sh writes it into lib/service_control.sh and
+# helpers/nftban-boot-early.sh and its --check (CI) fails on any divergence. The Go twin is
+# configloader.ParseSwitch / MasterSwitch. Cases: scripts/ci/data/master-switch-cases.tsv.
+_nftban_switch_word() {  # <declared value> -> on | off | invalid
+    _nsw_v=$1
+    _nsw_v=${_nsw_v#"${_nsw_v%%[![:space:]]*}"}; _nsw_v=${_nsw_v%"${_nsw_v##*[![:space:]]}"}
+    case $_nsw_v in
+        \"*|\'*)
+            _nsw_q=${_nsw_v%"${_nsw_v#?}"}; _nsw_v=${_nsw_v#?}
+            case $_nsw_v in *"$_nsw_q"*) _nsw_v=${_nsw_v%%"$_nsw_q"*} ;; *) echo invalid; return 0 ;; esac ;;
+        *[[:space:]]*)
+            # an unquoted value ends at whitespace followed by "#" (a trailing comment)
+            _nsw_t=${_nsw_v%%[[:space:]]*}; _nsw_r=${_nsw_v#"$_nsw_t"}
+            _nsw_r=${_nsw_r#"${_nsw_r%%[![:space:]]*}"}
+            case $_nsw_r in \#*) _nsw_v=$_nsw_t ;; esac ;;
     esac
-    v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
-    case "${v,,}" in true|yes|1|on) echo on ;; false|no|0|off) echo off ;; *) echo invalid ;; esac
+    _nsw_v=${_nsw_v#"${_nsw_v%%[![:space:]]*}"}; _nsw_v=${_nsw_v%"${_nsw_v##*[![:space:]]}"}
+    case $_nsw_v in
+        [Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|1|[Oo][Nn]) echo on ;;
+        [Ff][Aa][Ll][Ss][Ee]|[Nn][Oo]|0|[Oo][Ff][Ff]) echo off ;;
+        *) echo invalid ;;
+    esac
 }
+# _nftban_switch_state_files <file>... : the STORED choice from these files (last declaration
+# wins; absent key = the documented default, on). Prints "on", "off",
+# "invalid<TAB><value><TAB><file>" or "unknown<TAB><TAB><file>" (K2-c: a file that EXISTS but is
+# not a regular file, or whose READ fails, is UNKNOWN and wins: the choice was not read). The
+# read itself is the authority (owner 2026-10-08): a permission bit or test -r does not prove
+# that this process (root included) can read the file; cat's exit status does.
+_nftban_switch_state_files() {
+    _nss_st=on; _nss_raw=; _nss_file=; _nss_unread=
+    for _nss_f in "$@"; do
+        [ -e "$_nss_f" ] || [ -L "$_nss_f" ] || continue
+        if [ ! -f "$_nss_f" ]; then _nss_unread=$_nss_f; continue; fi
+        if ! _nss_c=$(cat -- "$_nss_f" 2>/dev/null); then _nss_unread=$_nss_f; continue; fi
+        while IFS= read -r _nss_l || [ -n "$_nss_l" ]; do
+            _nss_l=${_nss_l#"${_nss_l%%[![:space:]]*}"}
+            case $_nss_l in
+                NFTBAN_ENABLED=*) _nss_raw=${_nss_l#NFTBAN_ENABLED=}; _nss_file=$_nss_f
+                                  _nss_st=$(_nftban_switch_word "$_nss_raw") ;;
+            esac
+        done <<_NFTBAN_SWITCH_EOF_
+$_nss_c
+_NFTBAN_SWITCH_EOF_
+    done
+    if [ -n "$_nss_unread" ]; then printf 'unknown\t\t%s\n' "$_nss_unread"
+    elif [ "$_nss_st" = invalid ]; then printf 'invalid\t%s\t%s\n' "$_nss_raw" "$_nss_file"
+    else printf '%s\n' "$_nss_st"; fi
+}
+# <<< NFTBAN_ENABLED reader <<<
 
 # nftban_master_switch_state: the STORED choice only (no kernel parameter). Reads NFTBAN_ENABLED
 # from services.conf then services.conf.local (last declaration wins); an ABSENT key keeps the
-# documented default (on). Prints "on", "off", or "invalid<TAB><value><TAB><file>".
+# documented default (on). Prints "on", "off", "invalid<TAB><value><TAB><file>", or
+# "unknown<TAB><TAB><file>" (K2-c, owner 2026-10-08): a file that EXISTS but cannot be read (or
+# is not a regular file) is UNKNOWN, never "absent = on": the choice was not read, so nothing
+# that depends on it may change. UNKNOWN wins over every declaration.
 nftban_master_switch_state() {
-    local f line raw="" file="" st="on"
-    for f in "$NFTBAN_SERVICES_CONF" "$NFTBAN_SERVICES_LOCAL"; do
-        [[ -r "$f" ]] || continue
-        while IFS= read -r line || [[ -n "$line" ]]; do
-            line="${line#"${line%%[![:space:]]*}"}"
-            [[ "$line" == NFTBAN_ENABLED=* ]] || continue
-            raw="${line#NFTBAN_ENABLED=}"; file="$f"; st="$(_nftban_switch_word "$raw")"
-        done < "$f"
-    done
-    if [[ "$st" == invalid ]]; then printf 'invalid\t%s\t%s\n' "$raw" "$file"; else printf '%s\n' "$st"; fi
+    _nftban_switch_state_files "$NFTBAN_SERVICES_CONF" "$NFTBAN_SERVICES_LOCAL"
 }
 
-# The STORED choice only: rc 0 on, 1 off, 2 INVALID (never read as on or off).
+# The STORED choice only: rc 0 on, 1 off, 2 INVALID or UNKNOWN (never read as on or off).
 nftban_master_switch_on() {
     case "$(nftban_master_switch_state)" in on) return 0 ;; off) return 1 ;; *) return 2 ;; esac
 }
 
-# nftban_master_switch_invalid_text: "NFTBAN_ENABLED=<value> in <file>" for an INVALID choice.
+# nftban_master_switch_invalid_text: what is wrong with a choice that is neither on nor off,
+# with its fix: "INVALID (NFTBAN_ENABLED=<value> in <file>: set it to true or false)" or
+# "UNKNOWN (<file> exists but could not be read: make it a readable file)".
 nftban_master_switch_invalid_text() {
-    local st raw file
-    IFS=$'\t' read -r st raw file <<<"$(nftban_master_switch_state)"
-    [[ "$st" == invalid ]] && printf 'NFTBAN_ENABLED=%s in %s\n' "$raw" "$file"
+    # Split on the TABs by expansion: `read` with IFS=$'\t' merges adjacent tabs (tab is IFS
+    # whitespace), which loses an EMPTY value field ("invalid<TAB><TAB><file>", "unknown...").
+    local s st raw file
+    s="$(nftban_master_switch_state)"
+    st="${s%%$'\t'*}"; s="${s#*$'\t'}"; raw="${s%%$'\t'*}"; file="${s#*$'\t'}"
+    case "$st" in
+        invalid) printf 'INVALID (NFTBAN_ENABLED=%s in %s: set it to true or false)\n' "$raw" "$file" ;;
+        unknown) printf 'UNKNOWN (%s exists but could not be read: make it a readable file)\n' "$file" ;;
+    esac
 }
 
 # Check if NFTBan is globally enabled
@@ -148,7 +188,7 @@ nftban_check_enabled() {
     local rc=0
     nftban_is_enabled || rc=$?
     if [[ $rc -eq 2 ]]; then
-        echo "NFTBan master switch is INVALID ($(nftban_master_switch_invalid_text)): set it to true or false; nothing is changed until then" >&2
+        echo "NFTBan master switch is $(nftban_master_switch_invalid_text); nothing is changed until then" >&2
         return 1
     elif [[ $rc -ne 0 ]]; then
         echo "NFTBan is disabled (NFTBAN_ENABLED=false or kernel parameter nftban=disabled)" >&2
@@ -347,10 +387,10 @@ nftban_enable_all() {
     fi
     # v1.235 R-DEC: never enable during the per-boot emergency bypass.
     nftban_refuse_under_bypass "nftban enable" || return 1
-    # v1.235 K2: an INVALID stored value is not read as on or off; nothing changes until it is fixed.
-    if [[ "$(nftban_master_switch_state)" == invalid* ]]; then
-        echo "REFUSED: nftban enable: NFTBan master switch is INVALID ($(nftban_master_switch_invalid_text)); nothing was changed." >&2
-        echo "  Set it to true or false in that file, then retry. Emergency (this boot only): kernel parameter nftban=disabled." >&2
+    # v1.235 K2/K2-c: an INVALID or UNKNOWN stored choice is not read as on or off; nothing changes.
+    if ! nftban_master_switch_on && [[ "$(nftban_master_switch_state)" != off ]]; then
+        echo "REFUSED: nftban enable: NFTBan master switch is $(nftban_master_switch_invalid_text); nothing was changed." >&2
+        echo "  Fix it, then retry. Emergency (this boot only): kernel parameter nftban=disabled." >&2
         return 1
     fi
     # v1.235 D10: a FAILED commit-confirm rollback keeps the kernel state for recovery.
@@ -956,10 +996,10 @@ nftban_disable_all() {
     for arg in "$@"; do
         case "$arg" in --flush-rules) flush_rules=true ;; esac
     done
-    # v1.235 K2: an INVALID stored value is not read as on or off; nothing changes until it is fixed.
-    if [[ "$(nftban_master_switch_state)" == invalid* ]]; then
-        echo "REFUSED: nftban disable: NFTBan master switch is INVALID ($(nftban_master_switch_invalid_text)); nothing was changed." >&2
-        echo "  Set it to true or false in that file, then retry. Emergency (this boot only): kernel parameter nftban=disabled." >&2
+    # v1.235 K2/K2-c: an INVALID or UNKNOWN stored choice is not read as on or off; nothing changes.
+    if ! nftban_master_switch_on && [[ "$(nftban_master_switch_state)" != off ]]; then
+        echo "REFUSED: nftban disable: NFTBan master switch is $(nftban_master_switch_invalid_text); nothing was changed." >&2
+        echo "  Fix it, then retry. Emergency (this boot only): kernel parameter nftban=disabled." >&2
         return 1
     fi
 
@@ -1174,7 +1214,7 @@ nftban_services_status() {
     local _ms_rc=0
     nftban_is_enabled || _ms_rc=$?
     if [[ $_ms_rc -eq 2 ]]; then
-        echo "Master Switch: INVALID ($(nftban_master_switch_invalid_text)) — not read as enabled or disabled; set it to true or false"
+        echo "Master Switch: $(nftban_master_switch_invalid_text) — not read as enabled or disabled"
     elif [[ $_ms_rc -eq 0 ]]; then
         echo "Master Switch: ENABLED"
     else

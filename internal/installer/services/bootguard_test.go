@@ -41,6 +41,8 @@ func TestMasterSwitchState(t *testing.T) {
 		{"K2 empty = invalid", "NFTBAN_ENABLED=\n", "", configloader.SwitchInvalid, true},
 		{"K2 typo = invalid", "NFTBAN_ENABLED=flase\n", "", configloader.SwitchInvalid, true},
 		{"K2 local invalid overrides main true", "NFTBAN_ENABLED=true\n", "NFTBAN_ENABLED=maybe\n", configloader.SwitchInvalid, true},
+		// K2-c: present but unreadable = UNKNOWN, and it wins over a readable "true".
+		{"K2-c local unreadable = unknown (not on)", "NFTBAN_ENABLED=true\n", "<UNREADABLE>", configloader.SwitchUnknown, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -48,7 +50,9 @@ func TestMasterSwitchState(t *testing.T) {
 			if c.main != "" {
 				m.Files["/etc/nftban/conf.d/services.conf"] = []byte(c.main)
 			}
-			if c.local != "" {
+			if c.local == "<UNREADABLE>" {
+				m.Dirs["/etc/nftban/conf.d/services.conf.local"] = true // exists; ReadFile fails
+			} else if c.local != "" {
 				m.Files["/etc/nftban/conf.d/services.conf.local"] = []byte(c.local)
 			}
 			st, _, _, known := MasterSwitchState(m, "/etc/nftban")

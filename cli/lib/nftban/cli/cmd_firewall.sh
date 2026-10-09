@@ -500,7 +500,7 @@ RBHELP
         nftban_master_switch_on || _ms_rc=$?
         if [[ $_ms_rc -eq 2 ]]; then
             # v1.235 K2: neither active nor inert is published; the last published projection stays.
-            echo "ERROR: NFTBan master switch is INVALID ($(nftban_master_switch_invalid_text)) — boot projection NOT published; the previous boot path is unchanged. Set it to true or false." >&2
+            echo "ERROR: NFTBan master switch is $(nftban_master_switch_invalid_text) — boot projection NOT published; the previous boot path is unchanged." >&2
             return 1
         elif [[ $_ms_rc -ne 0 ]]; then
             inert="true"
@@ -582,7 +582,7 @@ _firewall_rebuild_refresh_boot_projection() {
     nftban_master_switch_on || _ms_rc=$?
     if [[ $_ms_rc -eq 2 ]]; then
         # v1.235 K2: an INVALID choice publishes nothing (the last published projection stays).
-        echo "ERROR: NFTBan master switch is INVALID ($(nftban_master_switch_invalid_text)) — boot projection NOT refreshed; set it to true or false" >&2
+        echo "ERROR: NFTBan master switch is $(nftban_master_switch_invalid_text) — boot projection NOT refreshed" >&2
         echo failed; return 0
     fi
     if [[ $_ms_rc -ne 0 ]]; then

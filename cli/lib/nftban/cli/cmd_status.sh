@@ -941,25 +941,34 @@ _status_section_firewall() {
     # v1.150 MOD-09: source the BASE services.conf first, then the .local
     # override. Pre-v1.150 only the .local file was sourced, so NFTBAN_ENABLED=false
     # set in the base services.conf was ignored and status reported ENABLED.
-    local master_enabled="true"
+    # (The files are still loaded for the other settings this section reads.)
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/services.conf" ]]; then
         # shellcheck source=/dev/null
         source "${NFTBAN_CONFIG_DIR}/conf.d/services.conf" 2>/dev/null || true
-        master_enabled="${NFTBAN_ENABLED:-true}"
     fi
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local" ]]; then
         # shellcheck source=/dev/null
         # IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
         declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
         _source_local "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local"
-        master_enabled="${NFTBAN_ENABLED:-true}"
     fi
 
-    local master_status="ENABLED"
+    # v1.235 audit K2-a: the switch itself is decided by the ONE NFTBAN_ENABLED contract
+    # (lib/service_control.sh nftban_master_switch_state), never by the raw sourced value.
+    local master_status="ENABLED" _sw=""
+    declare -F nftban_master_switch_state >/dev/null 2>&1 \
+        || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" >/dev/null 2>&1 || true
     if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
         master_status="DISABLED (kernel)"
-    elif [[ "${master_enabled,,}" =~ ^(no|false|0|off)$ ]]; then
-        master_status="DISABLED (config)"
+    elif ! declare -F nftban_master_switch_state >/dev/null 2>&1; then
+        master_status="UNKNOWN (stored choice not read)"
+    else
+        _sw="$(nftban_master_switch_state)"; _sw="${_sw%%$'\t'*}"
+        case "$_sw" in
+            on)  master_status="ENABLED" ;;
+            off) master_status="DISABLED (config)" ;;
+            *)   master_status="$(nftban_master_switch_invalid_text)" ;;
+        esac
     fi
     printf "  %-20s %s\n" "Master Control......" "$master_status"
     # v1.235 (row 486 contract D8): stored / applied / on-reboot / recovery as separate
@@ -2491,7 +2500,6 @@ output_json() {
     _status_json_install_transaction
 
     # Master control
-    local master_enabled="true"
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local" ]]; then
         # shellcheck source=/dev/null
         _source_local "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local"
@@ -2500,12 +2508,27 @@ output_json() {
         # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
         declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
             && nftban_config_apply_final_operator_overlay
-        master_enabled="${NFTBAN_ENABLED:-true}"
     fi
+    # v1.235 audit K2-a: NFTBAN_ENABLED is NOT taken from the transaction above: it follows the ONE
+    # switch contract every acting reader uses (services.conf, then services.conf.local; the central
+    # nftban.conf.local is not a switch source anywhere). The JSON value is always true/false/null (an
+    # unquoted raw value broke --json, even for valid words such as "on"); INVALID is null + text.
+    local _sw="" _mjson="null" _mdesc="unknown"
+    declare -F nftban_master_switch_state >/dev/null 2>&1 \
+        || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" >/dev/null 2>&1 || true
     if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
-        master_enabled="false"
+        _mjson="false"; _mdesc="disabled (kernel nftban=disabled)"
+    elif declare -F nftban_master_switch_state >/dev/null 2>&1; then
+        _sw="$(nftban_master_switch_state)"; _sw="${_sw%%$'\t'*}"
+        case "$_sw" in
+            on)  _mjson="true";  _mdesc="enabled" ;;
+            off) _mjson="false"; _mdesc="disabled" ;;
+            *)   _mjson="null";  _mdesc="$(nftban_master_switch_invalid_text)" ;;
+        esac
     fi
-    echo "  \"master_enabled\": $master_enabled,"
+    _mdesc="${_mdesc//\\/\\\\}"; _mdesc="${_mdesc//\"/\\\"}"
+    echo "  \"master_enabled\": $_mjson,"
+    echo "  \"master_switch\": \"$_mdesc\","
 
     # Services (detailed)
     echo "  \"services\": {"

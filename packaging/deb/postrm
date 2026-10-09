@@ -343,9 +343,12 @@ _nfw_route_dev() {  # <4|6> <prefix> -> devices of the exact route
 }
 
 # nftban_forward_unmanaged_rules : "<fam>\t<normalized rule>" per unmanaged rule.
-# rc 0 ok, 3 UNKNOWN (a chain could not be read; reason on stderr).
+# rc 0 ok, 3 UNKNOWN (a chain could not be read, or no nft binary to read it; reason on stderr).
+# F1 (owner 2026-10-08): without nft the kernel cannot be read, so this is UNKNOWN, never "no
+# rules". The packages declare nftables before their pre-install script (DEB Pre-Depends, RPM
+# Requires(pre)), so the binary is present whenever the package manager runs the preflight.
 nftban_forward_unmanaged_rules() {
-    command -v nft >/dev/null 2>&1 || return 0
+    command -v nft >/dev/null 2>&1 || { echo "nftban: UNKNOWN: the nft binary is not installed, so the nftban forward chains cannot be read" >&2; return 3; }
     _nfu_rc=0
     for _nfu_fam in ip ip6; do
         if ! _nfu_out=$(nft -a list chain "$_nfu_fam" nftban forward 2>&1); then
@@ -503,17 +506,88 @@ _nfw_plan_approved() {
     return 0
 }
 
+# >>> NFTBAN_ENABLED reader (v1.235 K2, owner 2026-10-08) >>>
+# The ONE meaning of NFTBAN_ENABLED, POSIX sh so the SAME text also runs in the DEB preinst / RPM
+# %pre. ONE SOURCE: this block in lib/nftban_immutable_owned.sh (inlined into the package
+# scripts); build/generate-immutable-owned-blocks.sh writes it into lib/service_control.sh and
+# helpers/nftban-boot-early.sh and its --check (CI) fails on any divergence. The Go twin is
+# configloader.ParseSwitch / MasterSwitch. Cases: scripts/ci/data/master-switch-cases.tsv.
+_nftban_switch_word() {  # <declared value> -> on | off | invalid
+    _nsw_v=$1
+    _nsw_v=${_nsw_v#"${_nsw_v%%[![:space:]]*}"}; _nsw_v=${_nsw_v%"${_nsw_v##*[![:space:]]}"}
+    case $_nsw_v in
+        \"*|\'*)
+            _nsw_q=${_nsw_v%"${_nsw_v#?}"}; _nsw_v=${_nsw_v#?}
+            case $_nsw_v in *"$_nsw_q"*) _nsw_v=${_nsw_v%%"$_nsw_q"*} ;; *) echo invalid; return 0 ;; esac ;;
+        *[[:space:]]*)
+            # an unquoted value ends at whitespace followed by "#" (a trailing comment)
+            _nsw_t=${_nsw_v%%[[:space:]]*}; _nsw_r=${_nsw_v#"$_nsw_t"}
+            _nsw_r=${_nsw_r#"${_nsw_r%%[![:space:]]*}"}
+            case $_nsw_r in \#*) _nsw_v=$_nsw_t ;; esac ;;
+    esac
+    _nsw_v=${_nsw_v#"${_nsw_v%%[![:space:]]*}"}; _nsw_v=${_nsw_v%"${_nsw_v##*[![:space:]]}"}
+    case $_nsw_v in
+        [Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|1|[Oo][Nn]) echo on ;;
+        [Ff][Aa][Ll][Ss][Ee]|[Nn][Oo]|0|[Oo][Ff][Ff]) echo off ;;
+        *) echo invalid ;;
+    esac
+}
+# _nftban_switch_state_files <file>... : the STORED choice from these files (last declaration
+# wins; absent key = the documented default, on). Prints "on", "off",
+# "invalid<TAB><value><TAB><file>" or "unknown<TAB><TAB><file>" (K2-c: a file that EXISTS but is
+# not a regular file, or whose READ fails, is UNKNOWN and wins: the choice was not read). The
+# read itself is the authority (owner 2026-10-08): a permission bit or test -r does not prove
+# that this process (root included) can read the file; cat's exit status does.
+_nftban_switch_state_files() {
+    _nss_st=on; _nss_raw=; _nss_file=; _nss_unread=
+    for _nss_f in "$@"; do
+        [ -e "$_nss_f" ] || [ -L "$_nss_f" ] || continue
+        if [ ! -f "$_nss_f" ]; then _nss_unread=$_nss_f; continue; fi
+        if ! _nss_c=$(cat -- "$_nss_f" 2>/dev/null); then _nss_unread=$_nss_f; continue; fi
+        while IFS= read -r _nss_l || [ -n "$_nss_l" ]; do
+            _nss_l=${_nss_l#"${_nss_l%%[![:space:]]*}"}
+            case $_nss_l in
+                NFTBAN_ENABLED=*) _nss_raw=${_nss_l#NFTBAN_ENABLED=}; _nss_file=$_nss_f
+                                  _nss_st=$(_nftban_switch_word "$_nss_raw") ;;
+            esac
+        done <<_NFTBAN_SWITCH_EOF_
+$_nss_c
+_NFTBAN_SWITCH_EOF_
+    done
+    if [ -n "$_nss_unread" ]; then printf 'unknown\t\t%s\n' "$_nss_unread"
+    elif [ "$_nss_st" = invalid ]; then printf 'invalid\t%s\t%s\n' "$_nss_raw" "$_nss_file"
+    else printf '%s\n' "$_nss_st"; fi
+}
+# <<< NFTBAN_ENABLED reader <<<
+
+# nftban_master_switch_preflight [context] : v1.235 K2/K2-c (owner 2026-10-08). The package
+# pre-install check (DEB preinst / RPM %pre) stops BEFORE any change by this package when the
+# stored master switch is INVALID or UNKNOWN; an ABSENT setting keeps the agreed default (on).
+# Returns 0 = proceed, 1 = stop. Same words as lib/service_control.sh and the Go SwitchProblem.
+nftban_master_switch_preflight() {
+    _nmp_ctx=${1:-install/upgrade}; _nmp_d=${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d
+    _nmp_s=$(_nftban_switch_state_files "$_nmp_d/services.conf" "$_nmp_d/services.conf.local")
+    _nmp_t=$(printf '\t')
+    _nmp_st=${_nmp_s%%"$_nmp_t"*}; _nmp_r=${_nmp_s#*"$_nmp_t"}; _nmp_raw=${_nmp_r%%"$_nmp_t"*}; _nmp_f=${_nmp_r#*"$_nmp_t"}
+    case $_nmp_st in
+        on|off) return 0 ;;
+        invalid) echo "nftban: ${_nmp_ctx} STOPPED before any change: NFTBan master switch is INVALID (NFTBAN_ENABLED=${_nmp_raw} in ${_nmp_f}: set it to true or false)." >&2 ;;
+        *) echo "nftban: ${_nmp_ctx} STOPPED before any change: NFTBan master switch is UNKNOWN (${_nmp_f} exists but could not be read: make it a readable file)." >&2 ;;
+    esac
+    echo "nftban: the installed version (if any), its rules and its boot configuration are untouched; fix the setting and repeat the ${_nmp_ctx}." >&2
+    return 1
+}
+
 # Shared entry point: package (DEB preinst / RPM %pre) AND every CLI path that replaces the
 # forward chain (firewall rebuild/init/reload/reset/restore/takeover, update git/local).
 # $1 = what is stopped (default: the package install/upgrade). Returns 0 = proceed, 1 = stop.
 nftban_forward_unmanaged_preflight() {
     _nfw_ctx="${1:-install/upgrade}"
-    command -v nft >/dev/null 2>&1 || return 0
     _nfw_rc=0
     _nfw_rules=$(nftban_forward_unmanaged_rules) || _nfw_rc=$?
     if [ "$_nfw_rc" -ne 0 ]; then
         [ "${NFTBAN_ACCEPT_FORWARD_RULE_LOSS:-}" = "1" ] && { echo "nftban: NFTBAN_ACCEPT_FORWARD_RULE_LOSS=1: proceeding despite an UNKNOWN forward chain." >&2; return 0; }
-        echo "nftban: ${_nfw_ctx} STOPPED before any change (forward chain UNKNOWN: the kernel could not be read, so NFTBan cannot prove there is nothing to preserve)." >&2
+        echo "nftban: ${_nfw_ctx} STOPPED before any change (forward chain UNKNOWN: the kernel could not be read (reason above), so NFTBan cannot prove there is nothing to preserve)." >&2
         return 1
     fi
     [ -n "$_nfw_rules" ] || return 0
