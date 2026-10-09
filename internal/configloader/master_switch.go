@@ -71,7 +71,7 @@ func MasterSwitch(configDir string) (state SwitchState, raw, file string, known 
 	unread := ""
 	for _, name := range []string{"services.conf", "services.conf.local"} {
 		p := filepath.Join(configDir, "conf.d", name)
-		data, err := os.ReadFile(p) // #nosec G304 -- fixed NFTBan config path
+		data, err := os.ReadFile(filepath.Clean(p)) // #nosec G304 -- fixed NFTBan config path
 		if err != nil {
 			if !os.IsNotExist(err) {
 				known, unread = false, p
