@@ -68,7 +68,7 @@ jobs:
           dnf -y install epel-release
           dnf -y install nftables jq git tar gzip procps-ng findutils sudo strace
 
-      - name: Set up Go (every leg: the release compiler, never the distro package)
+      - name: Set up Go (every leg uses the release compiler, never the distro package)
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v5.6.0
         with:
           # v1.157 PR-C: pin exact patch (matches go.mod `go 1.26.9`).

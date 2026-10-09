@@ -84,7 +84,7 @@ jobs:
           # enough: assert it RESOLVES on PATH (EL9 ships it in /usr/sbin).
           command -v logrotate >/dev/null || { echo "::error::logrotate not resolvable on PATH after install"; exit 1; }
 
-      - name: Set up Go (every leg: the release compiler, never the distro package)
+      - name: Set up Go (every leg uses the release compiler, never the distro package)
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v5.6.0
         with:
           # v1.157 PR-C: pin exact patch (matches go.mod `go 1.26.9`).
