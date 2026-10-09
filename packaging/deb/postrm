@@ -829,6 +829,22 @@ case "$1" in
             deb-systemd-helper unmask "$unit" >/dev/null 2>&1 || true
         done
 
+        # v1.235: deb-systemd-helper purge removes only links it created; the installer
+        # enables with systemctl. Remove every enablement link that still points at an
+        # NFTBan PACKAGED unit (boot units, sockets and timers included), even if dangling.
+        # A link whose target is anything else (an operator's own unit) is kept.
+        for _lnk in /etc/systemd/system/*.wants/* /etc/systemd/system/*.requires/* \
+                    /etc/systemd/system/*.upholds/*; do
+            [ -L "$_lnk" ] || continue
+            _name="${_lnk##*/}"
+            case "$_name" in nftband.*|nftban-*) ;; *) continue ;; esac
+            case "$(readlink "$_lnk" 2>/dev/null)" in
+                "/usr/lib/systemd/system/$_name"|"/lib/systemd/system/$_name")
+                    rm -f "$_lnk" && echo "nftban: removed enablement link $_lnk" ;;
+            esac
+        done
+        systemctl daemon-reload 2>/dev/null || true
+
         # -----------------------------------------------------------------
         # STEP 4: Remove NFTBan include from system nftables config FIRST
         # (must happen BEFORE table deletion so nftables.service won't
