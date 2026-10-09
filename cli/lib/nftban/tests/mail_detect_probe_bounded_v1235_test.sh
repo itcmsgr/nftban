@@ -108,11 +108,14 @@ chk() {  # <file> <function> : the detect call inside <function> passes --passiv
     local body
     body=$(awk -v f="$2" '$0 ~ "^"f"\\(\\)" {p=1} p {print} p && /^}/ {exit}' "$1")
     if [[ -z "$body" ]]; then no "$2 not found in ${1#$REPO/}"; return; fi
-    if grep -q 'nftban_mail_detect_mta' <<<"$body" && ! grep 'nftban_mail_detect_mta' <<<"$body" | grep -v 'declare -F' | grep -qv -- '--passive'; then
-        ok "$2 uses passive detection"
-    else
-        no "$2 calls nftban_mail_detect_mta without --passive"
-    fi
+    local line calls=0 active=0
+    while IFS= read -r line; do
+        [[ "$line" == *'nftban_mail_detect_mta '* || "$line" == *'nftban_mail_detect_mta)'* ]] || continue
+        [[ "$line" == *'declare -F nftban_mail_detect_mta >/dev/null 2>&1 ||'* ]] && continue
+        calls=$((calls+1)); [[ "$line" == *--passive* ]] || active=$((active+1))
+    done <<<"$body"
+    if [[ $calls -gt 0 && $active -eq 0 ]]; then ok "$2 uses passive detection"
+    else no "$2 calls nftban_mail_detect_mta without --passive (calls=$calls active=$active)"; fi
 }
 chk "$LIB/cli/cmd_status.sh" _status_section_communication
 chk "$LIB/core/nftban_health_checks_modules.sh" nftban_health_check_communication

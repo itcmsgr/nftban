@@ -31,7 +31,10 @@
 # meta:ta.requires_systemd="false"
 # meta:ta.requires_nftables="false"
 # meta:ta.requires_package="false"
+# meta:ta.timeout="600"
 # =============================================================================
+# ta.timeout: measured 347 s on lab2 (2 cores, nobody, 2026-10-09; E14 drives the real status text
+# + --json through all 31 switch cases). The 120 s default cut it after E13 on CI (a3ee8b4a).
 set -Eeuo pipefail
 IFS=$'\n\t'
 

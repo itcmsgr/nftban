@@ -872,6 +872,15 @@ nftban_cmd_firewall() {
             ;;
         reload)
             shift
+            # Help stays inert (v1.141 B5, help-owned verb): firewall_reload prints its own help
+            # before acting, so a help token skips the guards. The K9 forward guard runs nft.
+            local _ra
+            for _ra in "$@"; do
+                case "$_ra" in
+                    --) break ;;
+                    -h|--help|help) firewall_reload "$@"; return ;;
+                esac
+            done
             _fw_bypass_guard "firewall reload" || return 1
             _fw_cc_guard "firewall reload" || return 1
             _fw_forward_guard "firewall reload" || return 1
