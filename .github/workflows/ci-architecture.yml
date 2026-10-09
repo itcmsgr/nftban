@@ -76,6 +76,13 @@ jobs:
       # EXISTING CHECKS
       # =====================================================================
 
+      # v1.235: GitHub never runs an invalid workflow and reports nothing on the PR, so
+      # five gates (install/update/uninstall/restore canonization, runtime truth) were
+      # silently absent while the PR looked green. This always-on gate parses every
+      # workflow; the expected-vs-executed comparison uses the same script (compare mode).
+      - name: Check workflow syntax (v1.235, BLOCKING)
+        run: bash scripts/ci/check-workflow-completeness.sh syntax .github/workflows
+
       - name: Check nft write policy
         run: ./scripts/ci/check-nft-writes.sh
         env:

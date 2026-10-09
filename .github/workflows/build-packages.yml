@@ -1115,15 +1115,13 @@ jobs:
             printf "NFTBAN_ENABLED=maybe\n" > "$K2L"
             rc_c=0; dpkg --configure nftban-core > /tmp/k2c.log 2>&1 || rc_c=$?
             a=$(k2_snap)
-            k2_inst=$(grep -o "NFTBAN_PACKAGE_INSTALLER_EXIT=[0-9]*" /tmp/k2c.log | tail -1 || true)
-            k2_scr=$(grep -o "post-installation script subprocess returned error exit status [0-9]*" /tmp/k2c.log | tail -1 || true)
-            k2_st=$(grep "^INSTALL_STATE=" /var/lib/nftban/state/install_state || true)
-            k2_pkg=$(dpkg-query -W -f="\${Status} \${Version}" nftban-core 2>&1 || true)
-            echo "K2 7b: unpack rc=$rc_u | installer: ${k2_inst:-not printed} ($k2_st) | scriptlet: ${k2_scr:-no failure reported} | dpkg --configure rc=$rc_c, package state: $k2_pkg"
-            if [ "$rc_u" -eq 0 ] && [ "$k2_inst" = "NFTBAN_PACKAGE_INSTALLER_EXIT=2" ] && [ "$k2_st" = "INSTALL_STATE=FAILED_CONFIG_INVALID" ] \
-               && [ -n "$k2_scr" ] && [ "$rc_c" -ne 0 ] && [ "$b" = "$a" ]; then
-              echo "[PASS] K2 7b: the installer refusal reached dpkg; rules and boot configuration byte-identical"
-            else echo "[FAIL] K2 7b"; tail -40 /tmp/k2c.log; exit 1; fi
+            # Verdict (owner 2026-10-09): all six conditions in one tested script
+            # (cli/lib/nftban/tests/k2_7b_verdict_falsifiability_v1235_test.sh); dpkg prose = diagnostic.
+            if K2_RC_UNPACK="$rc_u" K2_RC_CONFIGURE="$rc_c" K2_CONFIGURE_LOG=/tmp/k2c.log \
+               K2_STATE_LINE="$(grep "^INSTALL_STATE=" /var/lib/nftban/state/install_state || true)" \
+               K2_PKG_STATUS="$(dpkg-query -W -f="\${Status} \${Version}" nftban-core 2>&1 || true)" \
+               K2_SNAP_BEFORE="$b" K2_SNAP_AFTER="$a" bash /scripts/ci/k2-7b-verdict.sh; then :
+            else tail -40 /tmp/k2c.log; exit 1; fi
             # Recovery as documented: fix the setting, then dpkg --configure -a.
             rm -rf "$K2L"; rc_r=0; dpkg --configure -a > /tmp/k2r.log 2>&1 || rc_r=$?
             echo "K2 7b recovery: dpkg --configure -a rc=$rc_r, package state: $(dpkg-query -W -f="\${Status}" nftban-core 2>&1 || true)"
