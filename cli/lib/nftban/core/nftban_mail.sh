@@ -112,7 +112,12 @@ nftban_mail_detect_mta() {
             return 0
         fi
         # Sendmail binary exists even if not running - check if it's actually sendmail or postfix wrapper
-        if "$NFTBAN_SENDMAIL_BIN" -bv root &>/dev/null; then
+        # v1.235 I3: on a Postfix-compat sendmail with no running master, `-bv` hands the check to
+        # postdrop, which waits FOREVER on the absent pickup socket: `nftban status` (via the mail
+        # status summary) hung past CI's 120 s on Ubuntu 26.04 containers (reproduced 2026-10-09:
+        # postdrop in unix_stream_data_wait). Bounded; timeout (no --foreground) also kills the
+        # postdrop child. A probe that does not answer is not a usable MTA.
+        if timeout 5 "$NFTBAN_SENDMAIL_BIN" -bv root &>/dev/null; then
             echo "sendmail"
             return 0
         fi
