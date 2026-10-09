@@ -29,6 +29,7 @@ Depends: ${shlibs:Depends},
          socat,
          iproute2,
          logrotate,
+         procps,
          polkitd | policykit-1
 Recommends: acl,
             dnsutils,

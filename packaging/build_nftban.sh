@@ -452,6 +452,8 @@ BuildRequires:  selinux-policy-devel
 BuildRequires:  make
 
 Requires:       nftables >= 0.9.0
+# v1.235 I2: uptime/free/ps/pgrep are called by the CLI (~40 sites); minimal images lack them.
+Requires:       procps-ng
 Requires:       systemd
 Requires:       bash >= 4.0
 Requires:       bash-completion
@@ -2452,7 +2454,7 @@ Section: net
 Priority: optional
 Architecture: amd64
 Pre-Depends: nftables (>= 0.9.0)
-Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, bc, gawk, socat, acl, logrotate, polkitd | policykit-1
+Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, bc, gawk, socat, acl, logrotate, procps, polkitd | policykit-1
 Recommends: dnsutils, mailutils, netmask, whiptail, conntrack
 Maintainer: NFTBan Team <noreply@nftban.com>
 Description: Open-source Linux IPS and nftables firewall manager

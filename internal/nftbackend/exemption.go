@@ -324,6 +324,10 @@ func subtractPrefix(p netip.Prefix, holes []netip.Prefix, out *[]netip.Prefix) {
 	subtractPrefix(hi, holes, out)
 }
 
+// bitMask[i] is the bit of byte position i (0 = most significant): a table instead of an
+// int->uint shift conversion (gosec G115).
+var bitMask = [8]byte{0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01}
+
 // splitPrefix halves p into its two immediate sub-prefixes.
 func splitPrefix(p netip.Prefix) (netip.Prefix, netip.Prefix, bool) {
 	newBits := p.Bits() + 1
@@ -336,7 +340,7 @@ func splitPrefix(p netip.Prefix) (netip.Prefix, netip.Prefix, bool) {
 	if idx >= len(raw) {
 		return netip.Prefix{}, netip.Prefix{}, false
 	}
-	raw[idx] |= byte(1) << (7 - uint((newBits-1)%8))
+	raw[idx] |= bitMask[(newBits-1)%8]
 	hiAddr, ok := netip.AddrFromSlice(raw)
 	if !ok {
 		return netip.Prefix{}, netip.Prefix{}, false

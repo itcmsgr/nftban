@@ -365,7 +365,8 @@ const applyRulesetElementHeadLimit = 512
 // that begin with "add element" — no chain, rule or set-definition fragment can be
 // caught by it, and "delete element" is explicitly not matched.
 func applyRulesetEnforcementElementAdd(path string) (string, bool, error) {
-	f, err := os.Open(path)
+	// path was restricted to dataDir/configDir/runDir by the caller (handleApplyRulesetRequest).
+	f, err := os.Open(filepath.Clean(path))
 	if err != nil {
 		return "", false, err
 	}

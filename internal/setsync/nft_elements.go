@@ -267,9 +267,9 @@ func (m *NFTManager) addIPWithTimeoutCLI(set *nftables.Set, ipStr string, timeou
 		if err != nil {
 			return fmt.Errorf("failed to create temp file: %w", err)
 		}
-		defer os.Remove(tmp.Name())
+		defer func() { _ = os.Remove(tmp.Name()) }()
 		if _, err := tmp.WriteString(script); err != nil {
-			tmp.Close()
+			_ = tmp.Close()
 			return fmt.Errorf("failed to write element-replace script: %w", err)
 		}
 		if err := tmp.Close(); err != nil {
