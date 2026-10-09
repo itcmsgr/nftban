@@ -70,6 +70,13 @@ nftban_mail_detect_mta() {
     #   6. mailx (basic fallback)
     #
     # Force specific method via NFTBAN_MAIL_METHOD config
+    #
+    # --passive (v1.235): read-only callers (status, health, stats, metrics, mail status/help,
+    # mail test --dry-run). Inspects binaries, processes and config only; never runs a transport.
+    # `sendmail -bv` is NOT read-only: Postfix queues a delivery-status message for it. The result
+    # is the DETECTED transport, not verified delivery; only `nftban mail test` verifies delivery.
+    local passive=0
+    [[ "${1:-}" == "--passive" ]] && passive=1
 
     # If user explicitly set a method, use it (after checking availability)
     if [[ -n "${NFTBAN_MAIL_METHOD:-}" ]]; then
@@ -117,7 +124,15 @@ nftban_mail_detect_mta() {
         # status summary) hung past CI's 120 s on Ubuntu 26.04 containers (reproduced 2026-10-09:
         # postdrop in unix_stream_data_wait). Bounded; timeout (no --foreground) also kills the
         # postdrop child. A probe that does not answer is not a usable MTA.
-        if timeout 5 "$NFTBAN_SENDMAIL_BIN" -bv root &>/dev/null; then
+        if [[ $passive -eq 1 ]]; then
+            # Passive: Postfix is installed but not running (a running Postfix returned above),
+            # so this sendmail is its compat wrapper and cannot hand mail on. Any other sendmail
+            # binary is reported as detected (it can work without a daemon for outbound).
+            if [[ ! -x "$NFTBAN_POSTFIX_BIN" ]]; then
+                echo "sendmail"
+                return 0
+            fi
+        elif timeout 5 "$NFTBAN_SENDMAIL_BIN" -bv root &>/dev/null; then
             echo "sendmail"
             return 0
         fi
@@ -214,7 +229,7 @@ nftban_mail_check_status() {
     # Returns: Exit code 0=OK, 1=not found, 2=not running, 3=ports blocked
 
     local mta
-    mta="$(nftban_mail_detect_mta)"
+    mta="$(nftban_mail_detect_mta --passive)"
 
     if [[ "$mta" == "none" ]]; then
         echo "✗ No mail system found"
@@ -275,7 +290,7 @@ nftban_mail_check_status() {
         fi
     fi
 
-    echo "✓ Mail System: $mta (ready)"
+    echo "✓ Mail System: $mta (detected; delivery not verified — run: nftban mail test)"
 
     # A2a: communication truth summary (recipient / spool / last outcome).
     nftban_mail_status_summary
@@ -914,8 +929,8 @@ nftban_mail_test_dryrun() {
     else
         echo "  Recipient: MISSING — set NFTBAN_MAIL_RECIPIENT or pass a recipient"; rc=1
     fi
-    mta="$(nftban_mail_detect_mta)"
-    echo "  Transport: ${mta}"
+    mta="$(nftban_mail_detect_mta --passive)"
+    echo "  Transport: ${mta} (detected; delivery not verified)"
     if [[ "$mta" == "none" ]]; then
         echo "  ERROR: no usable transport (no local MTA and no curl + NFTBAN_SMTP_HOST)"; rc=1
     elif [[ "$mta" == "curl" ]]; then
@@ -1013,7 +1028,7 @@ nftban_mail_show_help() {
     nftban_banner
 
     local mta
-    mta="$(nftban_mail_detect_mta)"
+    mta="$(nftban_mail_detect_mta --passive)"
 
     # Precompute the status' first line WITHOUT a pipe. A `... | head -1` inside the
     # heredoc below makes nftban_mail_check_status receive SIGPIPE under
@@ -1149,7 +1164,7 @@ _mail_write_metrics() {
             [[ "$spool_oldest_age" -lt 0 ]] && spool_oldest_age=0
         fi
     fi
-    local transport_selected; transport_selected="$(nftban_mail_detect_mta 2>/dev/null || echo none)"
+    local transport_selected; transport_selected="$(nftban_mail_detect_mta --passive 2>/dev/null || echo none)"
 
     cat > "${MAIL_METRICS_FILE}.tmp" <<EOF
 # HELP nftban_mail_send_attempts_total Total mail send attempts

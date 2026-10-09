@@ -1987,10 +1987,12 @@ _status_section_communication() {
         source "${NFTBAN_LIB_DIR}/core/nftban_mail.sh" 2>/dev/null || true
     fi
     declare -F nftban_mail_status_summary >/dev/null 2>&1 || return 0
-    local transport; transport="$(nftban_mail_detect_mta 2>/dev/null || echo none)"
+    # Passive detection: status never runs a transport probe (v1.235; `sendmail -bv` queues mail).
+    local transport; transport="$(nftban_mail_detect_mta --passive 2>/dev/null || echo none)"
     echo ""
     echo "COMMUNICATION"
-    printf "  %-21s %s\n" "Transport............" "$transport"
+    printf "  %-21s %s\n" "Transport............" "$transport (detected)"
+    printf "  %-21s %s\n" "Delivery............." "not verified here (run: nftban mail test)"
     # recipient / spool depth+age / last success / last failure (all A2a state, sanitized)
     nftban_mail_status_summary 2>/dev/null
     return 0
