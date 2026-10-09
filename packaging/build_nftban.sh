@@ -484,8 +484,8 @@ Recommends:     mailx
 Recommends:     netmask
 Recommends:     newt
 Requires(pre):  shadow-utils
-# v1.235 F1 (owner 2026-10-08): %pre runs the forward preflight, which needs nft; an absent nft
-# is UNKNOWN -> STOP, so the package manager must install nftables BEFORE %pre.
+# v1.235 F1 (owner 2026-10-08): the pre-install scriptlet runs the forward preflight, which needs
+# nft; an absent nft is UNKNOWN -> STOP, so the package manager must install nftables BEFORE it.
 Requires(pre):  nftables >= 0.9.0
 
 %description
@@ -1679,7 +1679,7 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
     fi
 
     # v1.235 K2/K2-c (owner 2026-10-08): the installer refused because the master switch became
-    # INVALID or unreadable after %pre. The banner and the state file do not replace the exit
+    # INVALID or unreadable after the pre-install check. The banner and the state file do not replace the exit
     # status: THIS scriptlet fails (only for this state). rpm keeps the package installed and
     # reports the scriptlet failure; nothing is rolled back, nothing switch-dependent changed.
     if [ "\$INSTALLER_EXIT" -eq 2 ] && grep -qx 'INSTALL_STATE=FAILED_CONFIG_INVALID' /var/lib/nftban/state/install_state 2>/dev/null; then
