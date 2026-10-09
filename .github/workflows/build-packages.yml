@@ -660,11 +660,13 @@ jobs:
             echo "=== Phase 1b: F1 install order (HARD FAIL) ==="
             if grep -q "nft binary is not installed" "$INSTALL_LOG"; then echo "[FAIL] F1: the preflight ran without nft"; cat "$INSTALL_LOG"; exit 1; fi
             rpm -q nftban-core >/dev/null 2>&1 || { echo "[FAIL] F1: nftban-core not installed (%pre stopped?)"; cat "$INSTALL_LOG"; exit 1; }
-            # dnf4 "  Installing       : pkg" / "  Running scriptlet: pkg"; dnf5 "[ 3/20] Installing pkg"
-            n_dep=$(grep -n -m1 -E "(Installing *: |\] Installing )nftables-[0-9]" "$INSTALL_LOG" | cut -d: -f1 || true)
-            n_pkg=$(grep -n -m1 -E "(Running scriptlet *: |Installing *: |\] (Running [a-z]+ scriptlet|Installing) )nftban-core-[0-9]" "$INSTALL_LOG" | cut -d: -f1 || true)
-            echo "F1 transaction lines: nftables installed at ${n_dep:-none}, nftban-core first step at ${n_pkg:-none}"
-            if [ -n "$n_dep" ] && [ -n "$n_pkg" ] && [ "$n_dep" -lt "$n_pkg" ]; then echo "[PASS] F1: nftables installed before nftban-core %pre"
+            # Transaction ELEMENT counters (k/N), not log line order: the package %pretrans runs
+            # before every element (counter 1/1) and does not need nft; its %pre runs as part of
+            # its own element. dnf4 "  Installing       : pkg   k/N"; dnf5 "[ k/N] Installing pkg".
+            n_dep=$(grep -m1 -E "(Installing *: |\] Installing )nftables-[0-9]" "$INSTALL_LOG" | grep -oE "[0-9]+/[0-9]+" | tail -1 | cut -d/ -f1 || true)
+            n_pkg=$(grep -m1 -E "(Installing *: |\] Installing )nftban-core-[0-9]" "$INSTALL_LOG" | grep -oE "[0-9]+/[0-9]+" | tail -1 | cut -d/ -f1 || true)
+            echo "F1 transaction elements: nftables ${n_dep:-none}, nftban-core ${n_pkg:-none}"
+            if [ -n "$n_dep" ] && [ -n "$n_pkg" ] && [ "$n_dep" -lt "$n_pkg" ]; then echo "[PASS] F1: nftables installed (element $n_dep) before the nftban-core element ($n_pkg) whose pre-install check needs it"
             else echo "[FAIL] F1: install order not shown"; grep -nE "nftables|nftban-core" "$INSTALL_LOG" | head -20; exit 1; fi
 
             echo "=== Phase 2: Artifact Validation (HARD FAIL) ==="
@@ -856,7 +858,7 @@ jobs:
             st=$(dpkg-query -W -f="\${Status}" nftban 2>/dev/null || echo "not-installed")
             echo "dpkg status: $st"
             [ "$rc" -ne 0 ] || { echo "FAIL: the install SUCCEEDED although the kernel could not be read"; exit 1; }
-            grep -q "STOPPED before any change by this package (forward chain UNKNOWN" /tmp/install.log \
+            grep -q "STOPPED before any change (forward chain UNKNOWN" /tmp/install.log \
               || { echo "FAIL: no UNKNOWN STOP message"; exit 1; }
             case "$st" in *"install ok installed"*) echo "FAIL: nftban ended up installed"; exit 1 ;; esac
             echo "PASS: unreadable kernel -> STOP before any change; nftban not installed"
@@ -968,7 +970,9 @@ jobs:
             echo "=== Phase 1b: F1 install order (HARD FAIL) ==="
             if grep -q "nft binary is not installed" "$INSTALL_LOG"; then echo "[FAIL] F1: the preflight ran without nft"; cat "$INSTALL_LOG"; exit 1; fi
             n_dep=$(grep -n -m1 -E "^Setting up nftables " "$INSTALL_LOG" | cut -d: -f1 || true)
-            n_pkg=$(grep -n -m1 -E "^Preparing to unpack .*nftban-core" "$INSTALL_LOG" | cut -d: -f1 || true)
+            # preinst runs after dpkg announces the package: "Selecting previously unselected
+            # package" (fresh install) or "Preparing to unpack" (upgrade/reinstall).
+            n_pkg=$(grep -n -m1 -E "(^Selecting previously unselected package nftban-core|Preparing to unpack .*nftban-core)" "$INSTALL_LOG" | cut -d: -f1 || true)
             n_unp=$(grep -n -m1 -E "^Unpacking nftban-core " "$INSTALL_LOG" | cut -d: -f1 || true)
             echo "F1 apt lines: nftables set up at ${n_dep:-none}, nftban-core preinst at ${n_pkg:-none}, unpacked at ${n_unp:-none}"
             if [ -n "$n_dep" ] && [ -n "$n_pkg" ] && [ -n "$n_unp" ] && [ "$n_dep" -lt "$n_pkg" ]; then echo "[PASS] F1: nftables configured before nftban-core preinst; preinst passed"

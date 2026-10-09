@@ -538,7 +538,7 @@ while IFS=$'\t' read -r _k2in _k2want || [[ -n "${_k2in:-}" ]]; do
     _k2n=$((_k2n+1))
     for _k2sh in "${_k2shells[@]}"; do
         _k2got=$("$_k2sh" -c "$_k2fn_imm"$'\n''_nftban_switch_word "$1"' _ "$_k2in" 2>/dev/null) || _k2got="(no reader)"
-        [[ "$_k2got" == "$_k2want" ]] || _k2bad+=" $_k2sh[$_k2in]=$_k2got(want $_k2want)"
+        [[ "$_k2got" == "$_k2want" ]] || _k2bad+=" ${_k2sh}[${_k2in}]=${_k2got}(want ${_k2want})"
     done
     if [[ $_k2bb -eq 1 ]]; then
         _k2got=$(busybox sh -c "$_k2fn_imm"$'\n''_nftban_switch_word "$1"' _ "$_k2in" 2>/dev/null) || _k2got="(no reader)"
