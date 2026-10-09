@@ -138,6 +138,33 @@ nftban_fhs_get_group() {
     stat -c "%G" "$path" 2>/dev/null || stat -f "%Sg" "$path" 2>/dev/null
 }
 
+nftban_fhs_get_attrs() {
+    # Get perms, owner and group for a path with ONE stat (v1.235: three forks per path were about a
+    # third of `nftban status --json` on Ubuntu 26.04). Same values as the three getters above;
+    # where the single GNU call fails (e.g. BSD stat, path gone) it falls back to exactly those
+    # getters. Sets the caller's variables directly: no subshell to hide a failure and no separator
+    # to split, so the exit status is the one the three getter assignments had (non-zero when any
+    # getter fails; under errexit the caller stops exactly as before).
+    # Args: $1 = path, $2/$3/$4 = names of the variables for perms/owner/group
+    # Returns: 0, or non-zero if the path does not exist or a getter fails
+
+    local path="$1" out rc=0
+    local -n _fhs_ap="$2" _fhs_ao="$3" _fhs_ag="$4"
+    _fhs_ap=""; _fhs_ao=""; _fhs_ag=""
+    [[ ! -e "$path" ]] && return 1
+
+    # Newline-separated: user and group names cannot contain a newline.
+    if out=$(stat -c $'%a\n%U\n%G' "$path" 2>/dev/null); then
+        _fhs_ap="${out%%$'\n'*}"; out="${out#*$'\n'}"
+        _fhs_ao="${out%%$'\n'*}"; _fhs_ag="${out#*$'\n'}"
+        return 0
+    fi
+    _fhs_ap="$(nftban_fhs_get_perms "$path")" || rc=$?
+    _fhs_ao="$(nftban_fhs_get_owner "$path")" || rc=$?
+    _fhs_ag="$(nftban_fhs_get_group "$path")" || rc=$?
+    return "$rc"
+}
+
 # =============================================================================
 # FHS CHECKING FUNCTIONS
 # =============================================================================
@@ -166,9 +193,7 @@ nftban_fhs_check_directory() {
 
     # Get actual values
     local act_perms act_owner act_group
-    act_perms="$(nftban_fhs_get_perms "$path")"
-    act_owner="$(nftban_fhs_get_owner "$path")"
-    act_group="$(nftban_fhs_get_group "$path")"
+    nftban_fhs_get_attrs "$path" act_perms act_owner act_group
 
     # v1.229.15: record what was actually observed. The HTML and JSON reports
     # read NFTBAN_FHS_ACTUAL[$path]; until now nothing ever wrote to it, so the
@@ -281,18 +306,14 @@ nftban_fhs_render_table() {
             error_count=$((error_count + 1))
         elif [[ "$status" == "OK" ]]; then
             local act_perms act_owner act_group
-            act_perms="$(nftban_fhs_get_perms "$path")"
-            act_owner="$(nftban_fhs_get_owner "$path")"
-            act_group="$(nftban_fhs_get_group "$path")"
+            nftban_fhs_get_attrs "$path" act_perms act_owner act_group
             act_str="${act_perms} ${act_owner}:${act_group}"
             notes="$purpose"
             ok_count=$((ok_count + 1))
         else
             # ERROR with issues
             local act_perms act_owner act_group
-            act_perms="$(nftban_fhs_get_perms "$path")"
-            act_owner="$(nftban_fhs_get_owner "$path")"
-            act_group="$(nftban_fhs_get_group "$path")"
+            nftban_fhs_get_attrs "$path" act_perms act_owner act_group
             act_str="${act_perms} ${act_owner}:${act_group}"
             notes="${status#ERROR:}"
             notes="Mismatch: ${notes// /, }"
