@@ -461,6 +461,21 @@ func cmdFeedsLoad(feedsDir string, cfg *nftbanconf.Config) error {
 		return fmt.Errorf("unexpected response format")
 	}
 
+	// v1.235 (owner 2026-10-08): prefixes dropped WHOLE at the never-ban split limit are
+	// a protection gap; the load is reported DEGRADED and the command fails, never "✅".
+	if degraded, _ := data["degraded"].(bool); degraded {
+		fmt.Println()
+		fmt.Printf("⚠️  Feeds loaded PARTIALLY (DEGRADED: %v)\n", data["degraded_reason"])
+		if pfx, ok := data["exempt_split_limit_prefixes"].([]any); ok {
+			fmt.Printf("   %d prefix(es) NOT loaded: splitting them around never-ban addresses would exceed the split limit;\n", len(pfx))
+			fmt.Printf("   their non-exempt addresses are NOT blocked:\n")
+			for _, p := range pfx {
+				fmt.Printf("     - %v\n", p)
+			}
+		}
+		return fmt.Errorf("feeds loaded partially: %v (see above and the daemon log)", data["degraded_reason"])
+	}
+
 	fmt.Println()
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Printf("✅ Feeds loaded into blacklist successfully!\n")

@@ -409,7 +409,8 @@ nft_ipc_sync() {
         now="$(date +%s 2>/dev/null || echo 0)"
         if [[ "$now" -ge "$last" && $((now - last)) -lt "${NFTBAN_SYNC_DEBOUNCE_SECONDS}" ]]; then
             # A full sync ran within the debounce window; coalesce this request.
-            # The periodic reconcile timer flushes the pending marker as a backstop.
+            # The maintenance cycle (cron/maintenance.sh, every 15 min) runs the owed
+            # sync while the pending marker exists (v1.235: before that NOTHING read it).
             #
             # ⛔ THIS RETURNED 0 AND THAT WAS A FALSE SUCCESS. The debounce reasons
             #    "a full sync ran recently, so your state is committed" — which is
@@ -437,6 +438,12 @@ nft_ipc_sync() {
         if nft_ipc_success "$response"; then
             date +%s > "$marker" 2>/dev/null || true
             rm -f "${marker}.pending" 2>/dev/null || true
+            # v1.235 (owner 2026-10-08): a sync that committed everything EXCEPT inputs
+            # dropped at the never-ban split limit says so (stdout: some callers discard
+            # stderr). The sync did run; the gap is named, never hidden behind "OK".
+            if [[ "$response" == *'"degraded":true'* ]]; then
+                echo "[NFTBan] WARNING: full sync DEGRADED (exemption_split_limit): some blacklist prefixes were NOT loaded because splitting them around never-ban addresses would exceed the split limit; their non-exempt addresses are not blocked (daemon log: [NEVER-BAN] exemption_split_limit)"
+            fi
             return 0
         fi
         attempt=$((attempt + 1))
@@ -445,6 +452,10 @@ nft_ipc_sync() {
             delay=$((delay * 2))
         fi
     done
+    # v1.235 (owner 2026-10-08): a full sync that never ran is OWED. Mark it, so the
+    # maintenance cycle (every 15 min) re-requests it; without the marker the next
+    # attempt was the module's own timer (feeds daily, geoban weekly).
+    : > "${marker}.pending" 2>/dev/null || true
     return 1
 }
 
@@ -474,12 +485,19 @@ nft_ipc_sync_or_apply() {
         fi
     fi
 
-    echo "[WARN] ${module}: sync IPC failed, fell back to legacy additive apply" >&2
-    logger -t nftban "[WARN] ${module}: sync IPC failed, fell back to legacy additive apply" 2>/dev/null || true
+    # v1.235 P1S-A: the daemon REFUSES an additive element-add into an enforcement
+    # (drop) set through apply_ruleset (no never-ban check is possible there), so for
+    # feeds/geoban the fallback below fails by design; deletes and whitelist adds are
+    # still accepted. Either way the full sync stays OWED (pending marker set by
+    # nft_ipc_sync) and the maintenance cycle re-requests it every 15 min.
+    echo "[WARN] ${module}: full sync IPC failed; the sync is OWED (maintenance retries it within 15 min); trying the legacy apply (refused for enforcement-set adds)" >&2
+    logger -t nftban "[WARN] ${module}: full sync IPC failed; sync owed; legacy apply attempted" 2>/dev/null || true
 
     if [[ -n "$fallback_file" && -f "$fallback_file" ]]; then
-        nft_ipc_apply_ruleset "$fallback_file"
-        return $?
+        local _ap_rc=0
+        nft_ipc_apply_ruleset "$fallback_file" || _ap_rc=$?
+        [[ $_ap_rc -eq 0 ]] || echo "[ERROR] ${module}: NOT applied now (sync failed, legacy apply refused/failed rc=${_ap_rc}); the existing kernel state is unchanged and the owed sync will apply the stored source" >&2
+        return $_ap_rc
     fi
     return 1
 }
