@@ -138,6 +138,23 @@ nftban_fhs_get_group() {
     stat -c "%G" "$path" 2>/dev/null || stat -f "%Sg" "$path" 2>/dev/null
 }
 
+nftban_fhs_get_attrs() {
+    # Get "perms|owner|group" for a path with ONE stat (v1.235: three forks per path were about a
+    # third of `nftban status --json` on Ubuntu 26.04). Same values as the three getters above;
+    # where the single GNU call fails (e.g. BSD stat) it falls back to exactly those getters.
+    # Args: $1 = path
+    # Output: perms|owner|group, or return 1 if the path does not exist
+
+    local path="$1" out
+    [[ ! -e "$path" ]] && return 1
+
+    if out=$(stat -c "%a|%U|%G" "$path" 2>/dev/null); then
+        printf '%s\n' "$out"
+    else
+        printf '%s|%s|%s\n' "$(nftban_fhs_get_perms "$path")" "$(nftban_fhs_get_owner "$path")" "$(nftban_fhs_get_group "$path")"
+    fi
+}
+
 # =============================================================================
 # FHS CHECKING FUNCTIONS
 # =============================================================================
@@ -166,9 +183,7 @@ nftban_fhs_check_directory() {
 
     # Get actual values
     local act_perms act_owner act_group
-    act_perms="$(nftban_fhs_get_perms "$path")"
-    act_owner="$(nftban_fhs_get_owner "$path")"
-    act_group="$(nftban_fhs_get_group "$path")"
+    IFS='|' read -r act_perms act_owner act_group <<< "$(nftban_fhs_get_attrs "$path")"
 
     # v1.229.15: record what was actually observed. The HTML and JSON reports
     # read NFTBAN_FHS_ACTUAL[$path]; until now nothing ever wrote to it, so the
@@ -281,18 +296,14 @@ nftban_fhs_render_table() {
             error_count=$((error_count + 1))
         elif [[ "$status" == "OK" ]]; then
             local act_perms act_owner act_group
-            act_perms="$(nftban_fhs_get_perms "$path")"
-            act_owner="$(nftban_fhs_get_owner "$path")"
-            act_group="$(nftban_fhs_get_group "$path")"
+            IFS='|' read -r act_perms act_owner act_group <<< "$(nftban_fhs_get_attrs "$path")"
             act_str="${act_perms} ${act_owner}:${act_group}"
             notes="$purpose"
             ok_count=$((ok_count + 1))
         else
             # ERROR with issues
             local act_perms act_owner act_group
-            act_perms="$(nftban_fhs_get_perms "$path")"
-            act_owner="$(nftban_fhs_get_owner "$path")"
-            act_group="$(nftban_fhs_get_group "$path")"
+            IFS='|' read -r act_perms act_owner act_group <<< "$(nftban_fhs_get_attrs "$path")"
             act_str="${act_perms} ${act_owner}:${act_group}"
             notes="${status#ERROR:}"
             notes="Mismatch: ${notes// /, }"
