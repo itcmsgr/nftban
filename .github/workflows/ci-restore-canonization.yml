@@ -80,7 +80,7 @@ jobs:
         if: matrix.label == 'almalinux-9'
         run: |
           dnf -y install epel-release
-          dnf -y install jq git tar gzip procps-ng findutils sudo
+          dnf -y install jq git tar gzip procps-ng findutils diffutils sudo
 
       - name: Set up Go (every leg uses the release compiler, never the distro package)
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v5.6.0
