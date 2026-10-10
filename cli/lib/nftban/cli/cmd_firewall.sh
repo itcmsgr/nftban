@@ -455,10 +455,9 @@ _fw_bypass_guard() {
 # transaction and is not gated here.
 _fw_authority_guard() {
     # Help is inert (v1.141 B5): `<verb> --help` prints and changes nothing, so it is never refused.
-    local _ag_a
-    for _ag_a in "${@:2}"; do
-        case "$_ag_a" in --) break ;; -h|--help|help) return 0 ;; esac
-    done
+    # ONLY as the verb's FIRST argument: firewall_restore treats only $1 as help, so a later help
+    # token (`restore <file> --help`) would run the restore (found by the nftban-7c review).
+    case "${2:-}" in -h|--help|help) return 0 ;; esac
     if ! declare -F nftban_refuse_without_authority >/dev/null 2>&1; then
         # shellcheck source=/dev/null
         source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" 2>/dev/null || true
