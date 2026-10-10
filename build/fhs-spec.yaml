@@ -439,7 +439,7 @@ directories:
       mode: "0750"
       owner: root
       group: nftban
-      description: "Forwarding allows (v1.235, owner D1): forward.conf, operator-owned, written only by `nftban firewall forward allow|remove|migrate` (never shipped, so never a conffile); projected into the nftban forward chain at every render"
+      description: "Forwarding allows (v1.235, owner D1): forward.conf, operator-owned, written only by 'nftban firewall forward allow/remove/migrate' (never shipped, so never a conffile); projected into the nftban forward chain at every render"
       created_by: package
 
     - path: /etc/nftban/conf.d/rbl
