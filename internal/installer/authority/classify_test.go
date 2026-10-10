@@ -180,6 +180,19 @@ func TestClassify_OrphanArtifactsDoNotOverrideUnapprovedConflict(t *testing.T) {
 		if d := Classify(mock, conflicts, detect.PanelNone, true, false, newTestLogger()); d != Takeover {
 			t.Errorf("%s + UFW + --takeover: decision = %s, want TAKEOVER (the path that disables the conflict)", name, d)
 		}
+		// The repair of a previously authorized installation (f2-p8-u2604: upgrade interrupted
+		// after a takeover; UFW's iptables-nft tables still loaded) proceeds; approval still wins.
+		if d := ClassifyWithPriorGrant(mock, conflicts, detect.PanelNone, false, false, true, newTestLogger()); d != Ambiguous {
+			t.Errorf("%s + conflict + prior grant: decision = %s, want AMBIGUOUS (repair)", name, d)
+		}
+		if d := ClassifyWithPriorGrant(mock, conflicts, detect.PanelNone, true, false, true, newTestLogger()); d != Takeover {
+			t.Errorf("%s + conflict + prior grant + --takeover: decision = %s, want TAKEOVER", name, d)
+		}
+	}
+	// No orphan artifact: a prior grant alone never bypasses the refusal.
+	if d := ClassifyWithPriorGrant(executor.NewMockExecutor(), []detect.Conflict{{Name: "UFW", Active: true}},
+		detect.PanelNone, false, false, true, newTestLogger()); d != Abort {
+		t.Errorf("conflict + prior grant, no artifact: decision = %s, want ABORT", d)
 	}
 }
 
