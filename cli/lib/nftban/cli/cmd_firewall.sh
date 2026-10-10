@@ -454,6 +454,11 @@ _fw_bypass_guard() {
 # a library that cannot be loaded refuses. `firewall takeover` is the documented recovery
 # transaction and is not gated here.
 _fw_authority_guard() {
+    # Help is inert (v1.141 B5): `<verb> --help` prints and changes nothing, so it is never refused.
+    local _ag_a
+    for _ag_a in "${@:2}"; do
+        case "$_ag_a" in --) break ;; -h|--help|help) return 0 ;; esac
+    done
     if ! declare -F nftban_refuse_without_authority >/dev/null 2>&1; then
         # shellcheck source=/dev/null
         source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" 2>/dev/null || true
@@ -860,7 +865,7 @@ nftban_cmd_firewall() {
             # guards (R-DEC bypass, D10 rollback-failed).
             shift
             _fw_bypass_guard "firewall init" || return 1
-            _fw_authority_guard "firewall init" || return 1
+            _fw_authority_guard "firewall init" "$@" || return 1
             _fw_cc_guard "firewall init" || return 1
             _fw_forward_guard "firewall init" || return 1
             nftban_ssh_pre_rebuild_lockout_guard init "$@" || true
@@ -902,7 +907,7 @@ nftban_cmd_firewall() {
                 esac
             done
             _fw_bypass_guard "firewall reload" || return 1
-            _fw_authority_guard "firewall reload" || return 1
+            _fw_authority_guard "firewall reload" "$@" || return 1
             _fw_cc_guard "firewall reload" || return 1
             _fw_forward_guard "firewall reload" || return 1
             nftban_ssh_pre_rebuild_lockout_guard reload "$@" || true
@@ -911,7 +916,7 @@ nftban_cmd_firewall() {
         rebuild)
             shift
             _fw_bypass_guard "firewall rebuild" || return 1
-            _fw_authority_guard "firewall rebuild" || return 1
+            _fw_authority_guard "firewall rebuild" "$@" || return 1
             _fw_cc_guard "firewall rebuild" || return 1
             _fw_forward_guard "firewall rebuild" || return 1
             nftban_ssh_pre_rebuild_lockout_guard rebuild "$@" || true
@@ -926,7 +931,7 @@ nftban_cmd_firewall() {
             local _rb_a _rb_inert=0
             for _rb_a in "$@"; do [[ "$_rb_a" == "--inert" ]] && _rb_inert=1; done
             if [[ $_rb_inert -eq 0 ]]; then
-                _fw_authority_guard "firewall render-boot" || return 1
+                _fw_authority_guard "firewall render-boot" "$@" || return 1
             fi
             _fw_cc_guard "firewall render-boot" || return 1
             _firewall_render_boot "$@"
@@ -934,7 +939,7 @@ nftban_cmd_firewall() {
         reset)
             shift
             _fw_bypass_guard "firewall reset" || return 1
-            _fw_authority_guard "firewall reset" || return 1
+            _fw_authority_guard "firewall reset" "$@" || return 1
             _fw_cc_guard "firewall reset" || return 1
             _fw_forward_guard "firewall reset" || return 1
             firewall_reset "$@"
@@ -954,7 +959,7 @@ nftban_cmd_firewall() {
         restore)
             shift
             _fw_bypass_guard "firewall restore" || return 1
-            _fw_authority_guard "firewall restore" || return 1
+            _fw_authority_guard "firewall restore" "$@" || return 1
             _fw_cc_guard "firewall restore" || return 1
             _fw_forward_guard "firewall restore" || return 1
             firewall_restore "$@"
