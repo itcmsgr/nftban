@@ -796,7 +796,11 @@ _status_section_firewall_authority() {
     case "${NFTBAN_NFT_PROBE_VERDICT:-}" in
         PRESENT) _k="present in the kernel — KEPT, but NOT maintained: bans, feeds and repairs are not applied" ;;
         ABSENT)  _k="none loaded" ;;
-        *)       _k="UNKNOWN — the nftables ruleset could not be read" ;;
+        *)  if [[ "${NFTBAN_NFT_PROBE_CLASS:-}" == "EMPTY_OUTPUT_NO_ABSENCE_PROOF" ]]; then
+                _k="none seen — the kernel ruleset read back empty"
+            else
+                _k="UNKNOWN — the nftables ruleset could not be read"
+            fi ;;
     esac
     echo "FIREWALL AUTHORITY"
     echo "───────────────────────────────────────────────────────────────"
