@@ -11,6 +11,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.235.0] - 2026-10-10 — firewall authority, forwarding, disable/recovery contract
+
+An incremental release on v1.234.0; it is not a general-availability release. Verification levels are stated per
+item: **VM** = run on disposable Ubuntu 26.04 (DEB) and AlmaLinux 9 (RPM, SELinux enforcing) VMs from the
+CI-built packages of this candidate; **CI** = covered by the CI suites (hermetic shell and Go tests, package
+install legs) without a native run. Items not run natively are listed as such.
+
+### Security: v1.234.0 can enforce firewall rules on a host where installation was refused
+
+- **Affected:** v1.234.0 (published) and earlier. **Fixed in:** v1.235.0.
+- **Demonstrated trigger (VM):** NFTBan was installed with an approved takeover, then removed or purged; the
+  purge left NFTBan's systemd enablement links behind. A later reinstall was **refused** because another firewall
+  (UFW) was active. After the next reboot the stale links started the NFTBan daemon and timers, and the
+  maintenance timer's lockout-prevention step reloaded the full NFTBan ruleset (input and forward policy drop)
+  about ten minutes after boot, next to the active UFW, while the install state still said refused.
+- **Also demonstrated (VM):** a leftover `ip nftban` table on a host with an active, unapproved UFW made a plain
+  install proceed as if repairing NFTBan, and NFTBan's rules were loaded next to UFW.
+- **Not established:** whether hosts that never purged and reinstalled are affected through other paths. Hosts
+  that run NFTBan with an approved, committed installation are not shown to be affected by this trigger; that is
+  not proof that every other path is safe.
+- **What changed (VM):** NFTBan writes firewall rules only with granted authority — a completed, authorized
+  installation, NFTBan enabled, no emergency bypass — or from inside the installer's own running transaction.
+  The daemon and the automatic units (maintenance, health, health-fix, watchdog, queue, feeds, GeoBan refresh,
+  BotScan, rebuild recovery, firewall init, tunnel) are skipped by systemd (not failed) without it; a running
+  daemon re-checks before each kernel write; maintenance, autoheal and health repairs never grant themselves
+  authority. Package removal now disables NFTBan's units and purge removes leftover enablement links. A leftover
+  NFTBan table is no longer treated as consent: another active firewall without an explicit takeover is refused.
+  An interrupted upgrade of a previously authorized installation can still be repaired.
+- **If you run v1.234.0:** after removing NFTBan, check `ls /etc/systemd/system/*.wants/ | grep nftban` and
+  disable any listed unit before installing again on a host that uses another firewall.
+
+### Changed behaviour
+
+- While NFTBan is **disabled** (`NFTBAN_ENABLED=false`), `nftban firewall rebuild`, `init`, `reload`, `reset`,
+  `restore` and an active `render-boot` refuse and change nothing; run `nftban enable` first. Previously a manual
+  rebuild of a disabled NFTBan applied rules until the next reboot. (VM)
+- On a refused, interrupted or failed installation the same commands, the IPC clients (`nftban ban` and other
+  daemon requests) and the automatic units refuse with the reason and the recovery command. `nftban status`
+  shows a FIREWALL AUTHORITY section and `--json` carries `install_transaction.firewall_authority`; a refused
+  install is no longer shown as "EXCLUSIVE" with "NEUTRALIZED" firewalls. (VM)
+- When the installer does not activate the firewall, the package output says "PACKAGE INSTALLED — FIREWALL NOT
+  ACTIVATED". The package manager's exit status is unchanged (see Known issues). (VM)
+- `firewall takeover` and `render-boot --inert` stay available in every state. (CI)
+
+### Fixed
+
+- `nftban enable` after `nftban disable all` always rolled back and left NFTBan's rules loaded with the switch
+  off; it now restores the daemon and core timers before its rebuild. (VM)
+- Forwarding hosts (Docker, KVM, routers): NFTBan's forward chain now has its own policy with explicit allows
+  (`nftban firewall forward allow|remove|list|status`), and an upgrade STOPS before replacing hand-added forward
+  rules until their migration plan is approved (`NFTBAN_FORWARD_MIGRATE=<id>`). (CI; netns tests. The Docker
+  host lab arms were not run — see Known issues.)
+- Disable/enable and recovery: disable persists across reboot (inert boot projection); the kernel parameter
+  `nftban=disabled` is a per-boot emergency bypass effective before the first NFTBan rule load; commit-confirm
+  (`firewall rebuild --confirm`) rollback was repaired; a failed rollback keeps the kernel state and alarms.
+  (CI; reboot-while-disabled VM; the recovery VM arms were not run)
+- One meaning of `NFTBAN_ENABLED` everywhere; an invalid or unreadable value stops the package install and the
+  installer before any change. (CI, package install legs)
+- Never-ban exemptions also cover bulk CIDR loads; an owed full sync is retried by maintenance. (CI)
+- `nftban status` and `health` no longer queue or send mail and no longer hang on Ubuntu 26.04. (VM)
+- BotScan, PortScan, DDoS status, port report and status/health truth fixes from the v1.235 plan. (CI)
+- Go 1.26.9 and golang.org/x/net v0.60.0 (reachable net/http advisories GO-2026-6599…6617). (CI, govulncheck)
+
+### Known issues (open, targeted for v1.236 unless stated)
+
+- **Package-manager exit status:** a refused or failed firewall activation still leaves the package installed
+  with exit status 0 (DEB and RPM). The output now says the firewall was not activated. (HANDLES row 289.)
+- **`--repair` after an interrupted upgrade** ends DEGRADED (the boot projection is not re-rendered by a resumed
+  repair); the firewall stays protected. Workaround: reinstall the same package, which completes the
+  transaction (verified on the VM).
+- **SSH port detection** misses a non-22 port defined only in an `ssh.socket` override or an sshd `Include`
+  file; NFTBan's input policy could then block that port. Workaround: declare the port in
+  `/etc/nftban/ports.d/00-ssh.conf` before enabling NFTBan.
+- **Web servers that trust proxy headers from any client** (for example LiteSpeed "use client IP in header" for
+  all sources) can let a forged `X-Forwarded-For` make BotScan ban an innocent address. Trust proxy headers only
+  from your CDN's ranges. Not reproduced end to end.
+- The DDoS module's Xmas-scan sanity rule does not match FIN+PSH+URG scans; such packets are still dropped by
+  the base invalid-state rule.
+- Docker host verification (forwarding lab arms) was not run for this release: review forwarding rules on
+  container hosts before upgrading (see `nftban firewall forward status`).
+- Status shows Docker's own forward hook as a critical conflict; `container discover/status` verbs are not
+  available; CDN-fronted sites: bans on proxied clients have no network-level effect for HTTP; a polkit wording
+  test is quarantined (deadline 2026-10-31).
+
 ## [v1.234.0] - 2026-10-05 — clean install, restart truth, BotScan request time, safe updates
 
 A minor release on v1.233.1. Unless noted otherwise, each fix below was accepted package-natively on
