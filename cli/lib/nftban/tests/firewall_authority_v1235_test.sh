@@ -154,6 +154,27 @@ done
 grep -q '_fw_authority_guard "firewall takeover"' "$FW" && s1bad+=" takeover-must-not-be-gated"
 [[ -z "$s1bad" ]] && ok "S1 init/reload/rebuild/reset/restore/render-boot are gated; takeover (the approval path) is not" || ko "S1:$s1bad"
 
+echo "=== A4. help is inert only as the verb's first argument (REAL dispatcher, NFTBan disabled) ==="
+build_case "$SB/h" no off present COMMITTED TAKEOVER none
+fwv() { # <verb args...> -> "rc=<n> ran=<yes|no>"; the verb bodies are recorded, never executed
+    rm -f "$SB/ran"
+    local rc=0
+    NFTBAN_CONFIG_DIR="$SB/h/etc" NFTBAN_STATE_DIR="$SB/h/state" NFTBAN_PROC_LOCKS="$SB/h/locks" \
+    NFTBAN_LIB_DIR="$LIBDIR" SBX="$SB" bash -c '
+        source "$1/cli/cmd_firewall.sh" >/dev/null 2>&1
+        firewall_restore(){ : > "$SBX/ran"; }; firewall_reset(){ : > "$SBX/ran"; }
+        _fw_bypass_guard(){ :; }; _fw_cc_guard(){ :; }; _fw_forward_guard(){ :; }
+        shift; nftban_cmd_firewall "$@"' _ "$LIBDIR" "$@" >/dev/null 2>&1 || rc=$?
+    echo "rc=$rc ran=$([[ -e "$SB/ran" ]] && echo yes || echo no)"
+}
+a4bad=""
+r=$(fwv restore /tmp/x.nft --help); [[ "$r" == "rc=1 ran=no" ]] || a4bad+=" [restore <file> --help: $r, want refused]"
+r=$(fwv restore ufw -h);            [[ "$r" == "rc=1 ran=no" ]] || a4bad+=" [restore ufw -h: $r, want refused]"
+r=$(fwv restore --help);            [[ "$r" == *"ran=yes" ]]     || a4bad+=" [restore --help: $r, want the verb's help]"
+r=$(fwv reset --help);              [[ "$r" == *"ran=yes" ]]     || a4bad+=" [reset --help: $r, want the verb's help]"
+r=$(fwv reset --force);             [[ "$r" == "rc=1 ran=no" ]] || a4bad+=" [reset --force: $r, want refused]"
+[[ -z "$a4bad" ]] && ok "A4 a later help token is not an exemption (restore <file> --help refused); <verb> --help still reaches the verb" || ko "A4:$a4bad"
+
 echo "=== S2. units carry the ExecCondition ==="
 U="$REPO_ROOT/install/systemd"; s2bad=""
 grep -qx 'ExecCondition=/usr/lib/nftban/bin/nftband --authority-check' "$U/nftband.service" || s2bad+=" nftband"
