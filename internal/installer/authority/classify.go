@@ -109,6 +109,22 @@ func Classify(
 	panelAutoApprove bool,
 	log *logging.Logger,
 ) Decision {
+	return ClassifyWithPriorGrant(exec, conflicts, panel, forceApprove, panelAutoApprove, false, log)
+}
+
+// ClassifyWithPriorGrant is Classify for the installer, which knows the decision its
+// PREVIOUS transaction recorded on this host (install_state AUTHORITY before this run).
+// priorGrant = that decision was FRESH, TAKEOVER, UPDATE or AMBIGUOUS (v1.235, owner
+// 2026-10-10): only then may orphan NFTBan artifacts beside a conflict be repaired (4d).
+func ClassifyWithPriorGrant(
+	exec executor.Executor,
+	conflicts []detect.Conflict,
+	panel detect.PanelType,
+	forceApprove bool,
+	panelAutoApprove bool,
+	priorGrant bool,
+	log *logging.Logger,
+) Decision {
 	// 1. NFTBan fully authoritative — UPDATE.
 	//
 	// CSF-CLOSE-4: this check no longer short-circuits unconditionally.
@@ -192,6 +208,18 @@ func Classify(
 		log.Detect("authority", "decision", string(Takeover))
 		log.Detect("authority", "reason", "panel auto-approve ("+string(panel)+") with --panel-auto-takeover")
 		return Takeover
+	}
+
+	// 4d. No approval, but orphan NFTBan artifacts on a host whose PREVIOUS transaction
+	// recorded an authorized decision: the repair of that installation (e.g. an upgrade
+	// interrupted after a takeover, while the disarmed firewall's iptables-nft tables are
+	// still loaded and detected as a conflict). Measured on f2-p8-u2604: without this the
+	// repair ABORTed. A refused install records ABORT and a purged host has no record, so
+	// neither passes; a leftover table alone is never consent.
+	if priorGrant && hasOrphanNftbanArtifacts(exec) {
+		log.Detect("authority", "decision", string(Ambiguous))
+		log.Detect("authority", "reason", "nftban artifact present, previous transaction authorized — repair of that installation")
+		return Ambiguous
 	}
 
 	// 5. No approval → ABORT

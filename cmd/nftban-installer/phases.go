@@ -325,7 +325,15 @@ func phaseDetect(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	// 6. Authority classification
 	// Read takeover flag from environment or config
 	forceApprove := exec.Getenv("NFTBAN_TAKEOVER") == "1"
-	pd.decision = authority.Classify(exec, pd.conflicts, pd.panel, forceApprove, pd.panelAutoApprove, log)
+	// v1.235: the decision this host's PREVIOUS transaction recorded (sf.Authority, before it
+	// is overwritten below) — only an authorized one lets orphan artifacts beside a conflict
+	// be repaired; a refused (ABORT) or absent record never does.
+	priorGrant := false
+	switch authority.Decision(sf.Authority) {
+	case authority.Fresh, authority.Takeover, authority.Update, authority.Ambiguous:
+		priorGrant = true
+	}
+	pd.decision = authority.ClassifyWithPriorGrant(exec, pd.conflicts, pd.panel, forceApprove, pd.panelAutoApprove, priorGrant, log)
 	sf.Authority = string(pd.decision)
 	log.Detect("authority", "decision", string(pd.decision))
 	log.StateChange(string(sf.State), string(state.StateDetectComplete), "authority="+string(pd.decision))
