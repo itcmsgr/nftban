@@ -163,6 +163,26 @@ func TestClassify_Ambiguous_TableWithoutChain(t *testing.T) {
 	}
 }
 
+// v1.235 (owner 2026-10-10): a leftover NFTBan table is not consent to take over an active
+// firewall. Measured on f2-p8-u2604: orphan `table ip nftban` + active unapproved UFW was
+// AMBIGUOUS and COMMITTED the NFTBan ruleset next to UFW. Conflicts are decided first.
+func TestClassify_OrphanArtifactsDoNotOverrideUnapprovedConflict(t *testing.T) {
+	for name, setup := range map[string]func(m *executor.MockExecutor){
+		"orphan table":         func(m *executor.MockExecutor) { m.NftTables["ip:nftban"] = true },
+		"daemon without table": func(m *executor.MockExecutor) { m.Services[NftbanDaemonUnit] = true },
+	} {
+		mock := executor.NewMockExecutor()
+		setup(mock)
+		conflicts := []detect.Conflict{{Name: "UFW", Active: true}}
+		if d := Classify(mock, conflicts, detect.PanelNone, false, false, newTestLogger()); d != Abort {
+			t.Errorf("%s + unapproved UFW: decision = %s, want ABORT", name, d)
+		}
+		if d := Classify(mock, conflicts, detect.PanelNone, true, false, newTestLogger()); d != Takeover {
+			t.Errorf("%s + UFW + --takeover: decision = %s, want TAKEOVER (the path that disables the conflict)", name, d)
+		}
+	}
+}
+
 // CONTRACT CHANGED 2026-08-11 (CSF-CLOSE-4). This previously asserted
 // "UPDATE wins ... (overrides everything)" even with forceApprove=true.
 // Runtime proof (el9-clean, R3-P1 #3) showed that rule left NFTBan and CSF

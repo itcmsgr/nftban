@@ -151,18 +151,22 @@ func Classify(
 		return Update
 	}
 
-	// 2. Orphan nftban artifacts without full authority — AMBIGUOUS.
-	// A later phase must NOT treat this as a clean Fresh or ignore it:
-	// the operator needs to see that the host carries stale state, and
+	// 2. No conflicts: orphan NFTBan artifacts → AMBIGUOUS, else FRESH.
+	//
+	// v1.235 (owner 2026-10-10): conflicts are decided BEFORE orphan artifacts. A leftover
+	// NFTBan table is not consent to take over an active firewall: measured on f2-p8-u2604,
+	// an empty orphan `table ip nftban` + active, unapproved UFW classified AMBIGUOUS and the
+	// install COMMITTED the full policy-drop ruleset next to UFW (DisableConflicts runs only
+	// for TAKEOVER). With conflicts present, only an explicit approval (4a-4c) proceeds.
+	// AMBIGUOUS keeps its meaning for a host without an active conflict (e.g. an interrupted,
+	// previously authorized upgrade): the later phase must NOT treat it as a clean Fresh, and
 	// the emergency-SSH path must kick in before any mutation.
-	if hasOrphanNftbanArtifacts(exec) {
-		log.Detect("authority", "decision", string(Ambiguous))
-		log.Detect("authority", "reason", "nftban artifact present but not authoritative (table or daemon in partial state)")
-		return Ambiguous
-	}
-
-	// 3. No conflicts → FRESH install
 	if len(conflicts) == 0 {
+		if hasOrphanNftbanArtifacts(exec) {
+			log.Detect("authority", "decision", string(Ambiguous))
+			log.Detect("authority", "reason", "nftban artifact present but not authoritative (table or daemon in partial state)")
+			return Ambiguous
+		}
 		log.Detect("authority", "decision", string(Fresh))
 		log.Detect("authority", "reason", "no conflicts; no nftban artifacts")
 		return Fresh
