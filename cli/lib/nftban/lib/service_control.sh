@@ -255,7 +255,9 @@ nftban_firewall_authority() {
         esac
     done <<< "$content"
     detail="INSTALL_STATE=$st AUTHORITY=$auth"
-    case "$auth" in FRESH|TAKEOVER|UPDATE) ok=1 ;; esac
+    # The installer's own "proceed" decisions; only ABORT refuses. AMBIGUOUS = NFTBan artifacts
+    # in a partial state (an interrupted upgrade): its repair must not be refused.
+    case "$auth" in FRESH|TAKEOVER|UPDATE|AMBIGUOUS) ok=1 ;; esac
     case "$st" in
         UNINSTALL_*|RESTORE_*)  echo "DENIED released $detail"; return 1 ;;
         FAILED_AUTHORITY_ABORT) echo "DENIED refused $detail"; return 1 ;;

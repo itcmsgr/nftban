@@ -95,7 +95,11 @@ func FirewallAuthority(in AuthorityInputs) AuthorityDecision {
 		st = "" // the reader's in-memory default is not a recorded state
 	}
 	detail := "INSTALL_STATE=" + st + " AUTHORITY=" + sf.Authority
-	granted := sf.Authority == "FRESH" || sf.Authority == "TAKEOVER" || sf.Authority == "UPDATE"
+	// The installer's own "proceed" decisions (authority.Decision); only ABORT refuses.
+	// AMBIGUOUS = NFTBan artifacts in a partial state (e.g. an interrupted upgrade):
+	// the installer proceeds with the emergency-SSH safety, so its repair must not be refused.
+	granted := sf.Authority == "FRESH" || sf.Authority == "TAKEOVER" || sf.Authority == "UPDATE" ||
+		sf.Authority == "AMBIGUOUS"
 
 	switch {
 	case strings.HasPrefix(st, "UNINSTALL_"), strings.HasPrefix(st, "RESTORE_"):

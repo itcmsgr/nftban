@@ -12,7 +12,10 @@ no	on	present	APPLIED_UNVERIFIED	UPDATE	none	GRANTED	authorized
 no	on	present	DEGRADED	FRESH	none	GRANTED	authorized
 no	on	present	COMMITTED	-	none	DENIED	no-authority-grant
 no	on	present	DEGRADED	ABORT	none	DENIED	no-authority-grant
-no	on	present	APPLIED_UNVERIFIED	AMBIGUOUS	none	DENIED	no-authority-grant
+no	on	present	APPLIED_UNVERIFIED	AMBIGUOUS	none	GRANTED	authorized
+no	on	present	REBUILD_NOT_EXECUTED	AMBIGUOUS	live	GRANTED	transaction
+no	on	present	REBUILD_NOT_EXECUTED	AMBIGUOUS	none	DENIED	needs-repair
+no	on	present	COMMITTED	BOGUS	none	DENIED	no-authority-grant
 yes	on	present	COMMITTED	TAKEOVER	none	DENIED	emergency-bypass
 yes	on	present	PREPARE_COMPLETE	TAKEOVER	live	DENIED	emergency-bypass
 no	off	present	COMMITTED	TAKEOVER	none	DENIED	disabled
