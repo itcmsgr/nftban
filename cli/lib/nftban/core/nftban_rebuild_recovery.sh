@@ -52,6 +52,19 @@ if [[ ! -f "$MARKER_PATH" ]]; then
     exit 0
 fi
 
+# v1.235 (owner 2026-10-10): recovery starts the daemon and rebuilds; it never grants itself
+# authority. The marker is kept for the run after authority is restored. Fail closed.
+_rr_auth="DENIED check-unavailable lib/service_control.sh"
+# shellcheck source=/dev/null
+if source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" 2>/dev/null \
+        && declare -F nftban_firewall_authority >/dev/null 2>&1; then
+    _rr_auth="$(nftban_firewall_authority)" || true
+fi
+if [[ "$_rr_auth" != GRANTED* ]]; then
+    log_warn "SKIPPED: NFTBan has no firewall authority on this host (${_rr_auth#DENIED }) — no daemon start, no rebuild"
+    exit 0
+fi
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Step 2: Read marker
 # ─────────────────────────────────────────────────────────────────────────────

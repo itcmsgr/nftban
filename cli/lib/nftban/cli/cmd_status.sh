@@ -670,7 +670,12 @@ _status_json_install_transaction() {
        && nftban_install_state_is_known_literal "$_state"; then
         _known=true
     fi
+    local _fa="UNKNOWN check-unavailable _status_firewall_authority" _fa_g=false _fa_r _fa_d
+    declare -F _status_firewall_authority >/dev/null 2>&1 && _fa="$(_status_firewall_authority)"
+    [[ "$_fa" == GRANTED* ]] && _fa_g=true
+    _fa_r="${_fa#* }"; _fa_d="${_fa_r#* }"; _fa_r="${_fa_r%% *}"
     echo "  \"install_transaction\": {"
+    echo "    \"firewall_authority\": {\"granted\": $_fa_g, \"reason\": \"$(json_escape "$_fa_r")\", \"detail\": \"$(json_escape "$_fa_d")\"},"
     echo "    \"state\": \"$(json_escape "$_state")\","
     echo "    \"class\": \"$(json_escape "$_class")\","
     echo "    \"committed\": $_committed,"
@@ -760,6 +765,46 @@ _status_overall_state() {
     else
         printf '%s' "$runtime"
     fi
+}
+
+# v1.235 (owner 2026-10-10): may NFTBan write firewall rules here (lib/service_control.sh
+# nftban_firewall_authority — the same decision the daemon, the timers and the firewall
+# verbs obey). Prints "GRANTED|DENIED <reason> <detail>", or "UNKNOWN check-unavailable".
+_status_firewall_authority() {
+    declare -F nftban_firewall_authority >/dev/null 2>&1 \
+        || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" >/dev/null 2>&1 || true
+    if ! declare -F nftban_firewall_authority >/dev/null 2>&1; then
+        echo "UNKNOWN check-unavailable lib/service_control.sh"; return 0
+    fi
+    nftban_firewall_authority || true
+}
+
+# Silent when authority is granted. Otherwise: why, what is in the kernel, and that NFTBan
+# maintains none of it (no bans, feeds or repairs) until authority is restored.
+_status_section_firewall_authority() {
+    local _a _r _d _k
+    _a="$(_status_firewall_authority)"
+    [[ "$_a" == GRANTED* ]] && return 0
+    _r="${_a#* }"; _d="${_r#* }"; _r="${_r%% *}"
+    if nft list table ip nftban >/dev/null 2>&1; then
+        _k="present in the kernel — KEPT, but NOT maintained: bans, feeds and repairs are not applied"
+    elif nft list tables >/dev/null 2>&1; then
+        _k="none loaded"
+    else
+        _k="UNKNOWN — the nftables ruleset could not be read"
+    fi
+    echo "FIREWALL AUTHORITY"
+    echo "───────────────────────────────────────────────────────────────"
+    echo "  Authority:           NOT GRANTED (${_r}: ${_d})"
+    echo "  NFTBan rules:        ${_k}"
+    echo "  NFTBan daemon/timers/repairs and firewall verbs change nothing in this state."
+    case "$_r" in
+        disabled)  echo "  To resume:           nftban enable" ;;
+        refused)   echo "  To approve takeover: sudo NFTBAN_TAKEOVER=1 /usr/lib/nftban/bin/nftban-installer --repair" ;;
+        emergency-bypass) echo "  To resume:           reboot without the kernel parameter nftban=disabled" ;;
+        *)         echo "  To resume:           sudo /usr/lib/nftban/bin/nftban-installer --repair" ;;
+    esac
+    echo ""
 }
 
 _status_section_install_transaction() {
@@ -1039,6 +1084,17 @@ _status_section_authority() {
         nftban_kv "Firewall authority" "⚠️  AMBIGUOUS"
         if [[ -n "$conflicts" ]]; then
             nftban_kv "Active conflicts" "$conflicts"
+        fi
+    elif [[ "$(_status_firewall_authority)" != GRANTED* ]]; then
+        # v1.235: a recorded AUTHORITY is not authority. A refused install (ABORT) never
+        # neutralized anything, and an interrupted/failed one holds no standing grant.
+        local _fa
+        _fa="$(_status_firewall_authority)"; _fa="${_fa#* }"
+        nftban_kv "Firewall authority" "NOT GRANTED (${_fa%% *}; recorded decision: $authority)"
+        if [[ -n "$conflicts" && "$authority" == "ABORT" ]]; then
+            nftban_kv "Other firewalls" "LEFT AS THEY WERE: $conflicts"
+        elif [[ -n "$conflicts" ]]; then
+            nftban_kv "Recorded conflicts" "$conflicts"
         fi
     else
         nftban_kv "Firewall authority" "🔒 EXCLUSIVE ($authority)"
@@ -2284,6 +2340,7 @@ output_terminal() {
     # v1.230.0 P0-D4: immediately after the headline/SYSTEM block, so a failed or
     # incomplete transaction is never buried below a reassuring PROTECTED line.
     _status_section_install_transaction
+    _status_section_firewall_authority
     _status_section_firewall "$quiet_mode"
     _status_section_authority
     _status_section_services

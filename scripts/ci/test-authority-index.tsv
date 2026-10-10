@@ -171,6 +171,7 @@ feeds_authority_test	cli/lib/nftban/tests/feeds_authority_test.sh	feeds	test	fee
 feeds_select_strict_e2e_v152_test	cli/lib/nftban/tests/feeds_select_strict_e2e_v152_test.sh	feeds	test	feeds	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 fetch_verified_v157_test	cli/lib/nftban/tests/fetch_verified_v157_test.sh	packaging	test	build-fetch	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 fhs_lane_v175_test	cli/lib/nftban/tests/fhs_lane_v175_test.sh	packaging	test	fhs	PACKAGE_BUILD	policy-gates	true	false	false	false	false	false			
+firewall_authority_v1235_test	cli/lib/nftban/tests/firewall_authority_v1235_test.sh	firewall	test	lifecycle	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 firewall_restore_foreign_tables_netns_v1235_test	cli/lib/nftban/tests/firewall_restore_foreign_tables_netns_v1235_test.sh	firewall	test	firewall-restore	ROOT_LAB	lab-manual	false	true	false	false	true	false			
 firewall_restore_scoped_v1235_test	cli/lib/nftban/tests/firewall_restore_scoped_v1235_test.sh	firewall	test	firewall-restore	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 firewall_transition_health_cli_v1921_test	cli/lib/nftban/tests/firewall_transition_health_cli_v1921_test.sh	firewall	test	firewall-transition-health	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

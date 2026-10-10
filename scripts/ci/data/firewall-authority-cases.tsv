@@ -1,0 +1,46 @@
+# Firewall-authority decision table (v1.235, owner 2026-10-10): may NFTBan write firewall rules now?
+# Read by the Go test (state.FirewallAuthority) AND the shell test (nftban_firewall_authority in
+# lib/service_control.sh); both must give the same answer for every row.
+# Columns: bypass(yes|no) switch(on|off|invalid|unknown) statefile(present|absent|unreadable)
+#          INSTALL_STATE AUTHORITY lock(live|stale|none) -> verdict(GRANTED|DENIED) reason
+# "-" = empty field. lock live = the kernel lock table holds a FLOCK on installer.lock by the PID in
+# it; stale = the lock file names a PID but the kernel holds no such lock (dead installer).
+no	on	present	COMMITTED	TAKEOVER	none	GRANTED	authorized
+no	on	present	COMMITTED	FRESH	none	GRANTED	authorized
+no	on	present	COMMITTED	UPDATE	stale	GRANTED	authorized
+no	on	present	APPLIED_UNVERIFIED	UPDATE	none	GRANTED	authorized
+no	on	present	DEGRADED	FRESH	none	GRANTED	authorized
+no	on	present	COMMITTED	-	none	DENIED	no-authority-grant
+no	on	present	DEGRADED	ABORT	none	DENIED	no-authority-grant
+no	on	present	APPLIED_UNVERIFIED	AMBIGUOUS	none	DENIED	no-authority-grant
+yes	on	present	COMMITTED	TAKEOVER	none	DENIED	emergency-bypass
+yes	on	present	PREPARE_COMPLETE	TAKEOVER	live	DENIED	emergency-bypass
+no	off	present	COMMITTED	TAKEOVER	none	DENIED	disabled
+no	off	present	SWITCH_COMPLETE	TAKEOVER	live	DENIED	disabled
+no	invalid	present	COMMITTED	TAKEOVER	none	DENIED	switch-unusable
+no	unknown	present	COMMITTED	TAKEOVER	none	DENIED	switch-unusable
+no	on	absent	-	-	none	DENIED	no-install-state
+no	on	unreadable	-	-	none	DENIED	install-state-unreadable
+no	on	present	FAILED_AUTHORITY_ABORT	ABORT	none	DENIED	refused
+no	on	present	FAILED_AUTHORITY_ABORT	ABORT	live	DENIED	refused
+no	on	present	DETECT_COMPLETE	TAKEOVER	live	GRANTED	transaction
+no	on	present	PREPARE_COMPLETE	FRESH	live	GRANTED	transaction
+no	on	present	SWITCH_COMPLETE	UPDATE	live	GRANTED	transaction
+no	on	present	SERVICES_COMPLETE	TAKEOVER	live	GRANTED	transaction
+no	on	present	FAILED_REBUILD	UPDATE	live	GRANTED	transaction
+no	on	present	REBUILD_REFUSED_BUSY	TAKEOVER	live	GRANTED	transaction
+no	on	present	DETECT_COMPLETE	ABORT	live	DENIED	no-authority-grant
+no	on	present	DETECT_COMPLETE	TAKEOVER	stale	DENIED	transaction-interrupted
+no	on	present	PREPARE_COMPLETE	TAKEOVER	none	DENIED	transaction-interrupted
+no	on	present	SWITCH_COMPLETE	UPDATE	stale	DENIED	transaction-interrupted
+no	on	present	FILES_INSTALLED	UPDATE	none	DENIED	transaction-interrupted
+no	on	present	FAILED_REBUILD	UPDATE	none	DENIED	needs-repair
+no	on	present	FAILED_REBUILD	UPDATE	stale	DENIED	needs-repair
+no	on	present	FAILED_RENDER	TAKEOVER	none	DENIED	needs-repair
+no	on	present	FAILED_CONFIG_INVALID	UPDATE	none	DENIED	needs-repair
+no	on	present	REBUILD_NOT_EXECUTED	UPDATE	none	DENIED	needs-repair
+no	on	present	UNINSTALL_RELEASED	TAKEOVER	none	DENIED	released
+no	on	present	UNINSTALL_PLANNING	TAKEOVER	live	DENIED	released
+no	on	present	RESTORE_EXECUTED	TAKEOVER	none	DENIED	released
+no	on	present	-	TAKEOVER	none	DENIED	unknown-state
+no	on	present	SOMETHING_NEW	TAKEOVER	none	DENIED	unknown-state

@@ -62,6 +62,8 @@ _HI="$TMPD/hi"
 export NFTBAN_CONFIG_DIR="$_HI/etc" NFTBAN_DATA_DIR="$_HI/data" NFTBAN_LOG_DIR="$_HI/log" \
        NFTBAN_CACHE_DIR="$_HI/cache" NFTBAN_RUN_DIR="$_HI/run" NFTBAN_STATE_DIR="$_HI/data/state"
 mkdir -p "$NFTBAN_CONFIG_DIR" "$NFTBAN_DATA_DIR/state" "$NFTBAN_LOG_DIR" "$NFTBAN_CACHE_DIR" "$NFTBAN_RUN_DIR"
+# v1.235: the IPC client sends nothing without firewall authority; this world is an authorized install.
+printf 'INSTALL_STATE=COMMITTED\nAUTHORITY=TAKEOVER\n' > "$NFTBAN_STATE_DIR/install_state"
 export FAKE_T="$TMPD/t"
 BIN="$TMPD/bin"; mkdir -p "$BIN" "$FAKE_T"
 # The fake daemon applies fragments to the FAKE kernel through this path; it is
@@ -342,7 +344,7 @@ daemon_reconcile() {
         FAIL_AT="${FAIL_AT:-0}" FAULT_KIND="${FAULT_KIND:-before}" \
         QUERY_FAULT_FROM="${QUERY_FAULT_FROM:-}" QUERY_FAULT_KIND="${QUERY_FAULT_KIND:-}" \
         NFTBAN_CONFIG_DIR="$NFTBAN_CONFIG_DIR" NFTBAN_LIB_DIR="$NFTBAN_LIB_DIR" \
-        NFTBAN_LOG_DIR="$NFTBAN_LOG_DIR" NFTBAN_DATA_DIR="$NFTBAN_DATA_DIR" \
+        NFTBAN_LOG_DIR="$NFTBAN_LOG_DIR" NFTBAN_DATA_DIR="$NFTBAN_DATA_DIR" NFTBAN_STATE_DIR="$NFTBAN_STATE_DIR" \
         NFTBAN_CACHE_DIR="$NFTBAN_CACHE_DIR" NFTBAN_FRAGMENT_DIR="$NFTBAN_FRAGMENT_DIR" \
         NFTBAN_PLAN_RECORD_DIR="$NFTBAN_PLAN_RECORD_DIR" NFTBAN_RUN_DIR="$NFTBAN_RUN_DIR" \
         NFTBAN_PLAN_GENERATION_FILE="$NFTBAN_PLAN_GENERATION_FILE" \

@@ -91,6 +91,11 @@ func runNftWithTimeout(timeout time.Duration, args ...string) ([]byte, error) {
 
 // runNftFile executes nft -f <file> with default timeout
 func runNftFile(path string) ([]byte, error) {
+	if WriteGate != nil {
+		if err := WriteGate(); err != nil {
+			return nil, err
+		}
+	}
 	return runNft("-f", path)
 }
 
@@ -108,6 +113,12 @@ func isIgnorableNftError(output string, patterns ...string) bool {
 // runNftIgnoring executes nft and ignores specified error patterns
 // Returns nil error if command succeeds OR if error matches any ignore pattern
 func runNftIgnoring(ignorePatterns []string, args ...string) error {
+	// Every caller adds or deletes elements: a write (v1.235 WriteGate).
+	if WriteGate != nil {
+		if err := WriteGate(); err != nil {
+			return err
+		}
+	}
 	output, err := runNft(args...)
 	if err != nil {
 		if isIgnorableNftError(string(output), ignorePatterns...) {

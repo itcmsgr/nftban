@@ -198,6 +198,16 @@ main() {
 
     log "INFO" "NFTBan Maintenance Starting"
 
+    # v1.235 (owner 2026-10-10): maintenance reloads, edits rules and runs autoheal. Without
+    # firewall authority (refused / interrupted / failed install, disabled, bypass) it changes
+    # nothing — "lockout prevention" never grants itself authority. The unit's ExecCondition
+    # normally skips the run earlier; this is the same decision for a manual run.
+    local _maint_auth
+    if ! _maint_auth="$(_nft_ipc_authority)"; then
+        log "WARN" "SKIPPED: NFTBan has no firewall authority on this host (${_maint_auth#DENIED }) — no reload, no rule change, no repair"
+        return 0
+    fi
+
     # v1.32.0: Cache table existence check (avoids 4 redundant kernel calls)
     # v1.228.4 PR-3: typed. "not available" now distinguishes ABSENT from
     # CANNOT_READ; the latter marks the whole run as failed rather than silently

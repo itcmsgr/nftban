@@ -447,6 +447,24 @@ _fw_bypass_guard() {
     return 0
 }
 
+# v1.235 (owner 2026-10-10): every verb that loads or replaces NFTBan rules runs only with
+# granted firewall authority (lib/service_control.sh nftban_firewall_authority, the twin of
+# the Go state.FirewallAuthority). Refused: a refused/interrupted/failed install, a DISABLED
+# NFTBan (rebuild/init/reload/reset/restore: 'nftban enable' first), the bypass. Fail closed:
+# a library that cannot be loaded refuses. `firewall takeover` is the documented recovery
+# transaction and is not gated here.
+_fw_authority_guard() {
+    if ! declare -F nftban_refuse_without_authority >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" 2>/dev/null || true
+    fi
+    if ! declare -F nftban_refuse_without_authority >/dev/null 2>&1; then
+        echo "REFUSED: $1 — the firewall-authority check could not be loaded (lib/service_control.sh)" >&2
+        return 1
+    fi
+    nftban_refuse_without_authority "$1"
+}
+
 _firewall_render_boot() {
     local quiet="false" arg inert="false"
     for arg in "$@"; do
@@ -567,8 +585,9 @@ _firewall_rebuild_refresh_boot_projection() {
         echo failed; return 0
     fi
     # v1.235 row 486 (owner U1): while the STORED choice is disabled, the projection
-    # stays INERT, so a manual rebuild of a disabled NFTBan applies rules for the running
-    # system only and cannot make NFTBan come back by itself at the next boot.
+    # stays INERT, so nothing can make NFTBan come back by itself at the next boot.
+    # Since 2026-10-10 (contract D11) the firewall verbs REFUSE while disabled, so this
+    # branch is a backstop for any other path that reaches the rebuild core.
     # Fail closed, as in render-boot: an unreadable stored choice never publishes.
     if ! declare -F nftban_master_switch_on >/dev/null 2>&1; then
         # shellcheck source=/dev/null
@@ -841,6 +860,7 @@ nftban_cmd_firewall() {
             # guards (R-DEC bypass, D10 rollback-failed).
             shift
             _fw_bypass_guard "firewall init" || return 1
+            _fw_authority_guard "firewall init" || return 1
             _fw_cc_guard "firewall init" || return 1
             _fw_forward_guard "firewall init" || return 1
             nftban_ssh_pre_rebuild_lockout_guard init "$@" || true
@@ -882,6 +902,7 @@ nftban_cmd_firewall() {
                 esac
             done
             _fw_bypass_guard "firewall reload" || return 1
+            _fw_authority_guard "firewall reload" || return 1
             _fw_cc_guard "firewall reload" || return 1
             _fw_forward_guard "firewall reload" || return 1
             nftban_ssh_pre_rebuild_lockout_guard reload "$@" || true
@@ -890,6 +911,7 @@ nftban_cmd_firewall() {
         rebuild)
             shift
             _fw_bypass_guard "firewall rebuild" || return 1
+            _fw_authority_guard "firewall rebuild" || return 1
             _fw_cc_guard "firewall rebuild" || return 1
             _fw_forward_guard "firewall rebuild" || return 1
             nftban_ssh_pre_rebuild_lockout_guard rebuild "$@" || true
@@ -899,12 +921,20 @@ nftban_cmd_firewall() {
             # P12-FPA: render + publish the boot projection WITHOUT loading it.
             shift
             _fw_bypass_guard "firewall render-boot" || return 1
+            # An INERT projection (what disable publishes) is always allowed; an ACTIVE one
+            # would load NFTBan rules at the next boot, so it needs firewall authority.
+            local _rb_a _rb_inert=0
+            for _rb_a in "$@"; do [[ "$_rb_a" == "--inert" ]] && _rb_inert=1; done
+            if [[ $_rb_inert -eq 0 ]]; then
+                _fw_authority_guard "firewall render-boot" || return 1
+            fi
             _fw_cc_guard "firewall render-boot" || return 1
             _firewall_render_boot "$@"
             ;;
         reset)
             shift
             _fw_bypass_guard "firewall reset" || return 1
+            _fw_authority_guard "firewall reset" || return 1
             _fw_cc_guard "firewall reset" || return 1
             _fw_forward_guard "firewall reset" || return 1
             firewall_reset "$@"
@@ -924,6 +954,7 @@ nftban_cmd_firewall() {
         restore)
             shift
             _fw_bypass_guard "firewall restore" || return 1
+            _fw_authority_guard "firewall restore" || return 1
             _fw_cc_guard "firewall restore" || return 1
             _fw_forward_guard "firewall restore" || return 1
             firewall_restore "$@"
@@ -6177,6 +6208,18 @@ Operations:
   takeover      Disarm conflicting external firewalls (CSF/iptables/firewalld); reversible
   forward       Forwarding allows for routed/container traffic
                 (status | list | allow egress|uplink|publish | remove | migrate)
+
+Firewall authority (v1.235):
+  init, reload, rebuild, reset, restore and an active render-boot run only when NFTBan
+  holds firewall authority: a completed, authorized installation, NFTBan enabled, and no
+  emergency bypass. They REFUSE and change nothing when:
+    - NFTBan is disabled (NFTBAN_ENABLED=false) .... run 'nftban enable' first
+    - the installation was refused (another firewall is active)
+                     ... sudo NFTBAN_TAKEOVER=1 /usr/lib/nftban/bin/nftban-installer --repair
+    - the last install/upgrade was interrupted or failed
+                     ... sudo /usr/lib/nftban/bin/nftban-installer --repair
+    - the kernel parameter nftban=disabled is set for this boot
+  'nftban status' shows the reason. 'takeover' is the approval path and is not refused.
 
 Examples:
   # Validate with strict mode (recommended before enabling)

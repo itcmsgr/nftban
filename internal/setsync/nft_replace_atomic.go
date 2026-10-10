@@ -52,8 +52,8 @@ const replaceAddBatch = 1000
 // _ipv6, so a name-suffix guess resolves the wrong table and can fabricate a
 // bogus interval set).
 func (m *NFTManager) FindSetInTable(table *nftables.Table, name string) (*nftables.Set, error) {
-	// INV-NFT-TX-01: private connection, owned for this transaction only.
-	conn, errTx := m.txConn()
+	// INV-NFT-TX-01: private connection, owned for this transaction only (read-only).
+	conn, errTx := m.readConn()
 	if errTx != nil {
 		return nil, errTx
 	}

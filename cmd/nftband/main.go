@@ -28,6 +28,7 @@ import (
 
 	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/itcmsgr/nftban/internal/eventbus"
+	"github.com/itcmsgr/nftban/internal/installer/state"
 	"github.com/itcmsgr/nftban/internal/module"
 	"github.com/itcmsgr/nftban/internal/nftbackend"
 	"github.com/itcmsgr/nftban/internal/safety"
@@ -47,8 +48,26 @@ func main() {
 			return
 		case "--profile":
 			profileEnabled = true
+		case "--authority-check":
+			// v1.235: the unit's ExecCondition. 0 = may run; 1 = skip the start (not a failure).
+			d := state.FirewallAuthority(authorityInputs())
+			fmt.Println(authorityText(d))
+			if !d.Granted {
+				os.Exit(1)
+			}
+			return
 		}
 	}
+
+	// v1.235 (owner 2026-10-10): no authority, no daemon — checked BEFORE the backend is
+	// created (nftbackend.New creates the NFTBan tables). The unit's ExecCondition normally
+	// stops the start earlier; this is the same decision for any other way of starting it.
+	authIn := authorityInputs()
+	if d := state.FirewallAuthority(authIn); !d.Granted {
+		log.Printf("%s", authorityText(d))
+		return
+	}
+	installWriteGate(authIn)
 
 	// Also check environment variable for pprof (useful for systemd/container deployments)
 	if os.Getenv("NFTBAN_ENABLE_PPROF") == "true" {

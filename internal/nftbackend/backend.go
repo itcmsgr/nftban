@@ -916,6 +916,12 @@ func (b *Backend) ApplyRuleset(ctx context.Context, req ApplyRulesetRequest) err
 	if req.Check {
 		cmd = procenv.CommandContext(ctx, "nft", "-c", "-f", req.FilePath)
 	} else {
+		// v1.235: a load is a write — the same firewall-authority gate as every netlink write.
+		if nftsync.WriteGate != nil {
+			if err := nftsync.WriteGate(); err != nil {
+				return err
+			}
+		}
 		cmd = procenv.CommandContext(ctx, "nft", "-f", req.FilePath)
 	}
 

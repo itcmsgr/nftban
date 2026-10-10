@@ -48,6 +48,17 @@ fi
 # shellcheck source=/dev/null
 source /usr/lib/nftban/lib/nft_ipc.sh 2>/dev/null || true
 
+# v1.235 (owner 2026-10-10): this loads rules (`nft -f`) and runs `nftban init`; without
+# firewall authority it changes nothing. Fail closed: no decision available = refusal.
+_fi_auth="DENIED check-unavailable lib/nft_ipc.sh"
+if declare -F _nft_ipc_authority >/dev/null 2>&1; then
+    _fi_auth="$(_nft_ipc_authority)" || true
+fi
+if [[ "$_fi_auth" != GRANTED* ]]; then
+    echo "SKIPPED: NFTBan has no firewall authority on this host (${_fi_auth#DENIED }) — no rule load" >&2
+    exit 0
+fi
+
 # Optional: Load snapshot if delay is disabled
 # This provides fast firewall activation on boot
 if [[ "$DELAY" -eq 0 ]]; then
