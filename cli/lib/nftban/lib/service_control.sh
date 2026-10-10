@@ -689,6 +689,18 @@ nftban_enable_all() {
     # and skipping it would leave the inert projection in place (NFTBan would not load
     # at the next boot even though it is enabled).
     _nftban_set_config "NFTBAN_ENABLED" "true"
+    # v1.235 (VM pass 3, f2-p8-u2604): the rebuild's post-validation requires active NFTBan
+    # timers (VAL-TIMER-001); after `disable all` none is active, so the rebuild was judged a
+    # REGRESSION and enable always rolled back. Restore the core timers first (per the unit
+    # record, as below); a failed enable stops again only those this run started.
+    local _pre_tmr _pre_started=()
+    for _pre_tmr in "${NFTBAN_TIMER_HEALTH:-nftban-health.timer}" \
+                    "${NFTBAN_TIMER_MAINTENANCE:-nftban-maintenance.timer}" \
+                    "${NFTBAN_TIMER_WATCHDOG:-nftban-watchdog.timer}"; do
+        systemctl is-active --quiet "$_pre_tmr" 2>/dev/null && continue
+        _nftban_restore_unit "$_pre_tmr" core
+        systemctl is-active --quiet "$_pre_tmr" 2>/dev/null && _pre_started+=("$_pre_tmr")
+    done
     echo "[4/10] Initializing firewall..."
     if true; then
         echo "  Rebuilding the firewall from the saved configuration..."
@@ -731,6 +743,9 @@ nftban_enable_all() {
                 echo "  ❌ Protection failed — rollback applied" >&2
                 # v1.235: a failed enable leaves NFTBan in its previous (disabled) state.
                 _nftban_set_config "NFTBAN_ENABLED" "false"
+                for _pre_tmr in "${_pre_started[@]}"; do
+                    systemctl disable --now "$_pre_tmr" >/dev/null 2>&1 || true
+                done
                 return 1
             fi
         fi
