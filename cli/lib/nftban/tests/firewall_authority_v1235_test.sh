@@ -140,8 +140,8 @@ else ko "A3b granted request refused: $resp"; fi
 # No hermetic unix socket here, so "never connects" is held by ORDER: in nft_ipc_request the
 # decision comes before the socket test and before socat.
 body="$(awk '/^nft_ipc_request\(\) \{/{f=1} f{print} f&&/^\}/{exit}' "$LIBDIR/lib/nft_ipc.sh")"
-l_a=$(grep -n '_nft_ipc_authority' <<< "$body" | head -1 | cut -d: -f1)
-l_s=$(grep -n 'socat\|NFTBAN_DAEMON_SOCKET' <<< "$body" | head -1 | cut -d: -f1)
+l_a=$(awk '/_nft_ipc_authority/{print NR; exit}' <<< "$body")
+l_s=$(awk '/socat|NFTBAN_DAEMON_SOCKET/{print NR; exit}' <<< "$body")
 [[ -n "$l_a" && -n "$l_s" && "$l_a" -lt "$l_s" ]] && ok "A3c the decision precedes any socket use in nft_ipc_request" \
     || ko "A3c order: authority line ${l_a:-?} vs first socket use ${l_s:-?}"
 
@@ -173,8 +173,8 @@ grep -q 'nftban_refuse_without_authority "health fix' "$LIBDIR/cli/cmd_health_co
 grep -q 'Auto-heal: DISABLED for this run' "$LIBDIR/cli/cmd_health_core.sh" || s3bad+=" health-auto-heal"
 # autoheal: the decision precedes the first timer/daemon/rebuild action
 ah="$LIBDIR/helpers/autoheal.sh"
-l_gate=$(grep -n 'nftban_firewall_authority' "$ah" | head -1 | cut -d: -f1)
-l_first=$(grep -n 'systemctl enable "\$timer"\|systemctl start nftband\|firewall rebuild' "$ah" | head -1 | cut -d: -f1)
+l_gate=$(awk '/nftban_firewall_authority/{print NR; exit}' "$ah")
+l_first=$(awk '/systemctl enable "\$timer"|systemctl start nftband|firewall rebuild/{print NR; exit}' "$ah")
 [[ -n "$l_gate" && -n "$l_first" && "$l_gate" -lt "$l_first" ]] || s3bad+=" autoheal-order(${l_gate:-?}>${l_first:-?})"
 [[ -z "$s3bad" ]] && ok "S3 maintenance, autoheal, rebuild-recovery, firewall-init, health fix/auto-heal check authority first" || ko "S3:$s3bad"
 

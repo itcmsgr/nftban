@@ -786,13 +786,18 @@ _status_section_firewall_authority() {
     _a="$(_status_firewall_authority)"
     [[ "$_a" == GRANTED* ]] && return 0
     _r="${_a#* }"; _d="${_r#* }"; _r="${_r%% *}"
-    if nft list table ip nftban >/dev/null 2>&1; then
-        _k="present in the kernel — KEPT, but NOT maintained: bans, feeds and repairs are not applied"
-    elif nft list tables >/dev/null 2>&1; then
-        _k="none loaded"
-    else
-        _k="UNKNOWN — the nftables ruleset could not be read"
+    # The typed probe authority (lib/nft_probe.sh): CANNOT_READ is never reported as "none".
+    declare -F nftban_nft_probe_table >/dev/null 2>&1 \
+        || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_probe.sh" >/dev/null 2>&1 || true
+    NFTBAN_NFT_PROBE_VERDICT=""
+    if declare -F nftban_nft_probe_table >/dev/null 2>&1; then
+        nftban_nft_probe_table ip nftban status >/dev/null 2>&1 || true
     fi
+    case "${NFTBAN_NFT_PROBE_VERDICT:-}" in
+        PRESENT) _k="present in the kernel — KEPT, but NOT maintained: bans, feeds and repairs are not applied" ;;
+        ABSENT)  _k="none loaded" ;;
+        *)       _k="UNKNOWN — the nftables ruleset could not be read" ;;
+    esac
     echo "FIREWALL AUTHORITY"
     echo "───────────────────────────────────────────────────────────────"
     echo "  Authority:           NOT GRANTED (${_r}: ${_d})"

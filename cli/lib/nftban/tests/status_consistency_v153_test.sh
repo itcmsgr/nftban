@@ -100,11 +100,11 @@ echo "$A_OUT" | grep -q "Active conflicts" \
 echo "=== v1.235: a REFUSED install (AUTHORITY=ABORT) is never shown as owned/neutralized ==="
 write_state "INSTALL_STATE=FAILED_AUTHORITY_ABORT" "AUTHORITY=ABORT" "CONFLICTS=UFW"
 R_OUT="$(run_authority_section)"
-echo "$R_OUT" | grep -qE "Firewall authority\.+ NOT GRANTED \(refused" \
+grep -qE "Firewall authority\.+ NOT GRANTED \(refused" <<< "$R_OUT" \
     && ok "refused install shows 'NOT GRANTED (refused…)'" || no "refused install not shown as NOT GRANTED" "$R_OUT"
-echo "$R_OUT" | grep -qE "Other firewalls\.+ LEFT AS THEY WERE: UFW" \
+grep -qE "Other firewalls\.+ LEFT AS THEY WERE: UFW" <<< "$R_OUT" \
     && ok "refused install: the other firewall is reported as left as it was" || no "refused install: other firewall line wrong" "$R_OUT"
-echo "$R_OUT" | grep -qE "EXCLUSIVE|NEUTRALIZED" \
+grep -qE "EXCLUSIVE|NEUTRALIZED" <<< "$R_OUT" \
     && no "refused install must not claim EXCLUSIVE/NEUTRALIZED" "$R_OUT" \
     || ok "refused install claims neither EXCLUSIVE nor NEUTRALIZED"
 
