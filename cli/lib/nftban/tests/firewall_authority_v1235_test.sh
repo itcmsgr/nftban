@@ -173,6 +173,17 @@ r=$(fwv restore ufw -h);            [[ "$r" == "rc=1 ran=no" ]] || a4bad+=" [res
 r=$(fwv restore --help);            [[ "$r" == *"ran=yes" ]]     || a4bad+=" [restore --help: $r, want the verb's help]"
 r=$(fwv reset --help);              [[ "$r" == *"ran=yes" ]]     || a4bad+=" [reset --help: $r, want the verb's help]"
 r=$(fwv reset --force);             [[ "$r" == "rc=1 ran=no" ]] || a4bad+=" [reset --force: $r, want refused]"
+# render-boot does not know a bare `help`: it must not pass as help (switch ON, refused install).
+build_case "$SB/r" no on present FAILED_AUTHORITY_ABORT ABORT none
+rb() { rm -f "$SB/ran"; local rc=0
+    NFTBAN_CONFIG_DIR="$SB/r/etc" NFTBAN_STATE_DIR="$SB/r/state" NFTBAN_PROC_LOCKS="$SB/r/locks" \
+    NFTBAN_LIB_DIR="$LIBDIR" SBX="$SB" bash -c '
+        source "$1/cli/cmd_firewall.sh" >/dev/null 2>&1
+        _firewall_render_boot(){ : > "$SBX/ran"; }; _fw_bypass_guard(){ :; }; _fw_cc_guard(){ :; }
+        shift; nftban_cmd_firewall "$@"' _ "$LIBDIR" "$@" >/dev/null 2>&1 || rc=$?
+    echo "rc=$rc ran=$([[ -e "$SB/ran" ]] && echo yes || echo no)"; }
+r=$(rb render-boot help);   [[ "$r" == "rc=1 ran=no" ]] || a4bad+=" [render-boot help (refused install): $r, want refused]"
+r=$(rb render-boot --help); [[ "$r" == *"ran=yes" ]]     || a4bad+=" [render-boot --help: $r, want the verb's help]"
 [[ -z "$a4bad" ]] && ok "A4 a later help token is not an exemption (restore <file> --help refused); <verb> --help still reaches the verb" || ko "A4:$a4bad"
 
 echo "=== S2. units carry the ExecCondition ==="
