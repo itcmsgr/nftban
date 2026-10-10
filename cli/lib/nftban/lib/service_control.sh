@@ -689,12 +689,14 @@ nftban_enable_all() {
     # and skipping it would leave the inert projection in place (NFTBan would not load
     # at the next boot even though it is enabled).
     _nftban_set_config "NFTBAN_ENABLED" "true"
-    # v1.235 (VM pass 3, f2-p8-u2604): the rebuild's post-validation requires active NFTBan
-    # timers (VAL-TIMER-001); after `disable all` none is active, so the rebuild was judged a
-    # REGRESSION and enable always rolled back. Restore the core timers first (per the unit
-    # record, as below); a failed enable stops again only those this run started.
+    # v1.235 (VM pass 3, f2-p8-u2604): after `disable all` the rebuild below cannot succeed:
+    # its whitelist projection needs the daemon (socket stopped by disable: "whitelist did not
+    # converge"), and its post-validation needs active NFTBan timers (VAL-TIMER-001). Restore
+    # the daemon socket/service and the core timers first (per the unit record, as below); a
+    # failed enable stops again only those this run started.
     local _pre_tmr _pre_started=()
-    for _pre_tmr in "${NFTBAN_TIMER_HEALTH:-nftban-health.timer}" \
+    for _pre_tmr in nftband.socket nftband.service \
+                    "${NFTBAN_TIMER_HEALTH:-nftban-health.timer}" \
                     "${NFTBAN_TIMER_MAINTENANCE:-nftban-maintenance.timer}" \
                     "${NFTBAN_TIMER_WATCHDOG:-nftban-watchdog.timer}"; do
         systemctl is-active --quiet "$_pre_tmr" 2>/dev/null && continue
