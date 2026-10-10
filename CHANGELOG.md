@@ -91,9 +91,18 @@ install legs) without a native run. Items not run natively are listed as such.
   the base invalid-state rule.
 - Docker host verification (forwarding lab arms) was not run for this release: review forwarding rules on
   container hosts before upgrading (see `nftban firewall forward status`).
+- On a host without `python3` (or `python3-yaml`), `nftban health` reports configuration files as "Invalid
+  YAML/JSON" and counts an error; the files are not invalid. Workaround: install `python3` and `python3-yaml`.
 - Status shows Docker's own forward hook as a critical conflict; `container discover/status` verbs are not
   available; CDN-fronted sites: bans on proxied clients have no network-level effect for HTTP; a polkit wording
   test is quarantined (deadline 2026-10-31).
+
+### Documented behaviour (unchanged)
+
+- BotScan's per-rule ban durations (for example `BOTSCAN_404_BAN=3600`) are requests. In the default batch
+  signal mode a request selects a class: 1800 s or less is enforced as 3600 s, longer as 86400 s (so
+  `BOTSCAN_404_BAN=3600` bans for 86400 s); direct mode honours the requested duration. `nftban botscan status`
+  prints both on its "Ban duration:" line.
 
 ## [v1.234.0] - 2026-10-05 — clean install, restart truth, BotScan request time, safe updates
 
