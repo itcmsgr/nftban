@@ -121,6 +121,17 @@ r4=0; lib "nftban_forward_remove 'egress|docker0'" >/dev/null 2>&1 || r4=$?
 rc=0; out=$(lib "nftban_forward_cli allow egress virbr0" 2>&1) || rc=$?
 [[ $rc -ne 0 ]] && [[ "$out" == *'not a recognised and tested bridge'* ]] && ! grep -q virbr0 "$STORE" && ok "S8 allow egress refuses an unrecognised bridge (virbr0), nothing written" || no "S8 unrecognised bridge" "rc=$rc"
 
+# S8b the CLI allow path records (v1.235 Docker lab: `forward allow` without --comment died
+# "_FWD_COMMENT: unbound variable"; a given --comment was lost). Root check stubbed.
+printf '#!/bin/sh\n[ "$1" = "-u" ] && { echo 0; exit 0; }\nexec /usr/bin/id "$@"\n' > "$SB/bin/id"; chmod +x "$SB/bin/id"
+: > "$STORE"
+r1=0; o1=$(lib "nftban_forward_cli allow uplink eth0" 2>&1) || r1=$?
+r2=0; o2=$(lib "nftban_forward_cli allow publish 15432/tcp --from 192.0.2.10 --family 4 --comment labnote" 2>&1) || r2=$?
+if [[ $r1 -eq 0 && $r2 -eq 0 ]] && grep -q '^uplink|eth0|' "$STORE" && grep -q '^publish|tcp|15432|4|192.0.2.10|labnote|' "$STORE"; then
+    ok "S8b allow uplink (no comment) and allow publish --comment are recorded, the comment kept"
+else no "S8b CLI allow" "r1=$r1 r2=$r2 ${o1:0:120} ${o2:0:120}"; fi
+rm -f "$SB/bin/id"
+
 echo ""
 echo "RESULT: $([[ $FAIL -eq 0 ]] && echo PASS || echo FAIL) (pass=$PASS fail=$FAIL)"
 [[ $FAIL -eq 0 ]]

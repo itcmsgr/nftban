@@ -235,6 +235,11 @@ nftban_forward_allow_remove() {
     local key rc kind
     [[ $(id -u) -eq 0 ]] || { echo "nftban: forward $verb: root required (writes $(nftban_forward_store_path))" >&2; return 1; }
     key=$(_nftban_fwd_parse_key "$verb" "$@") || return 1
+    # The parser runs in a command substitution, so its _FWD_COMMENT never reaches this shell
+    # (v1.235 Docker lab: every `forward allow` without --comment died "_FWD_COMMENT: unbound
+    # variable", and a given --comment was dropped). Read it here.
+    local _FWD_COMMENT="" _fa _fprev=""
+    for _fa in "$@"; do [[ "$_fprev" == --comment ]] && _FWD_COMMENT="$_fa"; _fprev="$_fa"; done
     kind="${key%%|*}"
     if [[ "$verb" == allow && "$kind" == egress ]] && ! nftban_forward_recognised_bridge "${key#egress|}"; then
         echo "nftban: refused: '${key#egress|}' is not a recognised and tested bridge (v1.235 supports the Docker CE bridge driver: docker0, br-<12 hex>)" >&2
