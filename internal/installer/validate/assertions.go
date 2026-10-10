@@ -966,6 +966,11 @@ func defaultInventoryPaths() map[string]bool {
 		// → install_state DEGRADED on every install carrying the validate unit.
 		"/usr/lib/nftban/helpers/firewall_validate_run.sh": true,
 		"/usr/lib/nftban/scripts/nftban-soak-check.sh":     true,
+		// v1.235 (same class): ExecStart of the R-DEC boot units nftban-boot-bypass.service,
+		// nftban-boot-bypass-guard.service and nftban-boot-normal.service. Missing here, every
+		// native systemd install reaching Validate landed DEGRADED (Ubuntu 26.04 VM, f355f603).
+		// TestSystemdPayload_RepoUnits_InDefaultInventory now checks every shipped unit.
+		"/usr/lib/nftban/helpers/nftban-boot-early.sh": true,
 	}
 }
 

@@ -6,7 +6,7 @@
 # meta:type="test"
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:description="v1.232 continuation of the large-spool convergence blocker. Depth-first WITHIN a cycle landed in 83a09a02, but BETWEEN cycles the rotation advanced past a half-drained object, which then waited a full rotation (~40 cycles on srv3). The first completion-priority attempt used a binary in-progress/fresh predicate that has NO discriminatory power on a real backlog, where every object is already in-progress. Asserts the pin contract: a mid-object stop pins that object, the next cycle resumes IT, it runs to EOF and retires, and only then does rotation advance - with explicit bounded escapes so a bad object can never deadlock the queue, and with a fresh arrival unable to steal priority from a pinned object."
+# meta:description="v1.235 arm 7: the pin attempt budget is per object (same object continues its count, a different object starts at 1). v1.232 continuation of the large-spool convergence blocker. Depth-first WITHIN a cycle landed in 83a09a02, but BETWEEN cycles the rotation advanced past a half-drained object, which then waited a full rotation (~40 cycles on srv3). The first completion-priority attempt used a binary in-progress/fresh predicate that has NO discriminatory power on a real backlog, where every object is already in-progress. Asserts the pin contract: a mid-object stop pins that object, the next cycle resumes IT, it runs to EOF and retires, and only then does rotation advance - with explicit bounded escapes so a bad object can never deadlock the queue, and with a fresh arrival unable to steal priority from a pinned object."
 # meta:ta.id="botscan_intercycle_resume_v1232_test"
 # meta:ta.owner="botscan"
 # meta:ta.module="botscan-intercycle-resume"
@@ -126,4 +126,24 @@ B=$(snap); cycle; A=$(snap); adv=$(moved "$B" "$A")
 echo "=== 6c — a pin must also expire on a bounded attempt budget ==="
 grep -q 'BOTSCAN_SCAN_PIN_MAX_CYCLES' "$CORE" && ok "6c a bounded pin budget exists (cannot pin forever)" || no "6c no bounded escape — a pin could be permanent"
 grep -q 'releasing pinned object' "$CORE" && ok "6d pin releases are logged with a reason" || no "6d pin release is silent"
+
+echo "=== 7 — the pin attempt budget is PER OBJECT (v1.235, OPEN-BOTSCAN-SCAN-PIN-RETRY-BUDGET-IS-GLOBAL-NOT-PER-OBJECT) ==="
+# 7a control: the SAME object stays pinned -> its own counter continues (5 -> 6).
+reset; export BOTSCAN_SPOOL_REAP=false BOTSCAN_SCAN_BUDGET_SECS=2
+f="$SPOOL/_var_log_pA.log"; mk "$f" $(( CAP*400 )); seed "$f" "$CAP"
+printf '%s|%s\n' "_var_log_pA.log" "5" > "$PIN"
+cycle; p7a="$(cat "$PIN" 2>/dev/null)"
+if [[ "$p7a" == "_var_log_pA.log|6" ]]; then ok "7a same pinned object, unfinished -> its count continues (pin=$p7a)"
+elif [[ -z "$p7a" || "$p7a" != _var_log_pA.log* ]]; then ne "7a precondition: the object was not left unfinished/pinned (pin='${p7a:-<none>}')"
+else no "7a same object count did not continue (pin=$p7a, want _var_log_pA.log|6)"; fi
+# 7b: object A has burned most of its budget (60 of 64) and finishes this cycle; the cycle
+#     moves on to B and stops mid-B. B must start its OWN budget (1), not inherit A's (61).
+reset; export BOTSCAN_SPOOL_REAP=false BOTSCAN_SCAN_BUDGET_SECS=2
+fa="$SPOOL/_var_log_pA.log"; mk "$fa" $(( CAP*41 )); seed "$fa" $(( CAP*40 ))   # one chunk left
+fb="$SPOOL/_var_log_pB.log"; mk "$fb" $(( CAP*400 )); seed "$fb" "$CAP"        # cannot finish in one cycle
+printf '%s|%s\n' "_var_log_pA.log" "60" > "$PIN"
+cycle; p7b="$(cat "$PIN" 2>/dev/null)"
+if [[ "$p7b" == "_var_log_pB.log|1" ]]; then ok "7b pin moved A -> B: B starts its own budget (pin=$p7b), A's 60 tries are not inherited"
+elif [[ "$p7b" != _var_log_pB.log* ]]; then ne "7b precondition: the pin did not move to B (pin='${p7b:-<none>}')"
+else no "7b B INHERITED A's count (pin=$p7b, want _var_log_pB.log|1): the budget is global, not per object"; fi
 fin

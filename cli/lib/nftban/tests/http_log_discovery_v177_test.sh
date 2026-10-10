@@ -36,6 +36,8 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$TEST_DIR/../../../.." && pwd)"
+# The SUBJECT's libraries, never /usr/lib/nftban (audit I24, 2026-10-08: same class as I23).
+export NFTBAN_LIB_DIR="$REPO/cli/lib/nftban"
 HELPER="$REPO/cli/lib/nftban/lib/nftban_http_logs.sh"
 PASS=0; FAIL=0
 ok(){ PASS=$((PASS+1)); echo "  ✓ $1"; }

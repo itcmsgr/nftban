@@ -251,9 +251,14 @@ fi
 
 # Behavioral: simulate the failure context — non-writable default + no
 # NFTBAN_LOG_DIR override. The fallback must pick a writable path.
-_cb4_rc=$(unset NFTBAN_LOG_DIR; bash <<'BASH' 2>&1
+# The unwritable default is a path UNDER A REGULAR FILE: mkdir -p fails for every user,
+# root included. "/nonexistent/cannot/write/here" was created by `mkdir -p` whenever this
+# ran as root (found on lab2 and lab4, 2026-10-08), after which every non-root run skipped
+# the fallback and failed on that host.
+_cb4_blocker="$(mktemp)"
+_cb4_rc=$(unset NFTBAN_LOG_DIR; CB4_UNWRITABLE="$_cb4_blocker/cannot/write/here" bash <<'BASH' 2>&1
 set -Eeuo pipefail
-_st_trace_dir="/nonexistent/cannot/write/here"
+_st_trace_dir="$CB4_UNWRITABLE"
 if [[ -z "${NFTBAN_LOG_DIR:-}" ]] \
    && [[ ! -w "$_st_trace_dir" ]] \
    && ! mkdir -p "$_st_trace_dir" 2>/dev/null; then
@@ -266,6 +271,7 @@ echo "test trace line" >> "$TRACE_LOG" 2>&1 && echo "WROTE: $TRACE_LOG"
 rm -f "$TRACE_LOG"
 BASH
 )
+rm -f "$_cb4_blocker"
 if echo "$_cb4_rc" | grep -qE 'WROTE: /tmp/nftban-selftest-|WROTE: /tmp/debug_trace'; then
     _t_assert "CB-4 (behavioral): fallback path is writable; trace append succeeds" 0
 else

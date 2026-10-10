@@ -54,6 +54,16 @@ for b in jq python3 flock; do
 done
 
 TMPD="$(mktemp -d)"; trap 'rm -rf "$TMPD"' EXIT
+# --- v1.235 host isolation (TEST-HARNESS-MUTATES-LIVE-HOST-STATE-WHEN-RUN-AS-ROOT) ---
+# Run as root, this test wrote live host state (2026-10-07 overlay sweep). Every product
+# root it can reach now defaults into the sandbox, EXPORTED so every child shell inherits it;
+# arms that need their own value still override locally.
+_HI="$TMPD/hi"
+export NFTBAN_CONFIG_DIR="$_HI/etc" NFTBAN_DATA_DIR="$_HI/data" NFTBAN_LOG_DIR="$_HI/log" \
+       NFTBAN_CACHE_DIR="$_HI/cache" NFTBAN_RUN_DIR="$_HI/run" NFTBAN_STATE_DIR="$_HI/data/state"
+mkdir -p "$NFTBAN_CONFIG_DIR" "$NFTBAN_DATA_DIR/state" "$NFTBAN_LOG_DIR" "$NFTBAN_CACHE_DIR" "$NFTBAN_RUN_DIR"
+# v1.235: the IPC client sends nothing without firewall authority; this world is an authorized install.
+printf 'INSTALL_STATE=COMMITTED\nAUTHORITY=TAKEOVER\n' > "$NFTBAN_STATE_DIR/install_state"
 export FAKE_T="$TMPD/t"
 BIN="$TMPD/bin"; mkdir -p "$BIN" "$FAKE_T"
 # The fake daemon applies fragments to the FAKE kernel through this path; it is
@@ -334,7 +344,7 @@ daemon_reconcile() {
         FAIL_AT="${FAIL_AT:-0}" FAULT_KIND="${FAULT_KIND:-before}" \
         QUERY_FAULT_FROM="${QUERY_FAULT_FROM:-}" QUERY_FAULT_KIND="${QUERY_FAULT_KIND:-}" \
         NFTBAN_CONFIG_DIR="$NFTBAN_CONFIG_DIR" NFTBAN_LIB_DIR="$NFTBAN_LIB_DIR" \
-        NFTBAN_LOG_DIR="$NFTBAN_LOG_DIR" NFTBAN_DATA_DIR="$NFTBAN_DATA_DIR" \
+        NFTBAN_LOG_DIR="$NFTBAN_LOG_DIR" NFTBAN_DATA_DIR="$NFTBAN_DATA_DIR" NFTBAN_STATE_DIR="$NFTBAN_STATE_DIR" \
         NFTBAN_CACHE_DIR="$NFTBAN_CACHE_DIR" NFTBAN_FRAGMENT_DIR="$NFTBAN_FRAGMENT_DIR" \
         NFTBAN_PLAN_RECORD_DIR="$NFTBAN_PLAN_RECORD_DIR" NFTBAN_RUN_DIR="$NFTBAN_RUN_DIR" \
         NFTBAN_PLAN_GENERATION_FILE="$NFTBAN_PLAN_GENERATION_FILE" \
@@ -386,6 +396,12 @@ export TMPDIR="$TMPD/tmp"; mkdir -p "$TMPDIR"
 make_world() {  # fresh "never projected, disabled" host
     rm -rf "$W"; mkdir -p "$W"/{etc/conf.d/portscan,etc/rules.d,log,data,cache,run,kernel/c/ip/nftban,kernel/c/ip6/nftban}
     cp "$ROOT/etc/nftban/conf.d/portscan/"*.conf "$W/etc/conf.d/portscan/"
+    # v1.235 host isolation: the shipped classic/suricata confs carry ABSOLUTE host paths
+    # (e.g. /var/log/nftban/ddos-classic.log, /var/lib/nftban/portscan-state.db). Copied
+    # verbatim they sent this test's writes to the live host when run as root (2026-10-07
+    # overlay sweep). Rewrite them, in the COPY only, to this world's directories.
+    sed -i -e "s|/var/log/nftban/|$W/log/|g" -e "s|/var/lib/nftban/|$W/data/|g" -e "s|/run/nftban/|$W/run/|g" \
+        "$W/etc/conf.d/portscan/"*.conf
     # Hermetic: the Suricata availability probe must not see a host binary.
     sed -i "s|^PORTSCAN_SURICATA_BINARY=.*|PORTSCAN_SURICATA_BINARY=\"$W/no-suricata\"|" "$W/etc/conf.d/portscan/main.conf"
     printf 'ip nftban\nip6 nftban\n' > "$FAKE_K/tables"

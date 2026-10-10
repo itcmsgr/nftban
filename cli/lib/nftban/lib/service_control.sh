@@ -91,14 +91,92 @@ nftban_refuse_under_bypass() {
     return 1
 }
 
-# The STORED choice only (no kernel parameter): NFTBAN_ENABLED in services.conf(.local).
+# >>> NFTBAN_ENABLED reader (v1.235 K2, owner 2026-10-08) >>>
+# The ONE meaning of NFTBAN_ENABLED, POSIX sh so the SAME text also runs in the DEB preinst / RPM
+# %pre. ONE SOURCE: this block in lib/nftban_immutable_owned.sh (inlined into the package
+# scripts); build/generate-immutable-owned-blocks.sh writes it into lib/service_control.sh and
+# helpers/nftban-boot-early.sh and its --check (CI) fails on any divergence. The Go twin is
+# configloader.ParseSwitch / MasterSwitch. Cases: scripts/ci/data/master-switch-cases.tsv.
+_nftban_switch_word() {  # <declared value> -> on | off | invalid
+    _nsw_v=$1
+    _nsw_v=${_nsw_v#"${_nsw_v%%[![:space:]]*}"}; _nsw_v=${_nsw_v%"${_nsw_v##*[![:space:]]}"}
+    case $_nsw_v in
+        \"*|\'*)
+            _nsw_q=${_nsw_v%"${_nsw_v#?}"}; _nsw_v=${_nsw_v#?}
+            case $_nsw_v in *"$_nsw_q"*) _nsw_v=${_nsw_v%%"$_nsw_q"*} ;; *) echo invalid; return 0 ;; esac ;;
+        *[[:space:]]*)
+            # an unquoted value ends at whitespace followed by "#" (a trailing comment)
+            _nsw_t=${_nsw_v%%[[:space:]]*}; _nsw_r=${_nsw_v#"$_nsw_t"}
+            _nsw_r=${_nsw_r#"${_nsw_r%%[![:space:]]*}"}
+            case $_nsw_r in \#*) _nsw_v=$_nsw_t ;; esac ;;
+    esac
+    _nsw_v=${_nsw_v#"${_nsw_v%%[![:space:]]*}"}; _nsw_v=${_nsw_v%"${_nsw_v##*[![:space:]]}"}
+    case $_nsw_v in
+        [Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|1|[Oo][Nn]) echo on ;;
+        [Ff][Aa][Ll][Ss][Ee]|[Nn][Oo]|0|[Oo][Ff][Ff]) echo off ;;
+        *) echo invalid ;;
+    esac
+}
+# _nftban_switch_state_files <file>... : the STORED choice from these files (last declaration
+# wins; absent key = the documented default, on). Prints "on", "off",
+# "invalid<TAB><value><TAB><file>" or "unknown<TAB><TAB><file>" (K2-c: a file that EXISTS but is
+# not a regular file, or whose READ fails, is UNKNOWN and wins: the choice was not read). The
+# read itself is the authority (owner 2026-10-08): a permission bit or test -r does not prove
+# that this process (root included) can read the file; cat's exit status does.
+_nftban_switch_state_files() {
+    _nss_st=on; _nss_raw=; _nss_file=; _nss_unread=
+    for _nss_f in "$@"; do
+        [ -e "$_nss_f" ] || [ -L "$_nss_f" ] || continue
+        if [ ! -f "$_nss_f" ]; then _nss_unread=$_nss_f; continue; fi
+        if ! _nss_c=$(cat -- "$_nss_f" 2>/dev/null); then _nss_unread=$_nss_f; continue; fi
+        while IFS= read -r _nss_l || [ -n "$_nss_l" ]; do
+            _nss_l=${_nss_l#"${_nss_l%%[![:space:]]*}"}
+            case $_nss_l in
+                NFTBAN_ENABLED=*) _nss_raw=${_nss_l#NFTBAN_ENABLED=}; _nss_file=$_nss_f
+                                  _nss_st=$(_nftban_switch_word "$_nss_raw") ;;
+            esac
+        done <<_NFTBAN_SWITCH_EOF_
+$_nss_c
+_NFTBAN_SWITCH_EOF_
+    done
+    if [ -n "$_nss_unread" ]; then printf 'unknown\t\t%s\n' "$_nss_unread"
+    elif [ "$_nss_st" = invalid ]; then printf 'invalid\t%s\t%s\n' "$_nss_raw" "$_nss_file"
+    else printf '%s\n' "$_nss_st"; fi
+}
+# <<< NFTBAN_ENABLED reader <<<
+
+# nftban_master_switch_state: the STORED choice only (no kernel parameter). Reads NFTBAN_ENABLED
+# from services.conf then services.conf.local (last declaration wins); an ABSENT key keeps the
+# documented default (on). Prints "on", "off", "invalid<TAB><value><TAB><file>", or
+# "unknown<TAB><TAB><file>" (K2-c, owner 2026-10-08): a file that EXISTS but cannot be read (or
+# is not a regular file) is UNKNOWN, never "absent = on": the choice was not read, so nothing
+# that depends on it may change. UNKNOWN wins over every declaration.
+nftban_master_switch_state() {
+    _nftban_switch_state_files "$NFTBAN_SERVICES_CONF" "$NFTBAN_SERVICES_LOCAL"
+}
+
+# The STORED choice only: rc 0 on, 1 off, 2 INVALID or UNKNOWN (never read as on or off).
 nftban_master_switch_on() {
-    _nftban_load_services_config
-    [[ "${NFTBAN_ENABLED:-true}" == "true" ]]
+    case "$(nftban_master_switch_state)" in on) return 0 ;; off) return 1 ;; *) return 2 ;; esac
+}
+
+# nftban_master_switch_invalid_text: what is wrong with a choice that is neither on nor off,
+# with its fix: "INVALID (NFTBAN_ENABLED=<value> in <file>: set it to true or false)" or
+# "UNKNOWN (<file> exists but could not be read: make it a readable file)".
+nftban_master_switch_invalid_text() {
+    # Split on the TABs by expansion: `read` with IFS=$'\t' merges adjacent tabs (tab is IFS
+    # whitespace), which loses an EMPTY value field ("invalid<TAB><TAB><file>", "unknown...").
+    local s st raw file
+    s="$(nftban_master_switch_state)"
+    st="${s%%$'\t'*}"; s="${s#*$'\t'}"; raw="${s%%$'\t'*}"; file="${s#*$'\t'}"
+    case "$st" in
+        invalid) printf 'INVALID (NFTBAN_ENABLED=%s in %s: set it to true or false)\n' "$raw" "$file" ;;
+        unknown) printf 'UNKNOWN (%s exists but could not be read: make it a readable file)\n' "$file" ;;
+    esac
 }
 
 # Check if NFTBan is globally enabled
-# Returns: 0 if enabled, 1 if disabled (stored choice off, or the per-boot bypass)
+# Returns: 0 enabled, 1 disabled (stored choice off, or the per-boot bypass), 2 INVALID stored value
 nftban_is_enabled() {
     nftban_emergency_bypass_active && return 1
     nftban_master_switch_on
@@ -107,11 +185,122 @@ nftban_is_enabled() {
 # Check master switch and exit if disabled
 # Usage: nftban_check_enabled || exit 0
 nftban_check_enabled() {
-    if ! nftban_is_enabled; then
+    local rc=0
+    nftban_is_enabled || rc=$?
+    if [[ $rc -eq 2 ]]; then
+        echo "NFTBan master switch is $(nftban_master_switch_invalid_text); nothing is changed until then" >&2
+        return 1
+    elif [[ $rc -ne 0 ]]; then
         echo "NFTBan is disabled (NFTBAN_ENABLED=false or kernel parameter nftban=disabled)" >&2
         return 1
     fi
     return 0
+}
+
+# =============================================================================
+# FIREWALL AUTHORITY (v1.235, owner 2026-10-10)
+# =============================================================================
+# May NFTBan write firewall rules on this host right now? The shell twin of the Go
+# state.FirewallAuthority; both are held to scripts/ci/data/firewall-authority-cases.tsv.
+# Order: bypass, master switch, install_state (absent/unreadable), UNINSTALL_*/RESTORE_*,
+# FAILED_AUTHORITY_ABORT, live installer transaction, completed authorized transaction,
+# interrupted transaction, FAILED_*/REBUILD_*, anything else. A recorded AUTHORITY counts
+# only with a completed state or while the installer still holds its lock, so an abandoned
+# or failed transaction never becomes a standing permission. Kernel lock table path:
+NFTBAN_PROC_LOCKS="${NFTBAN_PROC_LOCKS:-/proc/locks}"
+
+# _nftban_installer_lock_held <state dir>: the kernel lock table holds a FLOCK on
+# installer.lock by the PID the file names. Never takes the lock (a probe would make a
+# concurrent installer fail); a PID file alone is not a held lock.
+_nftban_installer_lock_held() {
+    local lf="$1/installer.lock" ino pid line
+    local -a f=()
+    [[ -f "$lf" ]] || return 1
+    ino=$(stat -c %i -- "$lf" 2>/dev/null) || return 1
+    pid=$(cat -- "$lf" 2>/dev/null) || return 1
+    [[ "$pid" =~ ^[[:space:]]*([0-9]+)[[:space:]]*$ ]] || return 1
+    pid="${BASH_REMATCH[1]}"
+    [[ -r "$NFTBAN_PROC_LOCKS" ]] || return 1
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        IFS=' ' read -r -a f <<< "$line"
+        [[ ${#f[@]} -ge 6 && "${f[1]}" == "FLOCK" ]] || continue
+        [[ "${f[4]}" == "$pid" && "${f[5]##*:}" == "$ino" ]] && return 0
+    done < "$NFTBAN_PROC_LOCKS"
+    return 1
+}
+
+# nftban_firewall_authority: prints "GRANTED|DENIED <reason> <detail>"; rc 0 granted, 1 denied.
+nftban_firewall_authority() {
+    local sd="${NFTBAN_STATE_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/state}" sw content line st="" auth="" detail ok=0
+    if nftban_emergency_bypass_active; then
+        echo "DENIED emergency-bypass kernel parameter nftban=disabled"; return 1
+    fi
+    sw="$(nftban_master_switch_state)"
+    case "${sw%%$'\t'*}" in
+        on) ;;
+        off) echo "DENIED disabled NFTBAN_ENABLED=false"; return 1 ;;
+        *) echo "DENIED switch-unusable $(nftban_master_switch_invalid_text)"; return 1 ;;
+    esac
+    if [[ ! -e "$sd/install_state" && ! -L "$sd/install_state" ]]; then
+        echo "DENIED no-install-state $sd/install_state"; return 1
+    fi
+    if ! content=$(cat -- "$sd/install_state" 2>/dev/null); then
+        echo "DENIED install-state-unreadable $sd/install_state"; return 1
+    fi
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line#"${line%%[![:space:]]*}"}"; line="${line%"${line##*[![:space:]]}"}"
+        case "$line" in
+            INSTALL_STATE=*) st="${line#INSTALL_STATE=}" ;;
+            AUTHORITY=*)     auth="${line#AUTHORITY=}" ;;
+        esac
+    done <<< "$content"
+    detail="INSTALL_STATE=$st AUTHORITY=$auth"
+    # The installer's own "proceed" decisions; only ABORT refuses. AMBIGUOUS = NFTBan artifacts
+    # in a partial state (an interrupted upgrade): its repair must not be refused.
+    case "$auth" in FRESH|TAKEOVER|UPDATE|AMBIGUOUS) ok=1 ;; esac
+    case "$st" in
+        UNINSTALL_*|RESTORE_*)  echo "DENIED released $detail"; return 1 ;;
+        FAILED_AUTHORITY_ABORT) echo "DENIED refused $detail"; return 1 ;;
+    esac
+    if _nftban_installer_lock_held "$sd"; then
+        if [[ $ok -eq 1 ]]; then echo "GRANTED transaction $detail"; return 0; fi
+        echo "DENIED no-authority-grant $detail"; return 1
+    fi
+    case "$st" in
+        COMMITTED|APPLIED_UNVERIFIED|DEGRADED)
+            if [[ $ok -eq 1 ]]; then echo "GRANTED authorized $detail"; return 0; fi
+            echo "DENIED no-authority-grant $detail"; return 1 ;;
+        FILES_INSTALLED|DETECT_COMPLETE|PREPARE_COMPLETE|SWITCH_COMPLETE|SERVICES_COMPLETE)
+            echo "DENIED transaction-interrupted $detail"; return 1 ;;
+        FAILED_*|REBUILD_*) echo "DENIED needs-repair $detail"; return 1 ;;
+    esac
+    echo "DENIED unknown-state $detail"; return 1
+}
+
+# nftban_refuse_without_authority <action>: rc 0 when authority is granted; otherwise rc 1
+# and ONE operator message naming the state and the only way forward. Nothing is changed.
+nftban_refuse_without_authority() {
+    local out reason detail
+    out="$(nftban_firewall_authority)" && return 0
+    out="${out#DENIED }"; reason="${out%% *}"; detail="${out#* }"
+    echo "REFUSED: $1 — NFTBan has no firewall authority on this host ($reason: $detail)." >&2
+    case "$reason" in
+        emergency-bypass)
+            echo "  Emergency bypass for this boot; reboot without nftban=disabled to return to the stored choice." >&2 ;;
+        disabled)
+            echo "  NFTBan is DISABLED by the operator. Run 'nftban enable' to let NFTBan manage the firewall again." >&2 ;;
+        switch-unusable)
+            echo "  Fix NFTBAN_ENABLED in conf.d/services.conf(.local) first; nothing is changed until then." >&2 ;;
+        refused)
+            echo "  The installation was REFUSED firewall authority (another firewall manager is active)." >&2
+            echo "  To approve the takeover: sudo NFTBAN_TAKEOVER=1 /usr/lib/nftban/bin/nftban-installer --repair" >&2 ;;
+        transaction-interrupted|needs-repair)
+            echo "  The last install/upgrade did not complete. Rules already in the kernel are kept; NFTBan makes" >&2
+            echo "  no further changes until: sudo /usr/lib/nftban/bin/nftban-installer --repair" >&2 ;;
+        *)
+            echo "  No completed, authorized NFTBan installation is recorded. Run: sudo /usr/lib/nftban/bin/nftban-installer --repair" >&2 ;;
+    esac
+    return 1
 }
 
 # =============================================================================
@@ -304,6 +493,12 @@ nftban_enable_all() {
     fi
     # v1.235 R-DEC: never enable during the per-boot emergency bypass.
     nftban_refuse_under_bypass "nftban enable" || return 1
+    # v1.235 K2/K2-c: an INVALID or UNKNOWN stored choice is not read as on or off; nothing changes.
+    if ! nftban_master_switch_on && [[ "$(nftban_master_switch_state)" != off ]]; then
+        echo "REFUSED: nftban enable: NFTBan master switch is $(nftban_master_switch_invalid_text); nothing was changed." >&2
+        echo "  Fix it, then retry. Emergency (this boot only): kernel parameter nftban=disabled." >&2
+        return 1
+    fi
     # v1.235 D10: a FAILED commit-confirm rollback keeps the kernel state for recovery.
     # While the stored choice is ON, enable refuses (retry or abandon the rollback first).
     # After the operator recovered with `disable all --flush-rules` (stored choice OFF),
@@ -494,6 +689,20 @@ nftban_enable_all() {
     # and skipping it would leave the inert projection in place (NFTBan would not load
     # at the next boot even though it is enabled).
     _nftban_set_config "NFTBAN_ENABLED" "true"
+    # v1.235 (VM pass 3, f2-p8-u2604): after `disable all` the rebuild below cannot succeed:
+    # its whitelist projection needs the daemon (socket stopped by disable: "whitelist did not
+    # converge"), and its post-validation needs active NFTBan timers (VAL-TIMER-001). Restore
+    # the daemon socket/service and the core timers first (per the unit record, as below); a
+    # failed enable stops again only those this run started.
+    local _pre_tmr _pre_started=()
+    for _pre_tmr in nftband.socket nftband.service \
+                    "${NFTBAN_TIMER_HEALTH:-nftban-health.timer}" \
+                    "${NFTBAN_TIMER_MAINTENANCE:-nftban-maintenance.timer}" \
+                    "${NFTBAN_TIMER_WATCHDOG:-nftban-watchdog.timer}"; do
+        systemctl is-active --quiet "$_pre_tmr" 2>/dev/null && continue
+        _nftban_restore_unit "$_pre_tmr" core
+        systemctl is-active --quiet "$_pre_tmr" 2>/dev/null && _pre_started+=("$_pre_tmr")
+    done
     echo "[4/10] Initializing firewall..."
     if true; then
         echo "  Rebuilding the firewall from the saved configuration..."
@@ -536,6 +745,9 @@ nftban_enable_all() {
                 echo "  ❌ Protection failed — rollback applied" >&2
                 # v1.235: a failed enable leaves NFTBan in its previous (disabled) state.
                 _nftban_set_config "NFTBAN_ENABLED" "false"
+                for _pre_tmr in "${_pre_started[@]}"; do
+                    systemctl disable --now "$_pre_tmr" >/dev/null 2>&1 || true
+                done
                 return 1
             fi
         fi
@@ -907,6 +1119,12 @@ nftban_disable_all() {
     for arg in "$@"; do
         case "$arg" in --flush-rules) flush_rules=true ;; esac
     done
+    # v1.235 K2/K2-c: an INVALID or UNKNOWN stored choice is not read as on or off; nothing changes.
+    if ! nftban_master_switch_on && [[ "$(nftban_master_switch_state)" != off ]]; then
+        echo "REFUSED: nftban disable: NFTBan master switch is $(nftban_master_switch_invalid_text); nothing was changed." >&2
+        echo "  Fix it, then retry. Emergency (this boot only): kernel parameter nftban=disabled." >&2
+        return 1
+    fi
 
     echo "EMERGENCY: Disabling all NFTBan services..."
 
@@ -921,7 +1139,11 @@ nftban_disable_all() {
     while IFS= read -r u; do
         [[ -n "$u" ]] || continue
         en=$(systemctl is-enabled "$u" 2>/dev/null) || true
-        systemctl stop "$u" 2>/dev/null || true
+        # v1.235 audit H5 (owner U1): a plain disable keeps the rules until reboot. Stopping
+        # nftban-firewall-init.service runs its ExecStop, which deletes ip/ip6 nftban at once,
+        # so it is only disabled here (not started at the next boot); --flush-rules removes the
+        # NFTBan tables through its own step below.
+        [[ "$u" == "nftban-firewall-init.service" ]] || systemctl stop "$u" 2>/dev/null || true
         if [[ "$en" == "enabled" ]]; then
             systemctl disable "$u" 2>/dev/null || true
         fi
@@ -934,10 +1156,13 @@ nftban_disable_all() {
     # 4. Disabled persists across reboot (U1): publish the INERT boot projection through
     #    the single publication authority. The early-boot guard (nftban-boot-normal)
     #    re-applies this before nftables.service if this step fails.
-    if nftban firewall render-boot --inert --quiet 2>/dev/null; then
+    local _inert_err=""
+    if _inert_err=$(nftban firewall render-boot --inert --quiet 2>&1 >/dev/null); then
         echo "  Boot projection set INERT: no NFTBan rule will load at the next boot."
     else
+        # v1.235 audit K5: say WHY (e.g. refused under a D10 hold); it used to be discarded.
         echo "  WARNING: inert boot projection could NOT be published now; the early-boot guard enforces it at the next boot" >&2
+        [[ -n "$_inert_err" ]] && printf '    cause: %s\n' "${_inert_err//$'\n'/ | }" >&2
         rc=1
     fi
 
@@ -1109,7 +1334,11 @@ nftban_services_status() {
     echo ""
 
     # Master switch
-    if nftban_is_enabled; then
+    local _ms_rc=0
+    nftban_is_enabled || _ms_rc=$?
+    if [[ $_ms_rc -eq 2 ]]; then
+        echo "Master Switch: $(nftban_master_switch_invalid_text) — not read as enabled or disabled"
+    elif [[ $_ms_rc -eq 0 ]]; then
         echo "Master Switch: ENABLED"
     else
         echo "Master Switch: DISABLED"
@@ -1152,8 +1381,10 @@ nftban_services_status() {
 }
 
 _nftban_services_status_json() {
-    local master_enabled="false"
-    nftban_is_enabled && master_enabled="true"
+    # v1.235 K2: INVALID is reported as such, never as true/false (master_enabled = null).
+    local master_enabled="false" _ms_rc=0
+    nftban_is_enabled || _ms_rc=$?
+    case "$_ms_rc" in 0) master_enabled="true" ;; 2) master_enabled="null" ;; esac
 
     local nft_config="false"
     nftban_service_is_enabled "nftables" && nft_config="true"

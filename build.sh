@@ -183,6 +183,9 @@ build_core() {
 
     cd "$SCRIPT_DIR/cmd/nftban-core"
 
+    # v1.235: Go >= 1.26 refuses to overwrite a non-object file at -o ("already exists and is
+    # not an object file"); a source build must always replace a stale artefact.
+    rm -f -- "$BIN_DIR/nftban-core"
     CGO_ENABLED=$CGO_ENABLED GOOS=$GOOS GOARCH=$GOARCH \
         go build -trimpath -o "$BIN_DIR/nftban-core" \
         -ldflags="$LDFLAGS" \
@@ -210,6 +213,9 @@ build_daemon() {
 
     cd "$SCRIPT_DIR/cmd/nftband"
 
+    # v1.235: Go >= 1.26 refuses to overwrite a non-object file at -o ("already exists and is
+    # not an object file"); a source build must always replace a stale artefact.
+    rm -f -- "$BIN_DIR/nftband"
     CGO_ENABLED=$CGO_ENABLED GOOS=$GOOS GOARCH=$GOARCH \
         go build -trimpath -o "$BIN_DIR/nftband" \
         -ldflags="$LDFLAGS" \
@@ -231,6 +237,9 @@ build_installer() {
     cd "$SCRIPT_DIR"
 
     # Installer is pure Go — no CGO needed
+    # v1.235: Go >= 1.26 refuses to overwrite a non-object file at -o ("already exists and is
+    # not an object file"); a source build must always replace a stale artefact.
+    rm -f -- "$BIN_DIR/nftban-installer"
     CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
         go build -trimpath -o "$BIN_DIR/nftban-installer" \
         -ldflags="$LDFLAGS" \
@@ -252,6 +261,9 @@ build_validator() {
     cd "$SCRIPT_DIR"
 
     # Validator is pure Go — no CGO needed
+    # v1.235: Go >= 1.26 refuses to overwrite a non-object file at -o ("already exists and is
+    # not an object file"); a source build must always replace a stale artefact.
+    rm -f -- "$BIN_DIR/nftban-validate"
     CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
         go build -trimpath -o "$BIN_DIR/nftban-validate" \
         -ldflags="$LDFLAGS" \
@@ -265,6 +277,9 @@ build_validator() {
 
     # v1.145 PR-B: SSH-port union detector — pure Go, zero-side-effect, shared
     # by installer + runtime shell paths via ssh_port_detect.sh.
+    # v1.235: Go >= 1.26 refuses to overwrite a non-object file at -o ("already exists and is
+    # not an object file"); a source build must always replace a stale artefact.
+    rm -f -- "$BIN_DIR/nftban-detect-ssh-ports"
     CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
         go build -trimpath -o "$BIN_DIR/nftban-detect-ssh-ports" \
         -ldflags="$LDFLAGS" \
@@ -278,6 +293,9 @@ build_validator() {
     # v1.209.1: BotScan candidate prefilter helper — pure Go, bounded Aho-Corasick + RE2,
     # replaces the fragile `grep -E -f` prefilter that GNU grep rejects wholesale on the
     # |-delimiter-mis-split patterns. Shell-invoked (one process per scan file).
+    # v1.235: Go >= 1.26 refuses to overwrite a non-object file at -o ("already exists and is
+    # not an object file"); a source build must always replace a stale artefact.
+    rm -f -- "$BIN_DIR/nftban-botscan-matcher"
     CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH \
         go build -trimpath -o "$BIN_DIR/nftban-botscan-matcher" \
         -ldflags="$LDFLAGS" \

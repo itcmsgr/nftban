@@ -47,6 +47,20 @@ else
     NFTBAN_LIB_DIR="$(cd "$SCRIPT_DIR/../../../.." && pwd)/cli/lib/nftban"
 fi
 export NFTBAN_LIB_DIR
+# --- v1.235 host isolation (TEST-HARNESS-MUTATES-LIVE-HOST-STATE-WHEN-RUN-AS-ROOT) ---
+# Run as root, this test wrote live host state (2026-10-07 overlay sweep). Every product
+# root it can reach now defaults into the sandbox, EXPORTED so every child shell inherits it;
+# arms that need their own value still override locally.
+_HI="$(mktemp -d)"
+trap 'rm -rf "$_HI"' EXIT
+export NFTBAN_CONFIG_DIR="$_HI/etc" NFTBAN_DATA_DIR="$_HI/data" NFTBAN_LOG_DIR="$_HI/log" \
+       NFTBAN_CACHE_DIR="$_HI/cache" NFTBAN_RUN_DIR="$_HI/run" NFTBAN_STATE_DIR="$_HI/data/state"
+mkdir -p "$NFTBAN_CONFIG_DIR" "$NFTBAN_DATA_DIR/state" "$NFTBAN_LOG_DIR" "$NFTBAN_CACHE_DIR" "$NFTBAN_RUN_DIR"
+# Host guard: the HOST config paths this test once wrote must be unchanged at the end
+# (logs/state/cache are rewritten by a live product, so those are checked in the sandbox).
+_hg_state(){ local p; for p in "$@"; do if [[ ! -e "$p" ]]; then echo "$p ABSENT"; elif [[ -r "$p" ]]; then echo "$p $(sha256sum < "$p" | cut -c1-16) $(stat -c %Y "$p")"; else echo "$p UNREADABLE $(stat -c %Y "$p" 2>/dev/null)"; fi; done; }
+_HG_PATHS=("/etc/nftban/conf.d/rbl.conf.local")
+_HG_BEFORE="$(_hg_state "${_HG_PATHS[@]}")"
 HOSTADDR="$NFTBAN_LIB_DIR/core/nftban_hostaddr.sh"
 RBL_CORE="$NFTBAN_LIB_DIR/core/nftban_rbl.sh"
 CMD_RBL="$NFTBAN_LIB_DIR/cli/cmd_rbl.sh"
@@ -302,6 +316,11 @@ g="$(grep -nE 'nft (add|delete|flush)|ipify|icanhazip|curl|wget|> /|>> ' "$HOSTA
 [[ -z "$g" ]] && ok "G5 authority read-only (no nft/write/network)" || { no "G5 authority has side effects"; echo "$g"; }
 
 echo
+# --- host isolation guard (TEST-HARNESS-MUTATES-LIVE-HOST-STATE-WHEN-RUN-AS-ROOT) ---
+if [[ "$(_hg_state "${_HG_PATHS[@]}")" == "$_HG_BEFORE" ]]; then ok "HOST-GUARD host config paths unchanged (${_HG_PATHS[*]})"
+else no "HOST-GUARD host config CHANGED by this test: $(_hg_state "${_HG_PATHS[@]}" | tr '\n' ';')"; fi
+if [[ -e "$_HI/log/rbl.log" ]]; then ok "HOST-GUARD rbl.log landed in the sandbox"
+else no "HOST-GUARD rbl.log not in the sandbox: redirection lost?"; fi
 echo "=== RESULTS: $PASS passed, $FAIL failed ==="
 if [[ $FAIL -gt 0 ]]; then printf 'FAILED: %s\n' "${FAILED[@]}"; exit 1; fi
 exit 0

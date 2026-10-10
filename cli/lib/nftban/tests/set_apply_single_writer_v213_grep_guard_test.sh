@@ -69,8 +69,10 @@ else
 fi
 # fallback path + visible WARN live inside the shared helper
 if grep -q 'nft_ipc_apply_ruleset "\$fallback_file"' "$IPC" \
-   && grep -qi '\[WARN\] .*sync IPC failed, fell back to legacy additive apply' "$IPC"; then
-    ok "sync-or-apply keeps the legacy additive apply as fallback with a visible WARN"
+   && grep -qi '\[WARN\] .*full sync IPC failed; the sync is OWED' "$IPC" \
+   && grep -q 'NOT applied now' "$IPC"; then
+    # v1.235 P1S-A: wording names the OWED sync; a refused apply is reported, not hidden.
+    ok "sync-or-apply attempts the legacy apply with a visible WARN (sync OWED) and reports a refused apply"
 else
     bad "sync-or-apply fallback/WARN missing"
 fi

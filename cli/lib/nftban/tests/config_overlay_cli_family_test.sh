@@ -286,10 +286,14 @@ r=$(_eff "$CUR_STATUS" _status_section_protection NFTBAN_RBL_ENABLED)
 
 echo "=== 6. cmd_status.sh output_json — observed through the EMITTED value ==="
 _mk
-printf 'NFTBAN_ENABLED="LOCALVAL"\n' > "$SB/etc/conf.d/services.conf.local"
-printf 'NFTBAN_ENABLED="USERVAL"\n'  > "$SB/etc/nftban.conf.local"
+# v1.235 K2 (owner 2026-10-08): NFTBAN_ENABLED has ONE contract for every reader — services.conf
+# then services.conf.local (the file `nftban disable` writes). The central nftban.conf.local is NOT
+# a switch source for any reader (enforcement never read it), so status must not report a switch
+# the system does not act on: central "true" must not override the module-local "false".
+printf 'NFTBAN_ENABLED="false"\n' > "$SB/etc/conf.d/services.conf.local"
+printf 'NFTBAN_ENABLED="true"\n'  > "$SB/etc/nftban.conf.local"
 r=$(_eff_emitted "$CUR_STATUS")
-[[ "$r" == "USERVAL" ]] && ok "output_json: central operator override beats the module-local services override" || bad "output_json: module-local still wins (got '$r')"
+[[ "$r" == "false" ]] && ok "output_json: master_enabled follows the ONE switch contract (services.conf.local false; central nftban.conf.local is not a switch source)" || bad "output_json: master_enabled diverges from the switch contract (got '$r')"
 
 echo "=== 7. NEGATIVE CONTROL — the pre-fix subject must resolve the LOWER layer ==="
 _mk

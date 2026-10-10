@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-06-12"
-# meta:description="Locks the v1.175 FHS-authority lane. (T1) GENERIC GUARD: no generated tmpfiles.d d/z entry is root-owned under a non-root-owned declared parent (the systemd-tmpfiles 'unsafe path transition' / exit-73 class), EXCEPT the documented security-exception allowlist (firewall-validate root-only-writer boundary) — prevents BUG-TMPFILES regressions structurally while permitting the reviewed exception. (T2) auditors created_by=package + absent from tmpfiles (AUDITORS unsafe-transition CLOSED). (T3) firewall-validate created_by=tmpfiles + PRESENT in tmpfiles as the accepted root-only-writer SECURITY EXCEPTION (exit-73 NOT closed; ExecStartPre-sole was lab-disproven 226/NAMESPACE) + unit +ExecStartPre belt-and-suspenders. (T4) /var/lib/nftban/alerts declared nftban:nftban + in tmpfiles (ALERT-THROTTLE-FHS). (T5) /var/lib/nftban/suricata/cache declared nftban:nftban + in tmpfiles (FHS-SMELL-SIDSTATS). (T6) cache.go snapshot uses DataDir not ConfigDir. (T7) nftban-service-alert throttle relocated under alerts/. Hermetic: reads committed generated files + spec; no root, no systemd."
+# meta:description="Locks the v1.175 FHS-authority lane. (T1) GENERIC GUARD, no exceptions since v1.235: no generated tmpfiles.d d/z entry is root-owned under a non-root-owned declared parent (the systemd-tmpfiles 'unsafe path transition' / exit-73 class) — prevents BUG-TMPFILES regressions structurally (the allowlist is empty). (T2) auditors created_by=package + absent from tmpfiles (AUDITORS unsafe-transition CLOSED). (T3) the firewall-validate handoff dir is /run/nftban-firewall-validate (root:nftban 2750 under the root-owned /run), created ONLY by tmpfiles; the old /run/nftban/firewall-validate is declared nowhere; the unit has no ExecStartPre creator and ReadWritePaths points at the new path. (T4) /var/lib/nftban/alerts declared nftban:nftban + in tmpfiles (ALERT-THROTTLE-FHS). (T5) /var/lib/nftban/suricata/cache declared nftban:nftban + in tmpfiles (FHS-SMELL-SIDSTATS). (T6) cache.go snapshot uses DataDir not ConfigDir. (T7) nftban-service-alert throttle relocated under alerts/. Hermetic: reads committed generated files + spec; no root, no systemd."
 # meta:input="None (reads repo files)"
 # meta:output="Pass/fail assertions; exit 0 on all-pass, 1 on any failure"
 # meta:depends="bash,yq"
@@ -52,19 +52,12 @@ echo "=== v1.175 FHS lane invariants ==="
 # parent (systemd-tmpfiles refuses that transition: exit 73 / "unsafe path
 # transition"). This is the structural lock for the whole BUG-TMPFILES class.
 # -----------------------------------------------------------------------------
-# Intentional, security-reviewed exceptions: root-owned children DELIBERATELY kept
-# under a non-root parent because the root-only-writer property IS the security
-# boundary. These emit a NON-FATAL systemd-tmpfiles exit-73 that is ACCEPTED and
-# documented (fhs-spec.yaml + the unit). T1 still FAILS for any OTHER (new)
-# root-under-non-root transition — the guard is not weakened, only this exact path
-# is allowlisted with its integrity reason.
-declare -A TMPFILES_ROOT_EXCEPTION=(
-    # only the audited root service may WRITE last.json; nftban group READS it 0640.
-    # nftban:nftban would let a compromised daemon forge the independent validation
-    # result. /run is tmpfs → must be tmpfiles-created at boot (ExecStartPre-sole was
-    # lab-disproven: 226/NAMESPACE, ReadWritePaths binds before ExecStartPre runs).
-    ["/run/nftban/firewall-validate"]="root-only-writer integrity boundary for last.json (BUG-TMPFILES-FIREWALL-VALIDATE-SECURITY-EXCEPTION)"
-)
+# v1.235 (owner 2026-10-07): NO exceptions. The single former exception,
+# /run/nftban/firewall-validate (root-owned under the nftban-owned /run/nftban), was
+# moved to /run/nftban-firewall-validate (root-owned under the root-owned /run). Any
+# root-under-non-root transition now FAILS T1. Do not re-add entries here: move the
+# directory under a root-owned parent instead.
+declare -A TMPFILES_ROOT_EXCEPTION=()
 
 declare -A OWNER
 # NOTE: explicit IFS=' ' for THIS read — the file-level IFS=$'\n\t' has no space,
@@ -112,20 +105,26 @@ grep -qE '/var/lib/nftban/reports/auditors' "$TMPFILES" \
     || ok "T2b auditors absent from tmpfiles"
 
 # -----------------------------------------------------------------------------
-# T3: firewall-validate — ACCEPTED SECURITY EXCEPTION (NOT closed). created_by=
-# tmpfiles (the boot creator; required because ReadWritePaths binds at mount-
-# namespace setup on tmpfs — ExecStartPre-sole was lab-disproven, 226/NAMESPACE).
-# PRESENT in tmpfiles as the allowlisted root-only-writer exception. The unit's
-# +ExecStartPre remains as an idempotent per-start belt-and-suspenders.
+# T3: firewall-validate handoff dir (v1.235): /run/nftban-firewall-validate, root:nftban
+# 2750 under the root-owned /run. tmpfiles is its SINGLE creator (boot + package
+# install, before any service, so ReadWritePaths always finds it); the unit has no
+# ExecStartPre creator; the old root-under-nftban path is gone everywhere.
 # -----------------------------------------------------------------------------
-F_CB=$(yq -r '.directories.runtime[] | select(.path == "/run/nftban/firewall-validate") | .created_by' "$SPEC")
-[[ "$F_CB" == "tmpfiles" ]] && ok "T3 firewall-validate created_by=tmpfiles (security exception, boot creator)" || no "T3 firewall-validate created_by=tmpfiles" "got $F_CB"
-grep -qE '^d /run/nftban/firewall-validate 2750 root nftban -' "$TMPFILES" \
-    && ok "T3b firewall-validate present in tmpfiles (2750 root:nftban — accepted exit-73 security exception)" \
-    || no "T3b firewall-validate in tmpfiles (security exception)" "missing"
-grep -qE '^ExecStartPre=\+/usr/bin/install -d .*-m 2750 .*/run/nftban/firewall-validate' "$UNIT" \
-    && ok "T3c unit +ExecStartPre also creates firewall-validate (2750, per-start belt-and-suspenders)" \
-    || no "T3c unit +ExecStartPre present" "missing"
+F_CB=$(yq -r '.directories.runtime[] | select(.path == "/run/nftban-firewall-validate") | .created_by' "$SPEC")
+[[ "$F_CB" == "tmpfiles" ]] && ok "T3 /run/nftban-firewall-validate created_by=tmpfiles (single creator)" || no "T3 firewall-validate spec entry" "got '$F_CB'"
+grep -qE '^d /run/nftban-firewall-validate 2750 root nftban -$' "$TMPFILES" \
+    && ok "T3b tmpfiles creates /run/nftban-firewall-validate 2750 root nftban (root parent: no unsafe transition)" \
+    || no "T3b firewall-validate tmpfiles line" "missing"
+if ! grep -qE '/run/nftban/firewall-validate' "$TMPFILES" && [[ -z "$(yq -r '.directories.runtime[] | select(.path == "/run/nftban/firewall-validate") | .path' "$SPEC")" ]]; then
+    ok "T3c the old /run/nftban/firewall-validate is declared nowhere (spec, tmpfiles)"
+else
+    no "T3c old root-under-nftban path still declared"
+fi
+if ! grep -qE '^ExecStartPre=.*firewall-validate' "$UNIT" && grep -qxE 'ReadWritePaths=/run/nftban-firewall-validate' "$UNIT"; then
+    ok "T3d unit: no ExecStartPre creator; ReadWritePaths=/run/nftban-firewall-validate"
+else
+    no "T3d unit creator/ReadWritePaths" "$(grep -E '^(ExecStartPre|ReadWritePaths)=' "$UNIT" | tr '\n' ' ')"
+fi
 
 # -----------------------------------------------------------------------------
 # T4: ALERT-THROTTLE-FHS — /var/lib/nftban/alerts declared nftban:nftban + tmpfiles.

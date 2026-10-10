@@ -85,8 +85,18 @@ type Response struct {
 	Error   string `json:"error,omitempty"`
 }
 
+// CallGate, when set, is asked before every request (v1.235, owner 2026-10-10: nftban-core sets
+// it to the shared firewall-authority decision). A refusal returns its error WITHOUT connecting:
+// a connection would socket-activate a daemon that is not allowed to run. Nil = no gate.
+var CallGate func(method string) error
+
 // Call sends a request to the daemon and returns the response
 func (c *Client) Call(method string, params map[string]any) (*Response, error) {
+	if CallGate != nil {
+		if err := CallGate(method); err != nil {
+			return nil, err
+		}
+	}
 	conn, err := net.DialTimeout("unix", c.socketPath, c.timeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to daemon at %s: %w", c.socketPath, err)

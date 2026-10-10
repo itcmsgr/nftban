@@ -35,6 +35,27 @@
 set -Eeuo pipefail
 
 ROOT="${NFTBAN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)}"
+# --- v1.235 host isolation (TEST-HARNESS-MUTATES-LIVE-HOST-STATE-WHEN-RUN-AS-ROOT) ---
+# Run as root, this test wrote live host state (2026-10-07 overlay sweep). Every product
+# root it can reach now defaults into the sandbox, EXPORTED so every child shell inherits it;
+# arms that need their own value still override locally.
+_HI="$(mktemp -d)"
+trap 'rm -rf "$_HI"' EXIT
+export NFTBAN_CONFIG_DIR="$_HI/etc" NFTBAN_DATA_DIR="$_HI/data" NFTBAN_LOG_DIR="$_HI/log" \
+       NFTBAN_CACHE_DIR="$_HI/cache" NFTBAN_RUN_DIR="$_HI/run" NFTBAN_STATE_DIR="$_HI/data/state"
+mkdir -p "$NFTBAN_CONFIG_DIR" "$NFTBAN_DATA_DIR/state" "$NFTBAN_LOG_DIR" "$NFTBAN_CACHE_DIR" "$NFTBAN_RUN_DIR"
+# The SUBJECT's own libraries, never the host's (audit I23, 2026-10-08): without this, nftban_ddos.sh
+# and nftban_portscan.sh loaded module_txn.sh from /usr/lib/nftban (default NFTBAN_LIB_DIR). On an
+# installed lab host that ran the INSTALLED code; on the CI runner nothing loaded, no transaction
+# committed, and the generation arm below failed.
+export NFTBAN_LIB_DIR="$ROOT/cli/lib/nftban"
+# Host guard: the HOST config paths this test once wrote must be unchanged at the end
+# (logs/state/cache are rewritten by a live product, so those are checked in the sandbox).
+_hg_state(){ local p; for p in "$@"; do if [[ ! -e "$p" ]]; then echo "$p ABSENT"; elif [[ -r "$p" ]]; then echo "$p $(sha256sum < "$p" | cut -c1-16) $(stat -c %Y "$p")"; else echo "$p UNREADABLE $(stat -c %Y "$p" 2>/dev/null)"; fi; done; }
+_HG_PATHS=("/etc/nftban/conf.d/ddos/main.conf.local" "/etc/nftban/conf.d/portscan/main.conf.local")
+_HG_BEFORE="$(_hg_state "${_HG_PATHS[@]}")"
+# module_authority/module_txn default these to /run/nftban (lib/module_authority.sh:335,338).
+export NFTBAN_PLAN_RECORD_DIR="$_HI/run" NFTBAN_PLAN_GENERATION_FILE="$_HI/run/convergence-generation"
 FAILURES=0
 fail() { FAILURES=$((FAILURES + 1)); echo "  FAIL  $1"; }
 ok()   { echo "  ok    $1"; }
@@ -109,6 +130,11 @@ for spec in "$DDOS:nftban_ddos_enable"     "$DDOS:nftban_ddos_disable" \
     esac
 done
 
+# --- host isolation guard (TEST-HARNESS-MUTATES-LIVE-HOST-STATE-WHEN-RUN-AS-ROOT) ---
+if [[ "$(_hg_state "${_HG_PATHS[@]}")" == "$_HG_BEFORE" ]]; then ok "HOST-GUARD host config paths unchanged (${_HG_PATHS[*]})"
+else fail "HOST-GUARD host config CHANGED by this test: $(_hg_state "${_HG_PATHS[@]}" | tr '\n' ';')"; fi
+if [[ -e "$_HI/run/convergence-generation" ]]; then ok "HOST-GUARD convergence-generation landed in the sandbox"
+else fail "HOST-GUARD convergence-generation not in the sandbox: redirection lost?"; fi
 echo ""
 if [[ $FAILURES -gt 0 ]]; then
     echo "::error::module orchestrator unbound-variable guard FAILED: $FAILURES"

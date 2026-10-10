@@ -13,8 +13,8 @@
 # meta:input="None (extracts + stubs health render; greps sources/docs)"
 # meta:output="Pass/fail assertions; exit 0 on all-pass"
 # meta:depends="bash,awk,grep,jq"
-# meta:inventory.files="cli/lib/nftban/core/nftban_botscan.sh,cli/lib/nftban/core/nftban_botscan_adaptive.sh,cli/lib/nftban/cli/cmd_status.sh,cli/lib/nftban/core/nftban_health_checks_modules.sh,cli/lib/nftban/cli/cmd_health.sh,cli/lib/nftban/lib/nftban_botguard_explain.sh,cli/lib/nftban/cli/cmd_support.sh,cli/lib/nftban/cli/cmd_botscan.sh"
-# meta:inventory.binaries="bash,awk,grep,jq"
+# meta:inventory.files="cli/lib/nftban/core/nftban_botscan.sh,cli/lib/nftban/core/nftban_botscan_adaptive.sh,cli/lib/nftban/cli/cmd_status.sh,cli/lib/nftban/core/nftban_health_checks_modules.sh,cli/lib/nftban/cli/cmd_health.sh,cli/lib/nftban/lib/nftban_botguard_explain.sh,cli/lib/nftban/cli/cmd_support.sh,cli/lib/nftban/cli/cmd_botscan.sh,cli/lib/nftban/tests/health_strict_harness.sh"
+# meta:inventory.binaries="bash,awk,grep,jq,tr"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_DATA_DIR"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -57,21 +57,26 @@ hasf(){ grep -Fq -- "$2" "$1"; }
 echo "=== v1.219.0 PR-A BotScan operator-truth contract ==="
 
 # ---- Behavioral: extract the cheap-read health render + facts and run with fixtures ----
-awk '/^_nftban_health_botscan_facts\(\)/{c=1} c{print} /^_nftban_health_render_botscan\(\)/{r=1} r&&/^}/{print "";exit}' "$HMOD" > "$SB/render.sh"
-[[ -s "$SB/render.sh" ]] && ok "extracted health facts+render block" || no "extract health render block"
+# The REAL module, sourced under the dispatcher's strict plane (health_strict_harness.sh);
+# an aborted facts read is a failure here, not a DISABLED render that passes.
+# shellcheck source=cli/lib/nftban/tests/health_strict_harness.sh
+source "$SCRIPT_DIR/health_strict_harness.sh"
+hs_init "$SB" && ok "strict harness bound to $HMOD" || { no "strict harness: subject files missing"; exit 1; }
+hs_fn_source "${HS_BOTSCAN_READERS[@]}" > "$SB/render.sh" || true
+[[ -s "$SB/render.sh" ]] && ok "real facts+render definitions read from the module" || no "facts+render definitions not found"
 
 render(){ # render <enabled> <mode> <timer:active|inactive> <health_state>
   local en="$1" mode="$2" tmr="$3" hs="$4"
   mkdir -p "$SB/conf.d/botscan" "$SB/data/botscan" "$SB/data/botscan/spool"
   printf 'BOTSCAN_ENABLED="%s"\nBOTSCAN_ACTION_MODE="%s"\n' "$en" "$mode" > "$SB/conf.d/botscan/main.conf"
   printf '{"health_state":"%s","last_run_ts":%s,"bans_emitted_total":3}\n' "$hs" "$(date +%s)" > "$SB/data/botscan/runstate.json"
-  NFTBAN_CONFIG_DIR="$SB" NFTBAN_DATA_DIR="$SB/data" STIMER="$tmr" bash -c '
-    set +e
-    systemctl(){ [ "${STIMER:-inactive}" = active ] && return 0 || return 1; }
-    export -f systemctl 2>/dev/null || true
-    source "'"$SB/render.sh"'"
-    _nftban_health_render_botscan
-  '
+  local rc=0
+  NFTBAN_CONFIG_DIR="$SB" NFTBAN_DATA_DIR="$SB/data" HS_TIMER="$tmr" \
+    hs_call _nftban_health_render_botscan || rc=$?
+  # Recorded, not asserted here: render() runs inside $(...), where a counter is lost.
+  if [[ "$rc" -ne 0 ]] || hs_err_banner; then
+    printf 'render(%s,%s,%s,%s) rc=%s %s\n' "$en" "$mode" "$tmr" "$hs" "$rc" "$(hs_err_first)" >> "$SB/strict.fail"
+  fi
 }
 
 out=$(render true both active OK_SCANNED_NO_BOTS)
@@ -110,6 +115,10 @@ has "$out" "DETECT-ONLY" && ok "render alert-mode: DETECT-ONLY" || no "render al
 
 out=$(render false both inactive UNKNOWN)
 has "$out" "DISABLED" && ok "render disabled: DISABLED (no bans)" || no "render disabled"
+
+if [[ -s "$SB/strict.fail" ]]; then
+  no "strict plane: a render aborted or printed the ERR banner: $(tr '\n' ';' < "$SB/strict.fail")"
+else ok "strict plane: every render exited 0 with no ERR-trap banner"; fi
 
 # ---- Cheap-read invariant: facts/render must never read access-log CONTENT ----
 if grep -nE 'access\.log|access_log|/var/log/(apache|httpd|nginx)|tail .*log|grep .*access' "$SB/render.sh" >/dev/null 2>&1; then

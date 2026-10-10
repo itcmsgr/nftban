@@ -48,6 +48,8 @@ Environment=NFTBAN_DATA_DIR=/var/lib/nftban
 Environment=NFTBAN_RUN_DIR=/run/nftban
 Environment=NFTBAN_LOG_DIR=/var/log/nftban
 
+# v1.235: skipped (not failed) without firewall authority.
+ExecCondition=+/usr/lib/nftban/bin/nftband --authority-check
 ExecStart=/usr/lib/nftban/sbin/nftban-queue-processor
 StandardOutput=journal
 StandardError=journal

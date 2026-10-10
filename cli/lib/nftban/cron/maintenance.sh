@@ -171,10 +171,42 @@ trap release_lock EXIT
 # MAIN MAINTENANCE TASKS
 # =============================================================================
 
+# v1.235 (BUG-PORTSCAN-CLASSIC-CURSOR-SHARED-BY-DAEMON-AND-MAINTENANCE-PLANES): what the
+# daemon itself reports about its portscan plane, from its EXISTING `modules` IPC method
+# (the same read cmd_login.sh uses). Prints ACTIVE only when the reply lists portscan
+# running in classic mode; NOT_REPORTED, NOT_CLASSIC_RUNNING (<running> <mode>) or UNKNOWN
+# otherwise. Only ACTIVE lets maintenance step 7 skip ingestion.
+_maint_portscan_daemon_plane() {
+    local sock="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock" resp="" rm=""
+    if [[ -S "$sock" ]] && command -v socat >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 \
+       && resp="$(echo '{"method":"modules","params":{}}' | timeout 5 socat - "UNIX-CONNECT:${sock}" 2>/dev/null)" \
+       && rm="$(jq -r '[.data[]? | select(.name == "portscan") | "\(.running) \(.extra.mode // "")"][0] // "absent"' <<<"$resp" 2>/dev/null)" \
+       && [[ -n "$rm" ]]; then
+        case "$rm" in
+            "true classic") echo "ACTIVE" ;;
+            absent)         echo "NOT_REPORTED" ;;
+            *)              echo "NOT_CLASSIC_RUNNING (${rm})" ;;
+        esac
+    else
+        echo "UNKNOWN"
+    fi
+    return 0
+}
+
 main() {
     acquire_lock
 
     log "INFO" "NFTBan Maintenance Starting"
+
+    # v1.235 (owner 2026-10-10): maintenance reloads, edits rules and runs autoheal. Without
+    # firewall authority (refused / interrupted / failed install, disabled, bypass) it changes
+    # nothing — "lockout prevention" never grants itself authority. The unit's ExecCondition
+    # normally skips the run earlier; this is the same decision for a manual run.
+    local _maint_auth
+    if ! _maint_auth="$(_nft_ipc_authority)"; then
+        log "WARN" "SKIPPED: NFTBan has no firewall authority on this host (${_maint_auth#DENIED }) — no reload, no rule change, no repair"
+        return 0
+    fi
 
     # v1.32.0: Cache table existence check (avoids 4 redundant kernel calls)
     # v1.228.4 PR-3: typed. "not available" now distinguishes ABSENT from
@@ -745,6 +777,29 @@ EOF
     fi
 
     # ==========================================================================
+    # 3b. Owed full sync (v1.235, owner 2026-10-08)
+    # ==========================================================================
+    # nft_ipc_sync leaves ${NFTBAN_RUN_DIR}/.sync_last.pending when a full sync was
+    # requested but did not run (all IPC attempts failed, or it was coalesced). Feeds,
+    # geoban and trust write their durable source BEFORE requesting the sync, so the
+    # sync is still owed; the legacy additive apply fallback is retired (P1S-A). This
+    # step is the backstop the marker always promised (nothing read it before): it
+    # re-requests the sync each cycle until one succeeds (success removes the marker).
+    if [[ -f "${NFTBAN_RUN_DIR:-/run/nftban}/.sync_last.pending" ]]; then
+        if [[ "$_nft_table_available" == "true" ]]; then
+            local _os_out="" _os_rc=0
+            _os_out=$(nft_ipc_sync 1 2>&1) || _os_rc=$?
+            if [[ $_os_rc -eq 0 ]]; then
+                log "INFO" "[3b/10] owed full sync completed${_os_out:+: ${_os_out}}"
+            else
+                log "ERROR" "[3b/10] owed full sync FAILED (rc=${_os_rc}) — feeds/geoban/trust changes are NOT in the kernel yet; retried next cycle"
+            fi
+        else
+            log "WARN" "[3b/10] a full sync is owed but the NFTBan table is not readable/present — retried next cycle"
+        fi
+    fi
+
+    # ==========================================================================
     # 4. Auto-Heal (Fix Permissions, Directories)
     # ==========================================================================
     log "INFO" "[4/10] Running auto-heal..."
@@ -828,8 +883,22 @@ EOF
 
         # Process kernel logs → emit micro-events for aggregation
         # Without this step, aggregate() finds no events to analyze
-        if declare -f nftban_portscan_classic_process_logs >/dev/null 2>&1; then
-            nftban_portscan_classic_process_logs 2>/dev/null || true
+        # v1.235 (BUG-PORTSCAN-CLASSIC-CURSOR-SHARED-BY-DAEMON-AND-MAINTENANCE-PLANES): the
+        # daemon's 60 s plane (internal/portscan/module.go runCycle -> nftban_portscan_run)
+        # reads the SAME journal cursor and file offsets with no lock, so running both read the
+        # same batch twice (duplicate micro-events). The daemon owns ingestion WHEN IT SAYS SO:
+        # skip here only if its existing `modules` IPC reply reports portscan running in
+        # classic mode. Daemon down, socket/socat/jq absent, no portscan entry, not running,
+        # another mode or an unreadable reply -> ingest here as before (never silently stop).
+        local _ps_plane
+        _ps_plane="$(_maint_portscan_daemon_plane)"
+        if [[ "$_ps_plane" == ACTIVE ]]; then
+            log "INFO" "Portscan ingestion: skipped here, the daemon plane reports portscan classic running (it owns the journal cursor)"
+        else
+            log "INFO" "Portscan ingestion: daemon plane state ${_ps_plane}: maintenance ingests"
+            if declare -f nftban_portscan_classic_process_logs >/dev/null 2>&1; then
+                nftban_portscan_classic_process_logs 2>/dev/null || true
+            fi
         fi
 
         # Run aggregation if function exists
@@ -1076,4 +1145,8 @@ EOF
 # RUN
 # =============================================================================
 
-main "$@"
+# Run when EXECUTED (nftban-maintenance.service ExecStart); sourcing only defines the
+# functions (v1.235: lets a test drive _maint_portscan_daemon_plane in isolation).
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

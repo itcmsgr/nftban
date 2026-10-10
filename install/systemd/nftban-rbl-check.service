@@ -36,6 +36,8 @@ User=nftban
 Group=nftban
 
 # Run RBL check with quiet mode and alert
+# v1.235: skipped (not failed) without firewall authority.
+ExecCondition=+/usr/lib/nftban/bin/nftband --authority-check
 ExecStart=/usr/sbin/nftban rbl check --quiet --alert
 
 # v1.220.0 RBL rc contract: 0=fully-verified-clean, 1=listed, 2=degraded/not-fully-

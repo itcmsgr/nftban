@@ -189,12 +189,57 @@ _tunnel_find_dnsmasq_log() {
 #   QTYPE    = query type (A, AAAA, TXT, MX, etc.)
 #   RCODE    = response code (NOERROR, NXDOMAIN, SERVFAIL, etc.)
 
+# v1.235 BUG-TUNNEL-DNS-PARSERS-IGNORE-SINCE-LIFETIME-COUNTS-SCORED-AS-5MIN-WINDOW:
+# timestamp functions shared by the BIND, unbound and dnsmasq parsers (gawk: a package
+# dependency on DEB and RPM; mktime/systime/strftime and match() arrays are gawk features).
+# A line is IN the scan window when its time >= since. With since > 0, a line whose time
+# cannot be parsed is NOT counted as in-window: it is counted as "unparsed" and reported
+# on stderr (never silently included). since = 0 means no filtering.
+# Syslog "Mon DD HH:MM:SS" has no year: the current year, or the previous one when the
+# result would lie more than one day in the future (a log written last December).
+_TUNNEL_AWK_TS='
+function _tun_mon(m,   i) { i = index("JanFebMarAprMayJunJulAugSepOctNovDec", m); return (i > 0 && (i - 1) % 3 == 0) ? (i + 2) / 3 : 0 }
+function tun_ts_syslog(mon, day, hms,   t, m, y, e, now) {
+    m = _tun_mon(mon); if (m == 0 || day !~ /^[0-9]+$/ || split(hms, t, ":") != 3) return -1
+    now = systime(); y = strftime("%Y", now) + 0
+    e = mktime(y " " m " " day " " t[1] " " t[2] " " int(t[3]))
+    if (e > now + 86400) e = mktime((y - 1) " " m " " day " " t[1] " " t[2] " " int(t[3]))
+    return e
+}
+function tun_ts_iso(s,   a, e, off) {
+    if (!match(s, /^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(\.[0-9]+)?(Z|[+-][0-9]{2}:?[0-9]{2})?$/, a)) return -1
+    if (a[8] == "") return mktime(a[1] " " a[2] " " a[3] " " a[4] " " a[5] " " a[6])
+    e = mktime(a[1] " " a[2] " " a[3] " " a[4] " " a[5] " " a[6], 1)
+    if (a[8] == "Z") return e
+    off = substr(a[8], 2); gsub(/:/, "", off)
+    off = substr(off, 1, 2) * 3600 + substr(off, 3, 2) * 60
+    return (substr(a[8], 1, 1) == "+") ? e - off : e + off
+}
+function tun_ts_bind(d, hms,   p, t, m) {
+    if (split(d, p, "-") != 3 || split(hms, t, ":") != 3) return -1
+    m = _tun_mon(p[2]); if (m == 0) return -1
+    return mktime(p[3] " " m " " p[1] " " t[1] " " t[2] " " int(t[3]))
+}
+function tun_ts_line(   e) {
+    if ($1 ~ /^\[[0-9]+\]$/) { e = $1; gsub(/[^0-9]/, "", e); return e + 0 }
+    if ($1 ~ /^[0-9]{2}-[A-Za-z]{3}-[0-9]{4}$/) return tun_ts_bind($1, $2)
+    if ($1 ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/) return tun_ts_iso($1)
+    if ($1 ~ /^[A-Z][a-z][a-z]$/) return tun_ts_syslog($1, $2, $3)
+    return -1
+}
+function tun_in_window(   e) {
+    if (since + 0 <= 0) return 1
+    e = tun_ts_line()
+    if (e < 0) { tun_unparsed++; return 0 }
+    return (e >= since + 0)
+}
+END { if (tun_unparsed > 0) printf "UNPARSED %d line(s) without a readable timestamp were not counted (%s)\n", tun_unparsed, tun_fmt > "/dev/stderr" }
+'
+
 nftban_tunnel_parse_bind() {
     # Parse BIND 9 query log (querylog format)
     # Format: DD-Mon-YYYY HH:MM:SS.mmm queries: info: client @0xPTR IP#PORT (QNAME): query: QNAME CLASS QTYPE FLAGS (IP)
     # Newer: DD-Mon-YYYY HH:MM:SS.mmm client @0xPTR IP#PORT (QNAME): query: QNAME CLASS QTYPE +FLAGS (IP)
-    # NOTE: since_ts filtering not implemented for BIND — parses entire log.
-    # With logrotate this is acceptable; full timestamp filtering planned for v1.31.
     local log_file="$1"
     local since_ts="${2:-0}"
 
@@ -205,8 +250,9 @@ nftban_tunnel_parse_bind() {
     # Parse recent queries (last scan interval)
     # Extract: client IP, qname, qtype
     # BIND query log is complex; use awk for reliable parsing
-    awk -v since="$since_ts" '
+    gawk -v since="$since_ts" -v tun_fmt="bind" "$_TUNNEL_AWK_TS"'
     /query:/ {
+        if (!tun_in_window()) next
         # Extract client IP (before #port)
         client_ip = ""
         qname = ""
@@ -245,8 +291,6 @@ nftban_tunnel_parse_unbound() {
     # Parse Unbound log
     # Format: [TIMESTAMP] unbound[PID:TID] info: IP QNAME QTYPE QCLASS
     # With verbosity 2+: also shows replies with RCODE
-    # NOTE: since_ts filtering not implemented — parses entire log.
-    # With logrotate this is acceptable; full timestamp filtering planned for v1.31.
     local log_file="$1"
     local since_ts="${2:-0}"
 
@@ -254,8 +298,9 @@ nftban_tunnel_parse_unbound() {
         return 1
     fi
 
-    awk '
+    gawk -v since="$since_ts" -v tun_fmt="unbound" "$_TUNNEL_AWK_TS"'
     /info:/ && / [A-Z]+ IN$/ {
+        if (!tun_in_window()) next
         # Query line: info: CLIENT_IP QNAME QTYPE CLASS
         for (i = 1; i <= NF; i++) {
             if ($i == "info:") {
@@ -274,8 +319,6 @@ nftban_tunnel_parse_dnsmasq() {
     # Parse dnsmasq log (syslog format)
     # Format: Mon DD HH:MM:SS hostname dnsmasq[PID]: query[QTYPE] QNAME from IP
     # Reply:  Mon DD HH:MM:SS hostname dnsmasq[PID]: reply QNAME is <CNAME|IP|NXDOMAIN>
-    # NOTE: since_ts filtering not implemented — parses entire log.
-    # With logrotate this is acceptable; full timestamp filtering planned for v1.31.
     local log_file="$1"
     local since_ts="${2:-0}"
 
@@ -283,8 +326,9 @@ nftban_tunnel_parse_dnsmasq() {
         return 1
     fi
 
-    awk '
+    gawk -v since="$since_ts" -v tun_fmt="dnsmasq" "$_TUNNEL_AWK_TS"'
     /dnsmasq\[.*\]: query\[/ {
+        if (!tun_in_window()) next
         # Extract: query[TYPE] QNAME from IP
         for (i = 1; i <= NF; i++) {
             if ($i ~ /^query\[/) {

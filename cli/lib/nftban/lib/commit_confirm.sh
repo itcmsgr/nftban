@@ -257,9 +257,11 @@ cc_commit_projection() {
     local proj="${CC_CONFIG}/generated/nftban-boot.nft" tmp
     tmp="${proj}.confirm.$$"
     cp -f "$CC_WORK/candidate-projection.nft" "$tmp" || { rm -f "$tmp"; return 1; }
-    chmod 0644 "$tmp" 2>/dev/null || true
-    mv -f "$tmp" "$proj" || { rm -f "$tmp"; return 1; }
-    command -v restorecon >/dev/null 2>&1 && restorecon -F "$proj" 2>/dev/null
+    # v1.235 audit K1: ONE publication authority (mv + mode + owner + SELinux type, verified):
+    # a bare mv keeps the temp file's type, which nftables.service cannot read on EL.
+    declare -F _firewall_publish_conf >/dev/null 2>&1 \
+        || { echo "ERROR: boot projection publication authority not loaded (_firewall_publish_conf)" >&2; rm -f "$tmp"; return 1; }
+    _firewall_publish_conf "$tmp" "$proj" || { rm -f "$tmp"; return 1; }
     return 0
 }
 
@@ -333,7 +335,7 @@ cc_restore_changeset() {
 
 # nftban firewall rollback <apply_id> [--auto|--boot]
 cc_rollback() {
-    local id="${1:-}" mode="${2:-manual}" rec_id st conflicts tx err tables
+    local id="${1:-}" mode="${2:-manual}" rec_id st conflicts tx err tables proj_fail=""
     cc_lock || { echo "ERROR: commit-confirm lock busy" >&2; return 1; }
     rec_id="$(cc_get apply_id)"; st="$(cc_status)"
     if [[ -z "$rec_id" || ( -n "$id" && "$id" != "$rec_id" ) ]]; then
@@ -344,6 +346,11 @@ cc_rollback() {
         pending|rollback-failed) : ;;
         *) echo "Unknown commit-confirm state '$st'; nothing done." >&2; cc_unlock; return 1 ;;
     esac
+    # Owner D10 / audit H2: a FAILED rollback is resolved only by the operator (retry or
+    # --abandon), never by a boot. The boot path re-raises the alarm (cc_boot) and returns.
+    if [[ "$st" == "rollback-failed" && "$mode" == "--boot" ]]; then
+        cc_unlock; return 0
+    fi
     # A crash after confirm's commit point: complete the confirm, never roll back. Both
     # are required: the recorded confirm for THIS apply ID and the candidate projection.
     if [[ "$st" == "pending" && "$(cc_get confirm_requested)" == "$rec_id" ]] && cc_projection_is_candidate; then
@@ -390,8 +397,14 @@ cc_rollback() {
     fi
     # 3. Projection: it was never published; make sure it is the baseline's.
     if [[ -f "$CC_BASE/projection.nft" ]] && [[ "$(cc_sha "${CC_CONFIG}/generated/nftban-boot.nft")" != "$(cc_sha "$CC_BASE/projection.nft")" ]]; then
-        cp -f "$CC_BASE/projection.nft" "${CC_CONFIG}/generated/nftban-boot.nft.rb.$$" \
-          && mv -f "${CC_CONFIG}/generated/nftban-boot.nft.rb.$$" "${CC_CONFIG}/generated/nftban-boot.nft"
+        # v1.235 audit K1: through the single publication authority (see cc_commit_projection).
+        if declare -F _firewall_publish_conf >/dev/null 2>&1 \
+           && cp -f "$CC_BASE/projection.nft" "${CC_CONFIG}/generated/nftban-boot.nft.rb.$$"; then
+            _firewall_publish_conf "${CC_CONFIG}/generated/nftban-boot.nft.rb.$$" "${CC_CONFIG}/generated/nftban-boot.nft" \
+                || { rm -f "${CC_CONFIG}/generated/nftban-boot.nft.rb.$$"; proj_fail="baseline boot projection NOT republished (publication failed)"; }
+        else
+            proj_fail="baseline boot projection NOT republished (publication authority not loaded)"
+        fi
     fi
     systemctl stop "nftban-commit-rollback-${rec_id}.timer" >/dev/null 2>&1 || true
     # Owner 2026-10-07: an UNRESOLVED conflict means the rollback could not restore the
@@ -399,6 +412,24 @@ cc_rollback() {
     # would apply it (nftband sync, maintenance, autoheal rebuild) must not resume on
     # their own: this is the D10 hold. The kernel is already the baseline. The operator
     # resolves the file(s) and retries the rollback, or accepts them with --abandon.
+    # v1.235 audit K1-a: a baseline projection that could not be republished is an INCOMPLETE
+    # rollback too (the next boot would load a projection that is not the baseline): D10 hold,
+    # never "rolled-back" with rc 0.
+    if [[ -n "$proj_fail" ]]; then
+        cc_set status rollback-failed
+        cc_set error "${proj_fail}${conflicts:+; unresolved conflicts: ${conflicts//,/, }}"
+        cc_set conflicts "$conflicts"
+        if [[ "$mode" == "--boot" ]]; then cc_set kernel "unchanged (boot mode: the projection loaded at boot is active)"
+        else cc_set kernel "baseline restored (NFTBan tables of the applied baseline)"; fi
+        cc_set at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        : > "$CC_FAILED_MARK"
+        cc_unlock
+        local msg="NFTBan commit-confirm rollback of apply $rec_id INCOMPLETE: ${proj_fail}; the next boot would load a projection that is not the applied baseline. NFTBan writers are held."
+        logger -t nftban -p auth.crit "$msg" 2>/dev/null || true
+        echo "⚠️  $msg" >&2
+        echo "   Resolve: retry 'nftban firewall rollback $rec_id' (republishes the baseline projection), or accept the current state: 'nftban firewall rollback --abandon'." >&2
+        return 1
+    fi
     if [[ -n "$conflicts" ]]; then
         cc_set status rollback-failed
         cc_set error "unresolved conflicts: files edited after the apply: ${conflicts//,/, }"

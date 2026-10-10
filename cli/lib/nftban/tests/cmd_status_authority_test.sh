@@ -57,6 +57,11 @@ trap 'rm -rf "$SANDBOX"' EXIT
 STATE_DIR="$SANDBOX/var/lib/nftban/state"
 mkdir -p "$STATE_DIR"
 export NFTBAN_STATE_DIR="$STATE_DIR"
+# v1.235: the section asks the shared firewall-authority decision (lib/service_control.sh);
+# keep it hermetic (sandbox config = master switch default on; no kernel lock table entry).
+mkdir -p "$SANDBOX/etc"
+export NFTBAN_CONFIG_DIR="$SANDBOX/etc" NFTBAN_PROC_LOCKS="$SANDBOX/locks"
+: > "$SANDBOX/locks"
 
 PASS=0
 FAIL=0
@@ -72,7 +77,7 @@ run_authority_section() {
     # v1.153 (UX-A1 / CMD-CONSIST), the shared nftban_kv label helper. Provide
     # a minimal local nftban_kv mirroring core/nftban_output.sh so the section
     # can be exercised in isolation without sourcing the full runtime.
-    awk '/^_status_section_authority\(\) \{/,/^\}/' \
+    awk '/^_status_firewall_authority\(\) \{/,/^\}/; /^_status_section_authority\(\) \{/,/^\}/' \
         "$NFTBAN_LIB_DIR/cli/cmd_status.sh" > "$SANDBOX/section.sh"
     # shellcheck source=/dev/null
     (
@@ -159,7 +164,7 @@ fi
 # F2: UPDATE, no conflicts → header + field, NO WARNING/ACTION
 # =============================================================================
 echo "F2: AUTHORITY=UPDATE, CONFLICTS="
-write_state "AUTHORITY=UPDATE" "CONFLICTS="
+write_state "INSTALL_STATE=COMMITTED" "AUTHORITY=UPDATE" "CONFLICTS="
 F2_OUT=$(run_authority_section)
 # v1.153 UX-A1: non-AMBIGUOUS authority renders "Firewall authority..🔒 EXCLUSIVE (UPDATE)"
 if echo "$F2_OUT" | grep -qE "Firewall authority\.+ .*EXCLUSIVE \(UPDATE\)"; then

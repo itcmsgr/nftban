@@ -128,9 +128,9 @@ jobs:
     needs: validate-dependencies
     name: Build Go binaries
     runs-on: ubuntu-latest
-    # v1.157 PR-C: setup-go installs the exact go.mod patch (1.25.13); this job
+    # v1.157 PR-C: setup-go installs the exact go.mod patch (1.26.9); this job
     # only runs ./build.sh (go build of our module), so GOTOOLCHAIN=local avoids
-    # a redundant toolchain re-download. Compiler version unchanged (1.25.13),
+    # a redundant toolchain re-download. Compiler version unchanged (1.26.9),
     # so binary output stays byte-reproducible.
     env:
       GOTOOLCHAIN: local
@@ -143,8 +143,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v5.6.0
         with:
-          # v1.157 PR-C: pin exact patch (matches go.mod `go 1.25.13`).
-          go-version: '1.25.13'
+          # v1.157 PR-C: pin exact patch (matches go.mod `go 1.26.9`).
+          go-version: '1.26.9'
 
       - name: Build binaries
         run: |
@@ -199,7 +199,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v5.6.0
         with:
-          go-version: '1.25.13'
+          go-version: '1.26.9'
       - name: Stale bin is OVERWRITTEN by a source build (never packaged)
         run: |
           set -euo pipefail
@@ -625,13 +625,23 @@ jobs:
             sleep "$delay"
           done
           [ "$ok" -eq 1 ] || { echo "docker pull ${{ matrix.container }} failed after 3 attempts"; exit 125; }
-          docker run --rm \
+          # NET_ADMIN (owner 2026-10-08): the package's forward-rule preflight must READ the
+          # kernel; without it nft gets EPERM -> UNKNOWN -> the install STOPS (by design). The
+          # container has its own network namespace: nothing on the runner host is read or changed.
+          docker run --rm --cap-add NET_ADMIN \
             -v $(pwd)/packages:/packages \
             -v $(pwd)/scripts:/scripts:ro \
             -v $(pwd)/parity-out:/parity-out \
             ${{ matrix.container }} bash -c '
             set -euo pipefail
             INSTALL_LOG=$(mktemp)
+
+            # v1.235 F1 (owner 2026-10-08): prove the REAL install order on a host WITHOUT nftables.
+            echo "=== Phase 0: F1 precondition (no nft before the transaction) ==="
+            if command -v nft >/dev/null 2>&1 || rpm -q nftables >/dev/null 2>&1; then
+              echo "[NOT_EXECUTED] F1: the image already has nftables: precondition unmet, the install order cannot be proven here"; exit 1
+            fi
+            echo "[PASS] F1: nftables absent before the transaction"
 
             echo "=== Phase 1: Package Installation ==="
             if dnf install -y --allowerasing /packages/*.rpm > "$INSTALL_LOG" 2>&1; then
@@ -643,6 +653,21 @@ jobs:
               cat "$INSTALL_LOG"
               INSTALL_CLEAN=false
             fi
+
+            # F1: %pre runs the forward preflight, which STOPS when nft is absent. The package is
+            # on disk only if %pre passed, i.e. nft was present when %pre ran; the transaction log
+            # must also show nftables installed BEFORE nftban-core (Requires(pre)).
+            echo "=== Phase 1b: F1 install order (HARD FAIL) ==="
+            if grep -q "nft binary is not installed" "$INSTALL_LOG"; then echo "[FAIL] F1: the preflight ran without nft"; cat "$INSTALL_LOG"; exit 1; fi
+            rpm -q nftban-core >/dev/null 2>&1 || { echo "[FAIL] F1: nftban-core not installed (%pre stopped?)"; cat "$INSTALL_LOG"; exit 1; }
+            # Transaction ELEMENT counters (k/N), not log line order: the package %pretrans runs
+            # before every element (counter 1/1) and does not need nft; its %pre runs as part of
+            # its own element. dnf4 "  Installing       : pkg   k/N"; dnf5 "[ k/N] Installing pkg".
+            n_dep=$(grep -m1 -E "(Installing *: |\] Installing )nftables-[0-9]" "$INSTALL_LOG" | grep -oE "[0-9]+/[0-9]+" | tail -1 | cut -d/ -f1 || true)
+            n_pkg=$(grep -m1 -E "(Installing *: |\] Installing )nftban-core-[0-9]" "$INSTALL_LOG" | grep -oE "[0-9]+/[0-9]+" | tail -1 | cut -d/ -f1 || true)
+            echo "F1 transaction elements: nftables ${n_dep:-none}, nftban-core ${n_pkg:-none}"
+            if [ -n "$n_dep" ] && [ -n "$n_pkg" ] && [ "$n_dep" -lt "$n_pkg" ]; then echo "[PASS] F1: nftables installed (element $n_dep) before the nftban-core element ($n_pkg) whose pre-install check needs it"
+            else echo "[FAIL] F1: install order not shown"; grep -nE "nftables|nftban-core" "$INSTALL_LOG" | head -20; exit 1; fi
 
             echo "=== Phase 2: Artifact Validation (HARD FAIL) ==="
             echo -n "CLI wrapper exists: "
@@ -664,6 +689,11 @@ jobs:
             echo "=== Phase 2b: Installer Binary (G5 — HARD FAIL) ==="
             echo -n "Installer binary exists: "
             test -x /usr/lib/nftban/bin/nftban-installer && echo "PASS" || { echo "FAIL"; exit 1; }
+
+            # v1.235 batch C (GATE-CLI-INSTALLED-PACKAGE-ONLY-RUNS-VERSION): read-only
+            # commands through the INSTALLED entry point; a crash or ERR banner fails.
+            echo "=== Phase 2c: Installed-CLI read-only checks (HARD FAIL) ==="
+            bash /scripts/ci/installed-cli-readonly-checks.sh
 
             echo "=== Phase 3: Postinst Health (SOFT — expected to fail in Docker) ==="
             if [[ "$INSTALL_CLEAN" == "true" ]]; then
@@ -721,6 +751,72 @@ jobs:
               }
             cat /parity-out/rpm-${{ matrix.distro }}-verify.txt
 
+            # v1.235 K2/K2-c (owner 2026-10-08): an INVALID or unreadable master switch is refused
+            # by the package pre-install check BEFORE any change, and by the installer if it got
+            # past that check. Records the REAL final package state (no rollback is assumed) and
+            # proves the kernel rules and the boot configuration are byte-identical.
+            echo "=== Phase 7: K2 unusable master switch (HARD FAIL) ==="
+            K2L=/etc/nftban/conf.d/services.conf.local
+            k2_snap() {
+              { nft list ruleset 2>&1
+                for f in /etc/nftban/generated/nftban-boot.nft /etc/nftban/nftables.conf /etc/nftables.conf /etc/sysconfig/nftables.conf; do
+                  printf "%s " "$f"; if [ -e "$f" ]; then sha256sum < "$f"; else echo absent; fi
+                done; } > /tmp/k2.snap
+              sha256sum < /tmp/k2.snap
+            }
+            k2_check() {  # <label> <expected text>; runs the package transaction
+              b=$(k2_snap); rc=0
+              dnf reinstall -y /packages/*.rpm > /tmp/k2.log 2>&1 || rc=$?
+              a=$(k2_snap)
+              echo "K2 $1: package manager rc=$rc; final package state: $(rpm -q nftban-core 2>&1 || true)"
+              [ "$rc" -ne 0 ] || { echo "[FAIL] K2 $1: the package transaction did not fail"; cat /tmp/k2.log; exit 1; }
+              grep -qF "$2" /tmp/k2.log || { echo "[FAIL] K2 $1: the cause is not named"; cat /tmp/k2.log; exit 1; }
+              [ "$b" = "$a" ] || { echo "[FAIL] K2 $1: kernel rules or boot configuration CHANGED"; exit 1; }
+              echo "[PASS] K2 $1: refused before any change; rules and boot configuration byte-identical"
+            }
+            rm -rf "$K2L"; printf "NFTBAN_ENABLED=maybe\n" > "$K2L"
+            k2_check invalid "master switch is INVALID (NFTBAN_ENABLED=maybe in $K2L"
+            rm -rf "$K2L"; mkdir -p "$K2L"
+            k2_check not-a-file "master switch is UNKNOWN ($K2L exists but could not be read"
+            # A REAL read failure for root (owner 2026-10-08): /proc/self/mem is a regular file
+            # whose read at offset 0 fails (EIO) even for root. The precondition is shown here.
+            rm -rf "$K2L"; ln -s /proc/self/mem "$K2L"
+            if [ -f "$K2L" ] && ! cat "$K2L" > /dev/null 2> /tmp/k2pre.err; then
+              echo "K2 precondition: root cannot read $K2L: $(cat /tmp/k2pre.err)"
+              k2_check read-failure "master switch is UNKNOWN ($K2L exists but could not be read"
+            else echo "[NOT_EXECUTED] K2 read-failure: root can read $K2L here"; exit 1; fi
+            # The installer half (a switch that became unusable AFTER the pre-install check): the
+            # real installer binary ends FAILED_CONFIG_INVALID, exit 2, nothing changed.
+            rm -rf "$K2L"; printf "NFTBAN_ENABLED=maybe\n" > "$K2L"
+            b=$(k2_snap); rc=0
+            /usr/lib/nftban/bin/nftban-installer --rpm --mode=upgrade > /tmp/k2i.log 2>&1 || rc=$?
+            a=$(k2_snap); st=$(grep "^INSTALL_STATE=" /var/lib/nftban/state/install_state || true)
+            echo "K2 installer: rc=$rc $st"
+            if [ "$rc" -eq 2 ] && [ "$st" = "INSTALL_STATE=FAILED_CONFIG_INVALID" ] && [ "$b" = "$a" ]; then
+              echo "[PASS] K2 installer: FAILED_CONFIG_INVALID, exit 2; rules and boot configuration byte-identical"
+            else echo "[FAIL] K2 installer"; tail -30 /tmp/k2i.log; exit 1; fi
+            rm -rf "$K2L"
+            # The failure AFTER the pre-install check, carried through the REAL %post (owner
+            # 2026-10-08): rpm --nopre stands in for a switch that became unusable after %pre.
+            # Reported separately: installer exit, scriptlet exit, rpm exit + state. Whether rpm
+            # turns a failed %post into a non-zero exit is MEASURED here, not assumed.
+            echo "=== Phase 7b: K2 failure after %pre, through %post (installer/scriptlet HARD FAIL; rpm exit MEASURED) ==="
+            printf "NFTBAN_ENABLED=maybe\n" > "$K2L"
+            b=$(k2_snap); rc_p=0
+            rpm -Uvh --replacepkgs --nopre /packages/*.rpm > /tmp/k2p.log 2>&1 || rc_p=$?
+            a=$(k2_snap)
+            k2_inst=$(grep -o "NFTBAN_PACKAGE_INSTALLER_EXIT=[0-9]*" /tmp/k2p.log | tail -1 || true)
+            k2_scr=$(grep -oE "%post\(nftban-core[^)]*\) scriptlet failed, exit status [0-9]+" /tmp/k2p.log | tail -1 || true)
+            k2_st=$(grep "^INSTALL_STATE=" /var/lib/nftban/state/install_state || true)
+            echo "K2 7b: installer: ${k2_inst:-not printed} ($k2_st) | scriptlet: ${k2_scr:-no failure reported} | rpm rc=$rc_p, package state: $(rpm -q nftban-core 2>&1 || true)"
+            if [ "$k2_inst" = "NFTBAN_PACKAGE_INSTALLER_EXIT=2" ] && [ "$k2_st" = "INSTALL_STATE=FAILED_CONFIG_INVALID" ] \
+               && [ -n "$k2_scr" ] && [ "$b" = "$a" ]; then
+              echo "[PASS] K2 7b: installer refused, %post failed; rules and boot configuration byte-identical"
+            else echo "[FAIL] K2 7b"; tail -40 /tmp/k2p.log; exit 1; fi
+            if [ "$rc_p" -ne 0 ]; then echo "[MEASURED] K2 7b: rpm exit $rc_p (the %post failure reached the package manager)"
+            else echo "[MEASURED] K2-PM-NOT-PROPAGATED: rpm exit 0 although %post failed"; fi
+            rm -rf "$K2L"
+
             rm -f "$INSTALL_LOG"
             echo "=== Install test PASSED ==="
           '
@@ -732,6 +828,41 @@ jobs:
           name: parity-rpm-install-${{ matrix.distro }}
           path: parity-out/rpm-${{ matrix.distro }}-*.txt
           retention-days: 30
+
+  # ==========================================================================
+  # NEGATIVE CONTROL: an install that CANNOT read the kernel STOPS (owner 2026-10-08)
+  # ==========================================================================
+  # The install legs run with NET_ADMIN so the forward-rule preflight can read their own
+  # network namespace. This leg proves the other side on the real package: WITHOUT it, nft
+  # gets EPERM -> UNKNOWN -> the install STOPS before any change, and nftban is not installed.
+  test-deb-install-unknown-stops:
+    name: Test DEB install STOPS when the kernel is unreadable (ubuntu24.04)
+    needs: build-deb
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download DEB packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: deb-ubuntu24.04
+          path: ./packages
+      - name: Install without NET_ADMIN must STOP before any change
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$(pwd)/packages:/packages:ro" ubuntu:24.04 bash -c '
+            set -u
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq >/dev/null
+            rc=0; apt-get install -y /packages/*.deb > /tmp/install.log 2>&1 || rc=$?
+            echo "apt-get install rc=$rc"
+            grep -E "nftban: " /tmp/install.log || true
+            st=$(dpkg-query -W -f="\${Status}" nftban 2>/dev/null || echo "not-installed")
+            echo "dpkg status: $st"
+            [ "$rc" -ne 0 ] || { echo "FAIL: the install SUCCEEDED although the kernel could not be read"; exit 1; }
+            grep -q "STOPPED before any change (forward chain UNKNOWN" /tmp/install.log \
+              || { echo "FAIL: no UNKNOWN STOP message"; exit 1; }
+            case "$st" in *"install ok installed"*) echo "FAIL: nftban ended up installed"; exit 1 ;; esac
+            echo "PASS: unreadable kernel -> STOP before any change; nftban not installed"
+          '
 
   # ==========================================================================
   # TEST INSTALLATION (DEB)
@@ -803,13 +934,23 @@ jobs:
             sleep "$delay"
           done
           [ "$ok" -eq 1 ] || { echo "docker pull ${{ matrix.container }} failed after 3 attempts"; exit 125; }
-          docker run --rm \
+          # NET_ADMIN (owner 2026-10-08): the package's forward-rule preflight must READ the
+          # kernel; without it nft gets EPERM -> UNKNOWN -> the install STOPS (by design). The
+          # container has its own network namespace: nothing on the runner host is read or changed.
+          docker run --rm --cap-add NET_ADMIN \
             -v $(pwd)/packages:/packages \
             -v $(pwd)/scripts:/scripts:ro \
             -v $(pwd)/parity-out:/parity-out \
             ${{ matrix.container }} bash -c '
             set -euo pipefail
             INSTALL_LOG=$(mktemp)
+
+            # v1.235 F1 (owner 2026-10-08): prove the REAL install order on a host WITHOUT nftables.
+            echo "=== Phase 0: F1 precondition (no nft before the transaction) ==="
+            if command -v nft >/dev/null 2>&1 || dpkg -s nftables >/dev/null 2>&1; then
+              echo "[NOT_EXECUTED] F1: the image already has nftables: precondition unmet, the install order cannot be proven here"; exit 1
+            fi
+            echo "[PASS] F1: nftables absent before the transaction"
 
             echo "=== Phase 1: Package Installation ==="
             apt-get update -qq > /dev/null 2>&1
@@ -822,6 +963,20 @@ jobs:
               cat "$INSTALL_LOG"
               INSTALL_CLEAN=false
             fi
+
+            # F1: preinst runs the forward preflight, which STOPS when nft is absent. nftban-core
+            # is unpacked only if preinst passed, i.e. nft was present when preinst ran; the apt
+            # log must also show nftables SET UP before nftban-core is unpacked (Pre-Depends).
+            echo "=== Phase 1b: F1 install order (HARD FAIL) ==="
+            if grep -q "nft binary is not installed" "$INSTALL_LOG"; then echo "[FAIL] F1: the preflight ran without nft"; cat "$INSTALL_LOG"; exit 1; fi
+            n_dep=$(grep -n -m1 -E "^Setting up nftables " "$INSTALL_LOG" | cut -d: -f1 || true)
+            # preinst runs after dpkg announces the package: "Selecting previously unselected
+            # package" (fresh install) or "Preparing to unpack" (upgrade/reinstall).
+            n_pkg=$(grep -n -m1 -E "(^Selecting previously unselected package nftban-core|Preparing to unpack .*nftban-core)" "$INSTALL_LOG" | cut -d: -f1 || true)
+            n_unp=$(grep -n -m1 -E "^Unpacking nftban-core " "$INSTALL_LOG" | cut -d: -f1 || true)
+            echo "F1 apt lines: nftables set up at ${n_dep:-none}, nftban-core preinst at ${n_pkg:-none}, unpacked at ${n_unp:-none}"
+            if [ -n "$n_dep" ] && [ -n "$n_pkg" ] && [ -n "$n_unp" ] && [ "$n_dep" -lt "$n_pkg" ]; then echo "[PASS] F1: nftables configured before nftban-core preinst; preinst passed"
+            else echo "[FAIL] F1: install order not shown"; grep -nE "nftables|nftban-core" "$INSTALL_LOG" | head -20; exit 1; fi
 
             echo "=== Phase 2: Artifact Validation (HARD FAIL) ==="
             echo -n "CLI wrapper exists: "
@@ -844,6 +999,11 @@ jobs:
             echo "=== Phase 2b: Installer Binary (G5 — HARD FAIL) ==="
             echo -n "Installer binary exists: "
             test -x /usr/lib/nftban/bin/nftban-installer && echo "PASS" || { echo "FAIL"; exit 1; }
+
+            # v1.235 batch C (GATE-CLI-INSTALLED-PACKAGE-ONLY-RUNS-VERSION): read-only
+            # commands through the INSTALLED entry point; a crash or ERR banner fails.
+            echo "=== Phase 2c: Installed-CLI read-only checks (HARD FAIL) ==="
+            bash /scripts/ci/installed-cli-readonly-checks.sh
 
             echo "=== Phase 3: Postinst Health (SOFT — expected to fail in Docker) ==="
             if [[ "$INSTALL_CLEAN" == "true" ]]; then
@@ -900,6 +1060,71 @@ jobs:
                 exit 1
               }
             cat /parity-out/deb-${{ matrix.distro }}-verify.txt
+
+            # v1.235 K2/K2-c (owner 2026-10-08): an INVALID or unreadable master switch is refused
+            # by the package pre-install check BEFORE any change, and by the installer if it got
+            # past that check. Records the REAL final package state (no rollback is assumed) and
+            # proves the kernel rules and the boot configuration are byte-identical.
+            echo "=== Phase 7: K2 unusable master switch (HARD FAIL) ==="
+            K2L=/etc/nftban/conf.d/services.conf.local
+            k2_snap() {
+              { nft list ruleset 2>&1
+                for f in /etc/nftban/generated/nftban-boot.nft /etc/nftban/nftables.conf /etc/nftables.conf /etc/sysconfig/nftables.conf; do
+                  printf "%s " "$f"; if [ -e "$f" ]; then sha256sum < "$f"; else echo absent; fi
+                done; } > /tmp/k2.snap
+              sha256sum < /tmp/k2.snap
+            }
+            k2_check() {  # <label> <expected text>; runs the package transaction
+              b=$(k2_snap); rc=0
+              apt-get install --reinstall -y /packages/*.deb > /tmp/k2.log 2>&1 || rc=$?
+              a=$(k2_snap)
+              echo "K2 $1: package manager rc=$rc; final package state: $(dpkg-query -W -f="\${Status} \${Version}" nftban-core 2>&1 || true)"
+              [ "$rc" -ne 0 ] || { echo "[FAIL] K2 $1: the package transaction did not fail"; cat /tmp/k2.log; exit 1; }
+              grep -qF "$2" /tmp/k2.log || { echo "[FAIL] K2 $1: the cause is not named"; cat /tmp/k2.log; exit 1; }
+              [ "$b" = "$a" ] || { echo "[FAIL] K2 $1: kernel rules or boot configuration CHANGED"; exit 1; }
+              echo "[PASS] K2 $1: refused before any change; rules and boot configuration byte-identical"
+            }
+            rm -rf "$K2L"; printf "NFTBAN_ENABLED=maybe\n" > "$K2L"
+            k2_check invalid "master switch is INVALID (NFTBAN_ENABLED=maybe in $K2L"
+            rm -rf "$K2L"; mkdir -p "$K2L"
+            k2_check not-a-file "master switch is UNKNOWN ($K2L exists but could not be read"
+            # A REAL read failure for root (owner 2026-10-08): /proc/self/mem is a regular file
+            # whose read at offset 0 fails (EIO) even for root. The precondition is shown here.
+            rm -rf "$K2L"; ln -s /proc/self/mem "$K2L"
+            if [ -f "$K2L" ] && ! cat "$K2L" > /dev/null 2> /tmp/k2pre.err; then
+              echo "K2 precondition: root cannot read $K2L: $(cat /tmp/k2pre.err)"
+              k2_check read-failure "master switch is UNKNOWN ($K2L exists but could not be read"
+            else echo "[NOT_EXECUTED] K2 read-failure: root can read $K2L here"; exit 1; fi
+            # The installer half (a switch that became unusable AFTER the pre-install check): the
+            # real installer binary ends FAILED_CONFIG_INVALID, exit 2, nothing changed.
+            rm -rf "$K2L"; printf "NFTBAN_ENABLED=maybe\n" > "$K2L"
+            b=$(k2_snap); rc=0
+            /usr/lib/nftban/bin/nftban-installer --deb --mode=upgrade > /tmp/k2i.log 2>&1 || rc=$?
+            a=$(k2_snap); st=$(grep "^INSTALL_STATE=" /var/lib/nftban/state/install_state || true)
+            echo "K2 installer: rc=$rc $st"
+            if [ "$rc" -eq 2 ] && [ "$st" = "INSTALL_STATE=FAILED_CONFIG_INVALID" ] && [ "$b" = "$a" ]; then
+              echo "[PASS] K2 installer: FAILED_CONFIG_INVALID, exit 2; rules and boot configuration byte-identical"
+            else echo "[FAIL] K2 installer"; tail -30 /tmp/k2i.log; exit 1; fi
+            rm -rf "$K2L"
+            # The failure AFTER the pre-install check, carried through the REAL postinst (owner
+            # 2026-10-08): unpack with a usable switch (preinst passes), make it unusable, then
+            # configure. Reported separately: installer exit, scriptlet exit, dpkg exit + state.
+            echo "=== Phase 7b: K2 failure after preinst, through postinst (HARD FAIL) ==="
+            b=$(k2_snap); rc_u=0
+            dpkg --unpack /packages/*.deb > /tmp/k2u.log 2>&1 || rc_u=$?
+            printf "NFTBAN_ENABLED=maybe\n" > "$K2L"
+            rc_c=0; dpkg --configure nftban-core > /tmp/k2c.log 2>&1 || rc_c=$?
+            a=$(k2_snap)
+            # Verdict (owner 2026-10-09): all six conditions in one tested script
+            # (cli/lib/nftban/tests/k2_7b_verdict_falsifiability_v1235_test.sh); dpkg prose = diagnostic.
+            if K2_RC_UNPACK="$rc_u" K2_RC_CONFIGURE="$rc_c" K2_CONFIGURE_LOG=/tmp/k2c.log \
+               K2_STATE_LINE="$(grep "^INSTALL_STATE=" /var/lib/nftban/state/install_state || true)" \
+               K2_PKG_STATUS="$(dpkg-query -W -f="\${Status} \${Version}" nftban-core 2>&1 || true)" \
+               K2_SNAP_BEFORE="$b" K2_SNAP_AFTER="$a" bash /scripts/ci/k2-7b-verdict.sh; then :
+            else tail -40 /tmp/k2c.log; exit 1; fi
+            # Recovery as documented: fix the setting, then dpkg --configure -a.
+            rm -rf "$K2L"; rc_r=0; dpkg --configure -a > /tmp/k2r.log 2>&1 || rc_r=$?
+            echo "K2 7b recovery: dpkg --configure -a rc=$rc_r, package state: $(dpkg-query -W -f="\${Status}" nftban-core 2>&1 || true)"
 
             rm -f "$INSTALL_LOG"
             echo "=== Install test PASSED ==="
@@ -987,7 +1212,8 @@ jobs:
         run: |
           set -euo pipefail
           ls -la packages/
-          docker run --rm \
+          # NET_ADMIN: see the install jobs (forward-rule preflight reads the container's own netns).
+          docker run --rm --cap-add NET_ADMIN \
             -v "$(pwd)/packages:/packages:ro" \
             -v "$(pwd)/scripts:/scripts:ro" \
             -e NFTBAN_MATRIX_VM_ASSERTIONS=0 \

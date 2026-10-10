@@ -280,11 +280,37 @@ _firewall_substitute_placeholders() {
     [[ -n "${DDOS_CLASSIC_HTTP_CONN_LIMIT:-}" ]] && _ct_http="$DDOS_CLASSIC_HTTP_CONN_LIMIT"
     [[ -n "${DDOS_CLASSIC_SMTP_CONN_LIMIT:-}" ]] && _ct_mail="$DDOS_CLASSIC_SMTP_CONN_LIMIT"
 
+    # v1.235 forwarding allows (owner D1-D4): project /etc/nftban/forward.d/forward.conf into
+    # the fwd_* set placeholders, in the SAME render (one transaction with the rules, and the
+    # boot projection). A store that exists but cannot be read REFUSES the render: loading
+    # empty allows would silently cut every approved forwarded flow.
+    # Exported function-locals: the awk below reads them through ENVIRON (no -v escape processing).
+    local -x FWD_EL_EGRESS="" FWD_EL_UPLINK="" FWD_EL_PUB_TCP4="" FWD_EL_PUB_UDP4="" FWD_EL_PUB_TCP6="" FWD_EL_PUB_UDP6=""
+    if declare -F nftban_forward_render_elements >/dev/null 2>&1 \
+       || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_forward.sh"; then
+        if ! nftban_forward_render_elements; then
+            echo "[NFTBan ERROR] forwarding store unreadable: render refused (the running rules are kept)" >&2
+            return 1
+        fi
+    else
+        echo "[NFTBan ERROR] lib/nftban_forward.sh not available: render refused" >&2
+        return 1
+    fi
+
     sed -e "s/__SSH_PORT__/${_ssh_ports_csv}/g" \
         -e "s/__CT_LIMIT_SSH__/${_ct_ssh}/g" \
         -e "s/__CT_LIMIT_HTTP__/${_ct_http}/g" \
         -e "s/__CT_LIMIT_MAIL__/${_ct_mail}/g" \
-        "$input" > "$output"
+        "$input" \
+    | awk '
+        /^__FWD_EGRESS_ELEMENTS__$/       { if (ENVIRON["FWD_EL_EGRESS"]   != "") print ENVIRON["FWD_EL_EGRESS"];   next }
+        /^__FWD_UPLINK_ELEMENTS__$/       { if (ENVIRON["FWD_EL_UPLINK"]   != "") print ENVIRON["FWD_EL_UPLINK"];   next }
+        /^__FWD_PUBLISH_TCP4_ELEMENTS__$/ { if (ENVIRON["FWD_EL_PUB_TCP4"] != "") print ENVIRON["FWD_EL_PUB_TCP4"]; next }
+        /^__FWD_PUBLISH_UDP4_ELEMENTS__$/ { if (ENVIRON["FWD_EL_PUB_UDP4"] != "") print ENVIRON["FWD_EL_PUB_UDP4"]; next }
+        /^__FWD_PUBLISH_TCP6_ELEMENTS__$/ { if (ENVIRON["FWD_EL_PUB_TCP6"] != "") print ENVIRON["FWD_EL_PUB_TCP6"]; next }
+        /^__FWD_PUBLISH_UDP6_ELEMENTS__$/ { if (ENVIRON["FWD_EL_PUB_UDP6"] != "") print ENVIRON["FWD_EL_PUB_UDP6"]; next }
+        { print }
+      ' > "$output"
 }
 
 # _firewall_set_elements <conf_file> <set_name> <csv>
@@ -387,6 +413,19 @@ _fw_cc_guard() {
     cc_refuse_if_rollback_failed "$1"
 }
 
+# v1.235 K9 (owner 2026-10-08, same cause as C20): every path that REPLACES the nftban forward
+# chain runs the SAME preflight as the package (lib/nftban_immutable_owned.sh): hand-added forward
+# rules STOP it before any change unless their migration plan was approved (UNKNOWN also STOPS;
+# --force is not an approval). No second implementation.
+_fw_forward_guard() {
+    if ! declare -F nftban_forward_unmanaged_preflight >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_immutable_owned.sh" 2>/dev/null \
+            || { echo "REFUSED: $1: the forward-rule check could not be loaded (lib/nftban_immutable_owned.sh)" >&2; return 1; }
+    fi
+    nftban_forward_unmanaged_preflight "nftban $1"
+}
+
 _fw_bypass_guard() {
     if ! declare -F nftban_refuse_under_bypass >/dev/null 2>&1; then
         # shellcheck source=/dev/null
@@ -406,6 +445,30 @@ _fw_bypass_guard() {
         fi
     done
     return 0
+}
+
+# v1.235 (owner 2026-10-10): every verb that loads or replaces NFTBan rules runs only with
+# granted firewall authority (lib/service_control.sh nftban_firewall_authority, the twin of
+# the Go state.FirewallAuthority). Refused: a refused/interrupted/failed install, a DISABLED
+# NFTBan (rebuild/init/reload/reset/restore: 'nftban enable' first), the bypass. Fail closed:
+# a library that cannot be loaded refuses. `firewall takeover` is the documented recovery
+# transaction and is not gated here.
+_fw_authority_guard() {
+    # Help is inert (v1.141 B5): `<verb> --help` prints and changes nothing, so it is never refused.
+    # ONLY -h/--help and ONLY as the verb's FIRST argument (found by the nftban-7c review):
+    # firewall_restore treats only $1 as help (`restore <file> --help` would restore), and
+    # render-boot does not know a bare `help` (it would publish the projection). A bare `help`
+    # without authority is refused, which changes nothing.
+    case "${2:-}" in -h|--help) return 0 ;; esac
+    if ! declare -F nftban_refuse_without_authority >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" 2>/dev/null || true
+    fi
+    if ! declare -F nftban_refuse_without_authority >/dev/null 2>&1; then
+        echo "REFUSED: $1 — the firewall-authority check could not be loaded (lib/service_control.sh)" >&2
+        return 1
+    fi
+    nftban_refuse_without_authority "$1"
 }
 
 _firewall_render_boot() {
@@ -457,7 +520,13 @@ RBHELP
             echo "ERROR: the stored enable/disable choice cannot be read (lib/service_control.sh) — boot projection NOT published; the previous boot path is unchanged" >&2
             return 1
         fi
-        if ! nftban_master_switch_on; then
+        local _ms_rc=0
+        nftban_master_switch_on || _ms_rc=$?
+        if [[ $_ms_rc -eq 2 ]]; then
+            # v1.235 K2: neither active nor inert is published; the last published projection stays.
+            echo "ERROR: NFTBan master switch is $(nftban_master_switch_invalid_text) — boot projection NOT published; the previous boot path is unchanged." >&2
+            return 1
+        elif [[ $_ms_rc -ne 0 ]]; then
             inert="true"
             [[ "$quiet" == "false" ]] && echo "NFTBan is disabled (stored choice): publishing the INERT projection"
         fi
@@ -522,8 +591,9 @@ _firewall_rebuild_refresh_boot_projection() {
         echo failed; return 0
     fi
     # v1.235 row 486 (owner U1): while the STORED choice is disabled, the projection
-    # stays INERT, so a manual rebuild of a disabled NFTBan applies rules for the running
-    # system only and cannot make NFTBan come back by itself at the next boot.
+    # stays INERT, so nothing can make NFTBan come back by itself at the next boot.
+    # Since 2026-10-10 (contract D11) the firewall verbs REFUSE while disabled, so this
+    # branch is a backstop for any other path that reaches the rebuild core.
     # Fail closed, as in render-boot: an unreadable stored choice never publishes.
     if ! declare -F nftban_master_switch_on >/dev/null 2>&1; then
         # shellcheck source=/dev/null
@@ -533,7 +603,14 @@ _firewall_rebuild_refresh_boot_projection() {
         echo "ERROR: the stored enable/disable choice cannot be read (lib/service_control.sh) — boot projection NOT refreshed" >&2
         echo failed; return 0
     fi
-    if ! nftban_master_switch_on; then
+    local _ms_rc=0
+    nftban_master_switch_on || _ms_rc=$?
+    if [[ $_ms_rc -eq 2 ]]; then
+        # v1.235 K2: an INVALID choice publishes nothing (the last published projection stays).
+        echo "ERROR: NFTBan master switch is $(nftban_master_switch_invalid_text) — boot projection NOT refreshed" >&2
+        echo failed; return 0
+    fi
+    if [[ $_ms_rc -ne 0 ]]; then
         if nftban_boot_projection_publish_inert "$bp" >&2; then
             echo "WARNING: NFTBan is DISABLED (stored choice): the rules just loaded apply until the next reboot only; boot projection kept INERT. Run 'nftban enable' to make them persistent." >&2
             echo refreshed; return 0
@@ -785,7 +862,13 @@ nftban_cmd_firewall() {
             ;;
         init)
             # v1.38.0: BUG-002 — alias to rebuild (firewall init was never implemented)
+            # v1.235 audit H4: an alias loads rules exactly like rebuild, so it carries the same
+            # guards (R-DEC bypass, D10 rollback-failed).
             shift
+            _fw_bypass_guard "firewall init" || return 1
+            _fw_authority_guard "firewall init" "$@" || return 1
+            _fw_cc_guard "firewall init" || return 1
+            _fw_forward_guard "firewall init" || return 1
             nftban_ssh_pre_rebuild_lockout_guard init "$@" || true
             firewall_rebuild "$@"
             ;;
@@ -815,15 +898,28 @@ nftban_cmd_firewall() {
             ;;
         reload)
             shift
+            # Help stays inert (v1.141 B5, help-owned verb): firewall_reload prints its own help
+            # before acting, so a help token skips the guards. The K9 forward guard runs nft.
+            local _ra
+            for _ra in "$@"; do
+                case "$_ra" in
+                    --) break ;;
+                    -h|--help|help) firewall_reload "$@"; return ;;
+                esac
+            done
             _fw_bypass_guard "firewall reload" || return 1
+            _fw_authority_guard "firewall reload" "$@" || return 1
             _fw_cc_guard "firewall reload" || return 1
+            _fw_forward_guard "firewall reload" || return 1
             nftban_ssh_pre_rebuild_lockout_guard reload "$@" || true
             firewall_reload "$@"
             ;;
         rebuild)
             shift
             _fw_bypass_guard "firewall rebuild" || return 1
+            _fw_authority_guard "firewall rebuild" "$@" || return 1
             _fw_cc_guard "firewall rebuild" || return 1
+            _fw_forward_guard "firewall rebuild" || return 1
             nftban_ssh_pre_rebuild_lockout_guard rebuild "$@" || true
             firewall_rebuild "$@"
             ;;
@@ -831,13 +927,22 @@ nftban_cmd_firewall() {
             # P12-FPA: render + publish the boot projection WITHOUT loading it.
             shift
             _fw_bypass_guard "firewall render-boot" || return 1
+            # An INERT projection (what disable publishes) is always allowed; an ACTIVE one
+            # would load NFTBan rules at the next boot, so it needs firewall authority.
+            local _rb_a _rb_inert=0
+            for _rb_a in "$@"; do [[ "$_rb_a" == "--inert" ]] && _rb_inert=1; done
+            if [[ $_rb_inert -eq 0 ]]; then
+                _fw_authority_guard "firewall render-boot" "$@" || return 1
+            fi
             _fw_cc_guard "firewall render-boot" || return 1
             _firewall_render_boot "$@"
             ;;
         reset)
             shift
             _fw_bypass_guard "firewall reset" || return 1
+            _fw_authority_guard "firewall reset" "$@" || return 1
             _fw_cc_guard "firewall reset" || return 1
+            _fw_forward_guard "firewall reset" || return 1
             firewall_reset "$@"
             ;;
         conflicts)
@@ -855,7 +960,9 @@ nftban_cmd_firewall() {
         restore)
             shift
             _fw_bypass_guard "firewall restore" || return 1
+            _fw_authority_guard "firewall restore" "$@" || return 1
             _fw_cc_guard "firewall restore" || return 1
+            _fw_forward_guard "firewall restore" || return 1
             firewall_restore "$@"
             ;;
         confirm)
@@ -881,7 +988,11 @@ nftban_cmd_firewall() {
                     *)             _cc_id="$_cc_a" ;;
                 esac
             done
-            if [[ "$_cc_mode" == "abandon" ]]; then cc_abandon "$_cc_id"; else cc_rollback "$_cc_id" "$_cc_mode"; fi
+            # v1.235 audit H2: --boot (the boot unit) is cc_boot: it re-raises the D10 alarm and
+            # keeps a failed rollback held; only a PENDING apply is rolled back at boot.
+            if [[ "$_cc_mode" == "abandon" ]]; then cc_abandon "$_cc_id"
+            elif [[ "$_cc_mode" == "--boot" ]]; then cc_boot
+            else cc_rollback "$_cc_id" "$_cc_mode"; fi
             ;;
         record)
             shift
@@ -896,12 +1007,20 @@ nftban_cmd_firewall() {
             shift
             _fw_bypass_guard "firewall takeover" || return 1
             _fw_cc_guard "firewall takeover" || return 1
+            _fw_forward_guard "firewall takeover" || return 1
             nftban_ssh_pre_rebuild_lockout_guard takeover "$@" || true
             firewall_takeover "$@"
             ;;
         whitelist-session)
             shift
             firewall_whitelist_session "$@"
+            ;;
+        forward)
+            # v1.235 forwarding policy (owner D1-D5; bans Q1/Q2 2026-10-08).
+            shift
+            # shellcheck source=/dev/null
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_forward.sh" || return 1
+            nftban_forward_cli "$@"
             ;;
         ssh-audit|ssh-port-audit)
             # OBS-SSHPORT-55000-FAMILY: read-only report of sshd listeners vs ssh_ports
@@ -1196,8 +1315,14 @@ _whitelist_session_add() {
     echo "Added: $ip  (expires $expires_at, reason=$reason)"
 
     # Trigger reload so the daemon picks up the new entry immediately.
+    # v1.235 audit K9-a: a refused reload (e.g. the forward-rule STOP) is SAID, never swallowed.
     if command -v nftban >/dev/null 2>&1; then
-        nftban firewall reload >/dev/null 2>&1 || true
+        local _rl_err
+        if ! _rl_err=$(nftban firewall reload 2>&1 >/dev/null); then
+            echo "  Stored, but NOT active now: the firewall reload was refused:" >&2
+            printf '    %s\n' "${_rl_err:-(no reason given)}" >&2
+            return 2
+        fi
     fi
     return 0
 }
@@ -1355,8 +1480,14 @@ _whitelist_session_remove() {
     fi
     ) 9>"$_NFTBAN_SESSION_WL_LOCK" || return 1
 
+    # v1.235 audit K9-a: a refused reload is SAID, never swallowed.
     if command -v nftban >/dev/null 2>&1; then
-        nftban firewall reload >/dev/null 2>&1 || true
+        local _rl_err
+        if ! _rl_err=$(nftban firewall reload 2>&1 >/dev/null); then
+            echo "  Removed from the store, but the live entry may REMAIN until a reload succeeds: the firewall reload was refused:" >&2
+            printf '    %s\n' "${_rl_err:-(no reason given)}" >&2
+            return 2
+        fi
     fi
     return 0
 }
@@ -1433,8 +1564,14 @@ _whitelist_session_cleanup() {
 
     if [[ "$removed" -gt 0 ]]; then
         echo "Removed $removed expired entries"
+        # v1.235 audit K9-a: a refused reload is SAID, never swallowed.
         if command -v nftban >/dev/null 2>&1; then
-            nftban firewall reload >/dev/null 2>&1 || true
+            local _rl_err
+            if ! _rl_err=$(nftban firewall reload 2>&1 >/dev/null); then
+                echo "  Expired entries removed from the store, but they may stay live until a reload succeeds: the firewall reload was refused:" >&2
+                printf '    %s\n' "${_rl_err:-(no reason given)}" >&2
+                return 2
+            fi
         fi
     else
         echo "(no expired entries — nothing to remove)"
@@ -1818,9 +1955,9 @@ firewall_validate() {
             # whole point of Option C) cannot read this unit's journal without
             # systemd-journal/adm membership, so the old journalctl read (D10)
             # returned empty for exactly the users this service exists to serve.
-            # The wrapper writes /run/nftban/firewall-validate/last.json with
+            # The wrapper writes /run/nftban-firewall-validate/last.json with
             # chgrp nftban + chmod 0640 — that file is the PRIMARY source now.
-            local _runfile="${NFTBAN_RUN_DIR:-/run/nftban}/firewall-validate/last.json"
+            local _runfile="${NFTBAN_VALIDATE_DIR:-/run/nftban-firewall-validate}/last.json"
             local _output=""
             _output=$(cat "$_runfile" 2>/dev/null)
             # Last-resort fallback ONLY if the file is empty/unreadable (e.g. an
@@ -2232,7 +2369,13 @@ _check_nft_collisions() {
             [[ "$json_mode" == "false" ]] && echo "       $line" || true
         done
         [[ "$json_mode" == "false" ]] && echo ""
-        [[ "$json_mode" == "false" ]] && echo "       Fix: nft flush ruleset && nftban firewall rebuild"
+        # v1.235 audit K14: never advise `nft flush ruleset` (it deletes EVERY table, Docker's and
+        # other managers' included; see the same warning in the rebuild path).
+        if [[ "$json_mode" == "false" ]]; then
+            echo "       Fix: find the owner (manager) of each table above and reconcile it"
+            echo "            with its manager; CSF/iptables/firewalld: nftban firewall takeover (reversible)."
+            echo "            Then: nftban firewall rebuild. Do NOT run 'nft flush ruleset': it deletes every table."
+        fi
         return 1
     else
         [[ "$json_mode" == "false" ]] && echo "[OK] NFTables hooks: No conflicting input hooks"
@@ -3244,6 +3387,29 @@ delete table %s nftban
 # =============================================================================
 # SUBCOMMAND: REBUILD
 # =============================================================================
+
+# v1.235 section 4.1: the applied baseline = the configuration that produced the rules now running.
+# Called by the plain (non --confirm) rebuild after a successful load.
+_firewall_rebuild_record_baseline() {
+    # v1.235 audit H1: while an apply is PENDING confirmation, a plain rebuild (and enable,
+    # the installer, autoheal: all reach this line) must NOT re-record the baseline, or the
+    # timed rollback would "restore" the unconfirmed change. Checked and written under the
+    # shared commit-confirm lock, so a confirm/rollback cannot interleave.
+    # shellcheck source=/dev/null
+    if source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/commit_confirm.sh" 2>/dev/null; then
+        if cc_lock; then
+            if [[ "$(cc_status)" == "pending" ]]; then
+                echo "NOTE: apply $(cc_get apply_id) is pending confirmation: the applied baseline is kept, and its rollback still returns to it" >&2
+            else
+                cc_record_applied_baseline "$1" || echo "WARNING: applied baseline not recorded (rebuild --confirm will refuse until a rebuild records one)" >&2
+            fi
+            cc_unlock
+        else
+            echo "WARNING: applied baseline not recorded: commit-confirm lock busy (rebuild --confirm will refuse until a rebuild records one)" >&2
+        fi
+    fi
+    return 0
+}
 
 firewall_rebuild() {
     # v1.96: Retry wrapper around core rebuild.
@@ -4631,11 +4797,7 @@ _firewall_rebuild_core() {
         fi
     else
     _boot_proj_state=$(_firewall_rebuild_refresh_boot_projection "$source_file" "$load_conf" "$quiet")
-        # v1.235 section 4.1: the applied baseline = the configuration that produced the rules now running.
-        # shellcheck source=/dev/null
-        if source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/commit_confirm.sh" 2>/dev/null; then
-            cc_record_applied_baseline "$load_conf" || echo "WARNING: applied baseline not recorded (rebuild --confirm will refuse until a rebuild records one)" >&2
-        fi
+        _firewall_rebuild_record_baseline "$load_conf"   # v1.235 §4.1 + audit H1
     fi
 
     # Handle .rpmnew: if --use-new consumed it, delete the .rpmnew (already rendered into live config)
@@ -6050,6 +6212,20 @@ Operations:
   reset         Complete reset (flush all, rebuild clean)
   restore       Enterprise rollback (restore previous state)
   takeover      Disarm conflicting external firewalls (CSF/iptables/firewalld); reversible
+  forward       Forwarding allows for routed/container traffic
+                (status | list | allow egress|uplink|publish | remove | migrate)
+
+Firewall authority (v1.235):
+  init, reload, rebuild, reset, restore and an active render-boot run only when NFTBan
+  holds firewall authority: a completed, authorized installation, NFTBan enabled, and no
+  emergency bypass. They REFUSE and change nothing when:
+    - NFTBan is disabled (NFTBAN_ENABLED=false) .... run 'nftban enable' first
+    - the installation was refused (another firewall is active)
+                     ... sudo NFTBAN_TAKEOVER=1 /usr/lib/nftban/bin/nftban-installer --repair
+    - the last install/upgrade was interrupted or failed
+                     ... sudo /usr/lib/nftban/bin/nftban-installer --repair
+    - the kernel parameter nftban=disabled is set for this boot
+  'nftban status' shows the reason. 'takeover' is the approval path and is not refused.
 
 Examples:
   # Validate with strict mode (recommended before enabling)
@@ -6073,6 +6249,10 @@ Examples:
   # Firewall-transition health alarm (v1.198.2)
   nftban firewall transition-health        # show current verdict
   nftban firewall transition-health ack    # clear a RESOLVED alarm (gated; no ban loss)
+
+  # Forwarding (routed / Docker hosts)
+  nftban firewall forward status       # read-only: policy, unmanaged rules, bridges, uplinks
+  nftban firewall forward migrate      # show the migration plan for hand-added forward rules
 
   # Recovery operations
   nftban firewall rebuild              # Fix corruption

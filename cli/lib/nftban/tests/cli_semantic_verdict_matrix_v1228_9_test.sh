@@ -43,6 +43,19 @@ ok()  { printf '  [PASS] %s\n' "$1"; PASS=$((PASS+1)); }
 bad() { printf '  [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); }
 
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
+# --- v1.235 host isolation (TEST-HARNESS-MUTATES-LIVE-HOST-STATE-WHEN-RUN-AS-ROOT) ---
+# Run as root, this test wrote live host state (2026-10-07 overlay sweep). Every product
+# root it can reach now defaults into the sandbox, EXPORTED so every child shell inherits it;
+# arms that need their own value still override locally.
+_HI="$WORK/hi"
+export NFTBAN_CONFIG_DIR="$_HI/etc" NFTBAN_DATA_DIR="$_HI/data" NFTBAN_LOG_DIR="$_HI/log" \
+       NFTBAN_CACHE_DIR="$_HI/cache" NFTBAN_RUN_DIR="$_HI/run" NFTBAN_STATE_DIR="$_HI/data/state"
+mkdir -p "$NFTBAN_CONFIG_DIR" "$NFTBAN_DATA_DIR/state" "$NFTBAN_LOG_DIR" "$NFTBAN_CACHE_DIR" "$NFTBAN_RUN_DIR"
+# Host guard: the HOST config paths this test once wrote must be unchanged at the end
+# (logs/state/cache are rewritten by a live product, so those are checked in the sandbox).
+_hg_state(){ local p; for p in "$@"; do if [[ ! -e "$p" ]]; then echo "$p ABSENT"; elif [[ -r "$p" ]]; then echo "$p $(sha256sum < "$p" | cut -c1-16) $(stat -c %Y "$p")"; else echo "$p UNREADABLE $(stat -c %Y "$p" 2>/dev/null)"; fi; done; }
+_HG_PATHS=("/etc/nftban/ports.d/00-ssh.conf")
+_HG_BEFORE="$(_hg_state "${_HG_PATHS[@]}")"
 # nft that always fails: the condition under which a verdict surface is most
 # likely to disagree with itself, because that is where defaults get invented.
 printf '#!/bin/sh\nexit 1\n' > "$WORK/nft"; chmod +x "$WORK/nft"
@@ -215,5 +228,10 @@ else
 fi
 
 echo
+# --- host isolation guard (TEST-HARNESS-MUTATES-LIVE-HOST-STATE-WHEN-RUN-AS-ROOT) ---
+if [[ "$(_hg_state "${_HG_PATHS[@]}")" == "$_HG_BEFORE" ]]; then ok "HOST-GUARD host config paths unchanged (${_HG_PATHS[*]})"
+else bad "HOST-GUARD host config CHANGED by this test: $(_hg_state "${_HG_PATHS[@]}" | tr '\n' ';')"; fi
+if [[ -e "$_HI/data/state/ssh_port_active.state" ]]; then ok "HOST-GUARD ssh_port_active.state landed in the sandbox"
+else bad "HOST-GUARD ssh_port_active.state not in the sandbox: redirection lost?"; fi
 echo "=== cli_semantic_verdict_matrix_v1228_9: PASS=$PASS FAIL=$FAIL ==="
 [[ $FAIL -eq 0 ]]

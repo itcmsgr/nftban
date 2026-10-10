@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.234.0 - FHS Specification (GENERATED)
+# NFTBan v1.235.0 - FHS Specification (GENERATED)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
@@ -8,7 +8,7 @@
 # meta:name="nftban_fhs_spec"
 # meta:type="core"
 # meta:header="FHS Specification"
-# meta:version="1.234.0"
+# meta:version="1.235.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -93,6 +93,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/ports.d"]="0750|root|nftban|Port whitelist entries"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/rules.d"]="0750|root|nftban|Custom nftables rules"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/access.d"]="0750|root|nftban|Per-IP port access rules (v1.41.0)"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/forward.d"]="0750|root|nftban|Forwarding allows (v1.235, owner D1): forward.conf, operator-owned, written only by 'nftban firewall forward allow/remove/migrate' (never shipped, so never a conffile); projected into the nftban forward chain at every render"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/rbl"]="0750|root|nftban|RBL check configuration"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/geoban"]="0750|root|nftban|Geographic ban configuration"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/geoip"]="0750|root|nftban|GeoIP database configuration"
@@ -174,7 +175,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/health"]="0750|nftban|nftban|Health check status cache"
     NFTBAN_FHS_DIRECTORIES["/run/nftban"]="0755|nftban|nftban|Runtime data (PID files, sockets)"
     NFTBAN_FHS_DIRECTORIES["/run/nftban/botscan"]="0750|nftban|nftban|BotScan read-authority spool (v1.178-A): nftban:nftban access-log lines written by nftban-botscan-collector.service (CAP_DAC_READ_SEARCH) and read by the unprivileged nftban-botscan.service scanner. tmpfs/ephemeral."
-    NFTBAN_FHS_DIRECTORIES["/run/nftban/firewall-validate"]="2750|root|nftban|V131.3 D13 — setgid (2750) group-readable handoff dir for nftban-firewall-validate.service output (last.json); setgid makes wrapper-written files inherit group nftban without CAP_CHOWN"
+    NFTBAN_FHS_DIRECTORIES["/run/nftban-firewall-validate"]="2750|root|nftban|nftban-firewall-validate.service handoff dir (last.json, root:nftban 0640): root writes, the nftban group reads; setgid makes the wrapper's file inherit group nftban without CAP_CHOWN"
 
     # Shared Directories
     NFTBAN_FHS_DIRECTORIES["/usr/share/nftban"]="0755|root|root|Shared application data"

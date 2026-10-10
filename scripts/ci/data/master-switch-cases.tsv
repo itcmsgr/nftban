@@ -1,0 +1,35 @@
+# NFTBAN_ENABLED contract cases (owner K2, 2026-10-08): <declared value><TAB><on|off|invalid>.
+# Read by the shell test (lib/service_control.sh + helpers/nftban-boot-early.sh) AND the Go
+# test (configloader.ParseSwitch); every reader must give the same answer. <EMPTY> = "NFTBAN_ENABLED=".
+true	on
+"true"	on
+'true'	on
+TRUE	on
+True	on
+yes	on
+"Yes"	on
+1	on
+on	on
+ON	on
+  true  	on
+"true"  # comment	on
+true # comment	on
+false	off
+"false"	off
+'false'	off
+FALSE	off
+no	off
+No	off
+0	off
+off	off
+"off" # c	off
+<EMPTY>	invalid
+""	invalid
+''	invalid
+maybe	invalid
+"tru	invalid
+enabled	invalid
+2	invalid
+true1	invalid
+"true false"	invalid
+# true	invalid

@@ -360,6 +360,14 @@
         "created_by": "package"
       },
       {
+        "path": "/etc/nftban/forward.d",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "Forwarding allows (v1.235, owner D1): forward.conf, operator-owned, written only by 'nftban firewall forward allow/remove/migrate' (never shipped, so never a conffile); projected into the nftban forward chain at every render",
+        "created_by": "package"
+      },
+      {
         "path": "/etc/nftban/conf.d/rbl",
         "mode": "0750",
         "owner": "root",
@@ -966,11 +974,11 @@
         "created_by": "tmpfiles"
       },
       {
-        "path": "/run/nftban/firewall-validate",
+        "path": "/run/nftban-firewall-validate",
         "mode": "2750",
         "owner": "root",
         "group": "nftban",
-        "description": "V131.3 D13 — setgid (2750) group-readable handoff dir for nftban-firewall-validate.service output (last.json); setgid makes wrapper-written files inherit group nftban without CAP_CHOWN",
+        "description": "nftban-firewall-validate.service handoff dir (last.json, root:nftban 0640): root writes, the nftban group reads; setgid makes the wrapper's file inherit group nftban without CAP_CHOWN",
         "created_by": "tmpfiles"
       }
     ],

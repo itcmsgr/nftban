@@ -62,6 +62,9 @@ remove_unit_file_if_exists() {
 
 # Active units (sourced from install/packaging/systemd/nftban-systemd-install.list).
 # DEB convention: deb-systemd-invoke for stop (upgrade-safe).
+# Stop + disable, as in RPM %preun: the installer enables these units with
+# systemctl, so deb-systemd-helper purge cannot remove those links, and a link
+# left behind starts NFTBan at the next boot even after a refused reinstall.
 # Templates (*@.service) are skipped: the template itself is not a runnable unit;
 # only instances are stoppable.
 for unit in \
@@ -117,6 +120,7 @@ for unit in \
     nftband.service \
     nftband.socket; do
     deb-systemd-invoke stop "$unit" >/dev/null 2>&1 || true
+    systemctl disable "$unit" >/dev/null 2>&1 || true
 done
 
 # Deprecated units (policy: stop_only) — stop + disable, no mask, no rm.

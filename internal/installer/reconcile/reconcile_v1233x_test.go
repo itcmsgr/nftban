@@ -417,7 +417,7 @@ func TestValidateReconcileEligibility_RejectsWrongClaims(t *testing.T) {
 		state.StateAppliedUnverified, state.StateDegraded, state.StateFailedSSH,
 		state.StateFailedAbort, state.StateFailedRender, state.StateFailedRebuild,
 		state.StateFailedNoFirewall, state.StateFailedTakeover, state.StateRebuildRefusedBusy,
-		state.StateRebuildNotExecuted, state.StateFailedPreflightDiskSpace,
+		state.StateRebuildNotExecuted, state.StateFailedPreflightDiskSpace, state.StateFailedConfigInvalid,
 	} {
 		if s.ReconcileEligible() {
 			eligible++

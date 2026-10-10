@@ -46,6 +46,7 @@ cp "$ROOT/cli/lib/nftban/lib/boot_projection.sh" "$SB/lib/lib/"
 # refuse when they cannot; stage the real authority (no services.conf here = enabled).
 cp "$ROOT/cli/lib/nftban/lib/service_control.sh" "$ROOT/cli/lib/nftban/lib/shell_predicates.sh" \
    "$ROOT/cli/lib/nftban/lib/env.sh" "$SB/lib/lib/"
+cp "$ROOT/cli/lib/nftban/lib/nftban_forward.sh"  "$SB/lib/lib/"   # v1.235: the render projects the forward store
 cp "$ROOT/install/nftables/nftables.conf.tpl"    "$SB/lib/templates/"
 TPL="$SB/lib/templates/nftables.conf.tpl"
 

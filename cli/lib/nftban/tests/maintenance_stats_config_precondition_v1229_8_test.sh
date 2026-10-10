@@ -40,6 +40,8 @@
 set -Eeuo pipefail
 
 ROOT="${NFTBAN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)}"
+# The SUBJECT's libraries, never /usr/lib/nftban (audit I24, 2026-10-08: same class as I23).
+export NFTBAN_LIB_DIR="$ROOT/cli/lib/nftban"
 SRC="$ROOT/cli/lib/nftban/cron/maintenance.sh"
 FAILURES=0
 fail() { FAILURES=$((FAILURES + 1)); echo "  FAIL  $1"; }

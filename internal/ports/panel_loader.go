@@ -46,8 +46,11 @@ type PanelConfig struct {
 	UDPOut     []int  // UDP output ports (for OUTPUT chain)
 }
 
-// PanelStateFile location
-const PanelStateFile = "/var/lib/nftban/panels/enabled.conf"
+// PanelStateFile location. A variable (not a const) only so that a test's helper process can
+// bind it to a sandbox, the same way nftbanconf.DefaultConfigFile is bound; production never
+// reassigns it. v1.235: the R11 render-effective tests read the HOST file otherwise
+// (TEST-HARNESS-MUTATES-LIVE-HOST-STATE / installed-host isolation class).
+var PanelStateFile = "/var/lib/nftban/panels/enabled.conf"
 
 // LoadEnabledPanels reads the panel state file and returns enabled panel names
 func LoadEnabledPanels() ([]string, error) {

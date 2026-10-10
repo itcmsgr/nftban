@@ -44,6 +44,8 @@ Group=nftban
 # - Appends to JSONL trends log (every cycle for trend analysis)
 # - Exports Prometheus metrics to /var/lib/nftban/metrics/
 # - Sends alerts to syslog when thresholds exceeded
+# v1.235: skipped (not failed) without firewall authority.
+ExecCondition=+/usr/lib/nftban/bin/nftband --authority-check
 ExecStart=/usr/sbin/nftban watchdog run
 
 # Exit codes: 0=OK, 1=warnings, 2=critical - all are valid check results
