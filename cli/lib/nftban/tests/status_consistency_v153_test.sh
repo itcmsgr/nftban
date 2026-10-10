@@ -50,6 +50,11 @@ SANDBOX="$(mktemp -d)"
 trap 'rm -rf "$SANDBOX"' EXIT
 STATE_DIR="$SANDBOX/state"; mkdir -p "$STATE_DIR"
 export NFTBAN_STATE_DIR="$STATE_DIR"
+# v1.235: the section asks the shared firewall-authority decision (lib/service_control.sh);
+# keep it hermetic (sandbox config = master switch default on; no kernel lock table entry).
+mkdir -p "$SANDBOX/etc"
+export NFTBAN_CONFIG_DIR="$SANDBOX/etc" NFTBAN_LIB_DIR="$LIB" NFTBAN_PROC_LOCKS="$SANDBOX/locks"
+: > "$SANDBOX/locks"
 
 # Local mirror of core/nftban_output.sh::nftban_kv (kept in lockstep). The
 # trailing-padding-only dot logic is the contract under test for CMD-CONSIST.
@@ -61,7 +66,7 @@ nftban_kv() {
 }
 
 run_authority_section() {
-    awk '/^_status_section_authority\(\) \{/,/^\}/' "$S" > "$SANDBOX/auth.sh"
+    awk '/^_status_firewall_authority\(\) \{/,/^\}/; /^_status_section_authority\(\) \{/,/^\}/' "$S" > "$SANDBOX/auth.sh"
     # shellcheck source=/dev/null
     ( source "$SANDBOX/auth.sh"; _status_section_authority )
 }
@@ -82,7 +87,7 @@ fi
 grep -q 'nftban_kv()' "$OUT" && ok "shared nftban_kv defined in core/nftban_output.sh" || no "nftban_kv missing from core"
 
 echo "=== UX-A1: owned authority => EXCLUSIVE + NEUTRALIZED legacy firewalls ==="
-write_state "AUTHORITY=UPDATE" "CONFLICTS=UFW,iptables-nft,iptables,CSF"
+write_state "INSTALL_STATE=COMMITTED" "AUTHORITY=UPDATE" "CONFLICTS=UFW,iptables-nft,iptables,CSF"
 A_OUT="$(run_authority_section)"
 echo "$A_OUT" | grep -qE "Firewall authority\.+ .*EXCLUSIVE \(UPDATE\)" \
     && ok "owned authority shows '🔒 EXCLUSIVE (UPDATE)'" || no "EXCLUSIVE line missing" "$A_OUT"
@@ -91,6 +96,17 @@ echo "$A_OUT" | grep -qE "Legacy firewalls\.+ .*NEUTRALIZED: UFW,iptables-nft,ip
 echo "$A_OUT" | grep -q "Active conflicts" \
     && no "owned-authority path must NOT say 'Active conflicts'" "$A_OUT" \
     || ok "owned-authority path does not mislabel neutralized firewalls as active"
+
+echo "=== v1.235: a REFUSED install (AUTHORITY=ABORT) is never shown as owned/neutralized ==="
+write_state "INSTALL_STATE=FAILED_AUTHORITY_ABORT" "AUTHORITY=ABORT" "CONFLICTS=UFW"
+R_OUT="$(run_authority_section)"
+echo "$R_OUT" | grep -qE "Firewall authority\.+ NOT GRANTED \(refused" \
+    && ok "refused install shows 'NOT GRANTED (refused…)'" || no "refused install not shown as NOT GRANTED" "$R_OUT"
+echo "$R_OUT" | grep -qE "Other firewalls\.+ LEFT AS THEY WERE: UFW" \
+    && ok "refused install: the other firewall is reported as left as it was" || no "refused install: other firewall line wrong" "$R_OUT"
+echo "$R_OUT" | grep -qE "EXCLUSIVE|NEUTRALIZED" \
+    && no "refused install must not claim EXCLUSIVE/NEUTRALIZED" "$R_OUT" \
+    || ok "refused install claims neither EXCLUSIVE nor NEUTRALIZED"
 
 echo "=== UX-A1: AMBIGUOUS => genuinely active conflicts ==="
 write_state "AUTHORITY=AMBIGUOUS" "CONFLICTS=csf,lfd"

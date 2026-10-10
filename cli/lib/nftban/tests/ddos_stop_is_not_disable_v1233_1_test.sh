@@ -262,6 +262,9 @@ CHILD
 
 export NFTBAN_CONFIG_DIR="$TMP/etc" NFTBAN_LOG_DIR="$TMP/log" NFTBAN_FRAGMENT_DIR="$TMP/rules.d"
 export NFTBAN_DAEMON_SOCKET="$FK/nftband.sock" NFTBAN_IPC_TIMEOUT=10 NFTBAN_ENABLE_ERROR_LOGGING=0
+# v1.235: the IPC client sends nothing without firewall authority; this world is an authorized install.
+export NFTBAN_STATE_DIR="$TMP/state"; mkdir -p "$NFTBAN_STATE_DIR"
+printf 'INSTALL_STATE=COMMITTED\nAUTHORITY=TAKEOVER\n' > "$NFTBAN_STATE_DIR/install_state"
 
 CHILD_RC=0; CHILD_OUT=""
 run_child(){ # <lib root> <action>

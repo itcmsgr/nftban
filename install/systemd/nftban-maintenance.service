@@ -54,6 +54,8 @@ User=root
 Group=root
 
 # Run maintenance script with flock to prevent overlap
+# v1.235: skipped (not failed) without firewall authority — a repair never grants itself authority.
+ExecCondition=+/usr/lib/nftban/bin/nftband --authority-check
 ExecStart=/usr/bin/flock -n /run/nftban/maintenance.lock /usr/lib/nftban/cron/maintenance.sh
 
 # =============================================================================

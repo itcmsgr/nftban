@@ -70,6 +70,8 @@ ExecCondition=/usr/bin/test -f /etc/nftban/conf.d/geoban/main.conf
 # binary.
 ExecCondition=/bin/sh -c 'test -x /usr/lib/nftban/bin/nftban-core'
 
+# v1.235: skipped (not failed) without firewall authority.
+ExecCondition=+/usr/lib/nftban/bin/nftband --authority-check
 # Refresh all active GeoBan country CIDR sets.
 ExecStart=/usr/sbin/nftban geoip refresh
 

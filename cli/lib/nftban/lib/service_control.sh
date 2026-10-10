@@ -198,6 +198,110 @@ nftban_check_enabled() {
 }
 
 # =============================================================================
+# FIREWALL AUTHORITY (v1.235, owner 2026-10-10)
+# =============================================================================
+# May NFTBan write firewall rules on this host right now? The shell twin of the Go
+# state.FirewallAuthority; both are held to scripts/ci/data/firewall-authority-cases.tsv.
+# Order: bypass, master switch, install_state (absent/unreadable), UNINSTALL_*/RESTORE_*,
+# FAILED_AUTHORITY_ABORT, live installer transaction, completed authorized transaction,
+# interrupted transaction, FAILED_*/REBUILD_*, anything else. A recorded AUTHORITY counts
+# only with a completed state or while the installer still holds its lock, so an abandoned
+# or failed transaction never becomes a standing permission. Kernel lock table path:
+NFTBAN_PROC_LOCKS="${NFTBAN_PROC_LOCKS:-/proc/locks}"
+
+# _nftban_installer_lock_held <state dir>: the kernel lock table holds a FLOCK on
+# installer.lock by the PID the file names. Never takes the lock (a probe would make a
+# concurrent installer fail); a PID file alone is not a held lock.
+_nftban_installer_lock_held() {
+    local lf="$1/installer.lock" ino pid line
+    local -a f=()
+    [[ -f "$lf" ]] || return 1
+    ino=$(stat -c %i -- "$lf" 2>/dev/null) || return 1
+    pid=$(cat -- "$lf" 2>/dev/null) || return 1
+    [[ "$pid" =~ ^[[:space:]]*([0-9]+)[[:space:]]*$ ]] || return 1
+    pid="${BASH_REMATCH[1]}"
+    [[ -r "$NFTBAN_PROC_LOCKS" ]] || return 1
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        IFS=' ' read -r -a f <<< "$line"
+        [[ ${#f[@]} -ge 6 && "${f[1]}" == "FLOCK" ]] || continue
+        [[ "${f[4]}" == "$pid" && "${f[5]##*:}" == "$ino" ]] && return 0
+    done < "$NFTBAN_PROC_LOCKS"
+    return 1
+}
+
+# nftban_firewall_authority: prints "GRANTED|DENIED <reason> <detail>"; rc 0 granted, 1 denied.
+nftban_firewall_authority() {
+    local sd="${NFTBAN_STATE_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/state}" sw content line st="" auth="" detail ok=0
+    if nftban_emergency_bypass_active; then
+        echo "DENIED emergency-bypass kernel parameter nftban=disabled"; return 1
+    fi
+    sw="$(nftban_master_switch_state)"
+    case "${sw%%$'\t'*}" in
+        on) ;;
+        off) echo "DENIED disabled NFTBAN_ENABLED=false"; return 1 ;;
+        *) echo "DENIED switch-unusable $(nftban_master_switch_invalid_text)"; return 1 ;;
+    esac
+    if [[ ! -e "$sd/install_state" && ! -L "$sd/install_state" ]]; then
+        echo "DENIED no-install-state $sd/install_state"; return 1
+    fi
+    if ! content=$(cat -- "$sd/install_state" 2>/dev/null); then
+        echo "DENIED install-state-unreadable $sd/install_state"; return 1
+    fi
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line#"${line%%[![:space:]]*}"}"; line="${line%"${line##*[![:space:]]}"}"
+        case "$line" in
+            INSTALL_STATE=*) st="${line#INSTALL_STATE=}" ;;
+            AUTHORITY=*)     auth="${line#AUTHORITY=}" ;;
+        esac
+    done <<< "$content"
+    detail="INSTALL_STATE=$st AUTHORITY=$auth"
+    case "$auth" in FRESH|TAKEOVER|UPDATE) ok=1 ;; esac
+    case "$st" in
+        UNINSTALL_*|RESTORE_*)  echo "DENIED released $detail"; return 1 ;;
+        FAILED_AUTHORITY_ABORT) echo "DENIED refused $detail"; return 1 ;;
+    esac
+    if _nftban_installer_lock_held "$sd"; then
+        if [[ $ok -eq 1 ]]; then echo "GRANTED transaction $detail"; return 0; fi
+        echo "DENIED no-authority-grant $detail"; return 1
+    fi
+    case "$st" in
+        COMMITTED|APPLIED_UNVERIFIED|DEGRADED)
+            if [[ $ok -eq 1 ]]; then echo "GRANTED authorized $detail"; return 0; fi
+            echo "DENIED no-authority-grant $detail"; return 1 ;;
+        FILES_INSTALLED|DETECT_COMPLETE|PREPARE_COMPLETE|SWITCH_COMPLETE|SERVICES_COMPLETE)
+            echo "DENIED transaction-interrupted $detail"; return 1 ;;
+        FAILED_*|REBUILD_*) echo "DENIED needs-repair $detail"; return 1 ;;
+    esac
+    echo "DENIED unknown-state $detail"; return 1
+}
+
+# nftban_refuse_without_authority <action>: rc 0 when authority is granted; otherwise rc 1
+# and ONE operator message naming the state and the only way forward. Nothing is changed.
+nftban_refuse_without_authority() {
+    local out reason detail
+    out="$(nftban_firewall_authority)" && return 0
+    out="${out#DENIED }"; reason="${out%% *}"; detail="${out#* }"
+    echo "REFUSED: $1 — NFTBan has no firewall authority on this host ($reason: $detail)." >&2
+    case "$reason" in
+        emergency-bypass)
+            echo "  Emergency bypass for this boot; reboot without nftban=disabled to return to the stored choice." >&2 ;;
+        disabled)
+            echo "  NFTBan is DISABLED by the operator. Run 'nftban enable' to let NFTBan manage the firewall again." >&2 ;;
+        switch-unusable)
+            echo "  Fix NFTBAN_ENABLED in conf.d/services.conf(.local) first; nothing is changed until then." >&2 ;;
+        refused)
+            echo "  The installation was REFUSED firewall authority (another firewall manager is active)." >&2
+            echo "  To approve the takeover: sudo NFTBAN_TAKEOVER=1 /usr/lib/nftban/bin/nftban-installer --repair" >&2 ;;
+        transaction-interrupted|needs-repair)
+            echo "  The last install/upgrade did not complete. Rules already in the kernel are kept; NFTBan makes" >&2
+            echo "  no further changes until: sudo /usr/lib/nftban/bin/nftban-installer --repair" >&2 ;;
+        *)
+            echo "  No completed, authorized NFTBan installation is recorded. Run: sudo /usr/lib/nftban/bin/nftban-installer --repair" >&2 ;;
+    esac
+    return 1
+}
+
+# =============================================================================
 # SERVICE-SPECIFIC CHECKS
 # =============================================================================
 

@@ -97,6 +97,24 @@ type NFTManager struct {
 // buffer had no discard API, so an early error left residue that rode into the
 // NEXT writer's commit.
 func (m *NFTManager) txConn() (*nftables.Conn, error) {
+	if WriteGate != nil {
+		if err := WriteGate(); err != nil {
+			return nil, err
+		}
+	}
+	return m.readConn()
+}
+
+// WriteGate (v1.235, owner 2026-10-10) is asked before every transaction that can change
+// the kernel (txConn) and before every `nft -f` load. nftband sets it to the shared
+// firewall-authority decision (state.FirewallAuthority), so a daemon whose authority was
+// withdrawn while it runs (disable, refused or failed install) writes nothing more. Nil
+// (tests, other binaries) = no gate.
+var WriteGate func() error
+
+// readConn is txConn without the write gate, for the read-only methods (list/get/count):
+// a daemon that may not write still reports what is in the kernel.
+func (m *NFTManager) readConn() (*nftables.Conn, error) {
 	if m.newConn != nil {
 		return m.newConn()
 	}

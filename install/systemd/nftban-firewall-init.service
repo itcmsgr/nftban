@@ -57,6 +57,8 @@ Group=root
 #
 # FIX: Call immutable helper script directly (no variable interpolation)
 # Helper script validates input before use (blocks injection)
+# v1.235: skipped (not failed) without firewall authority (it loads rules with `nft -f`).
+ExecCondition=+/usr/lib/nftban/bin/nftband --authority-check
 ExecStart=/usr/lib/nftban/helpers/firewall-init-with-delay.sh
 
 # NOTE: Snapshot save will be done by snapshot timer (not here)

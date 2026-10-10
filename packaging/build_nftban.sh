@@ -1680,6 +1680,19 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
         echo "[NFTBan] Recovery: follow the RECOVERY_CLASS line printed above by the installer."
     fi
 
+    # v1.235 (owner 2026-10-10, HANDLES:289 messaging only — the exit status is unchanged and
+    # stays an open GA requirement): when the installer did not activate the firewall, say so
+    # in words that cannot be read as success of the whole install.
+    case "\$INSTALLER_EXIT" in
+        0|1|14) ;;
+        *)
+            _nb_st=\$(sed -n 's/^INSTALL_STATE=//p' /var/lib/nftban/state/install_state 2>/dev/null | head -1)
+            echo "[NFTBan] PACKAGE INSTALLED — FIREWALL NOT ACTIVATED (INSTALL_STATE=\${_nb_st:-unknown}, installer exit \${INSTALLER_EXIT})."
+            echo "[NFTBan] rpm reports the package files only. NFTBan has no firewall authority on this host:"
+            echo "[NFTBan] its daemon, timers and repairs change nothing until the recovery above is run."
+            ;;
+    esac
+
     # v1.235 K2/K2-c (owner 2026-10-08): the installer refused because the master switch became
     # INVALID or unreadable after the pre-install check. The banner and the state file do not replace the exit
     # status: THIS scriptlet fails (only for this state). rpm keeps the package installed and

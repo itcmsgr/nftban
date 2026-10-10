@@ -119,6 +119,37 @@ nft_ipc_is_daemon_running() {
     [[ "$resp" == *'"success":true'* ]]
 }
 
+# v1.235 (owner 2026-10-10): the shared firewall-authority decision (lib/service_control.sh).
+# Loaded in a subshell so this library's callers keep their own shell options and functions
+# (service_control.sh defines names other libraries also define); a decision that cannot be
+# loaded is a refusal (fail closed).
+_nft_ipc_authority() {
+    if declare -F nftban_firewall_authority >/dev/null 2>&1; then
+        nftban_firewall_authority
+        return
+    fi
+    (
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" >/dev/null 2>&1 \
+            || { echo "DENIED check-unavailable lib/service_control.sh"; exit 1; }
+        nftban_firewall_authority
+    )
+}
+
+# _nft_ipc_authority_cached: the same decision, re-evaluated at most every 2 s per process
+# (the daemon's own write gate uses the same window): a sync can send hundreds of requests.
+# Sets _NFT_IPC_AUTH_OUT; rc 0 granted, 1 denied. Never called in a command substitution
+# (the cache must live in this shell).
+_NFT_IPC_AUTH_OUT=""; _NFT_IPC_AUTH_AT=-10
+_nft_ipc_authority_cached() {
+    if [[ -z "$_NFT_IPC_AUTH_OUT" ]] || (( SECONDS - _NFT_IPC_AUTH_AT >= 2 )); then
+        _NFT_IPC_AUTH_OUT="$(_nft_ipc_authority)" || true
+        [[ -n "$_NFT_IPC_AUTH_OUT" ]] || _NFT_IPC_AUTH_OUT="DENIED check-unavailable no-answer"
+        _NFT_IPC_AUTH_AT=$SECONDS
+    fi
+    [[ "$_NFT_IPC_AUTH_OUT" == GRANTED* ]]
+}
+
 # Send a raw request to the daemon
 # Usage: nft_ipc_request <method> [json_params]
 # Returns: JSON response
@@ -126,6 +157,13 @@ nft_ipc_request() {
     local method="$1"
     local params="${2-}"
     [[ -z "$params" ]] && params="{}"
+
+    # No authority, no request: a connection would socket-activate a daemon that may not
+    # run (its unit is skipped), and the refusal is reported here instead of a timeout.
+    if ! _nft_ipc_authority_cached; then
+        _nft_ipc_json_error "refused: NFTBan has no firewall authority on this host (${_NFT_IPC_AUTH_OUT#DENIED })"
+        return 1
+    fi
 
     _nft_ipc_check_socat || return 1
 

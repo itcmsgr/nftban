@@ -26,10 +26,13 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/itcmsgr/nftban/internal/analytics"
+	"github.com/itcmsgr/nftban/internal/installer/state"
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/ipc"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
@@ -64,6 +67,18 @@ func main() {
 	// LOAD CONFIG ONCE - Pass to all commands
 	// ════════════════════════════════════════════════════════════
 	cfg := nftbanconf.MustLoad()
+
+	// v1.235 (owner 2026-10-10): without firewall authority nothing is sent to the daemon
+	// (no write, and no socket activation of a daemon that may not run).
+	ipc.CallGate = func(string) error {
+		in := state.DefaultAuthorityInputs()
+		in.ConfigDir = cfg.ConfigDir
+		in.StateDir = filepath.Join(cfg.DataDir, "state")
+		if d := state.FirewallAuthority(in); !d.Granted {
+			return fmt.Errorf("refused: NFTBan has no firewall authority on this host (%s: %s)", d.Reason, d.Detail)
+		}
+		return nil
+	}
 
 	// ════════════════════════════════════════════════════════════
 	// Analytics initialization for commands that need it

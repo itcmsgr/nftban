@@ -355,8 +355,8 @@ func (m *NFTManager) DeleteSetElements(set *nftables.Set, ips []string) error {
 // Returns nil, nil if the set doesn't exist (not an error - idempotent behavior)
 // Port sets use TypeInetService (uint16) for port numbers
 func (m *NFTManager) GetPortSet(table *nftables.Table, setName string) (*nftables.Set, error) {
-	// INV-NFT-TX-01: private connection, owned for this transaction only.
-	conn, errTx := m.txConn()
+	// INV-NFT-TX-01: private connection, owned for this transaction only (read-only).
+	conn, errTx := m.readConn()
 	if errTx != nil {
 		return nil, errTx
 	}

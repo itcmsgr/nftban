@@ -153,7 +153,7 @@ fw(){  # <verb...> [env...] via FWENV -> rc; RAN file when the loader body would
     env -i PATH="$SB/bin:/usr/bin:/bin" SBX="$SB" HOME="$SB" NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_LIB_DIR="$LIBDIR" ${FWENV:-} \
         bash -c 'source "$1/cli/cmd_firewall.sh" >/dev/null 2>&1
                  firewall_rebuild(){ : > "$SBX/ran"; }; firewall_reset(){ : > "$SBX/ran"; }
-                 _fw_bypass_guard(){ :; }; _fw_cc_guard(){ :; }; nftban_ssh_pre_rebuild_lockout_guard(){ :; }
+                 _fw_bypass_guard(){ :; }; _fw_cc_guard(){ :; }; _fw_authority_guard(){ :; }; nftban_ssh_pre_rebuild_lockout_guard(){ :; }
                  shift; nftban_cmd_firewall "$@"' _ "$LIBDIR" "$@" 2>"$SB/fw.err" >/dev/null || rc=$?
 }
 st(){ [[ -e "$STORE" ]] && sha256sum < "$STORE" || echo none; }
