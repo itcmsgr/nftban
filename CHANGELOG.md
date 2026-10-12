@@ -61,8 +61,12 @@ install legs) without a native run. Items not run natively are listed as such.
   off; it now restores the daemon and core timers before its rebuild. (VM)
 - Forwarding hosts (Docker, KVM, routers): NFTBan's forward chain now has its own policy with explicit allows
   (`nftban firewall forward allow|remove|list|status`), and an upgrade STOPS before replacing hand-added forward
-  rules until their migration plan is approved (`NFTBAN_FORWARD_MIGRATE=<id>`). (CI; netns tests. The Docker
-  host lab arms were not run — see Known issues.)
+  rules until their migration plan is approved (`NFTBAN_FORWARD_MIGRATE=<id>`). (VM: Ubuntu 26.04 with Docker
+  29.1.3 and user-defined bridges, IPv4: the upgrade stopped, a wrong plan id stopped, the approved plan migrated;
+  egress from the allowed bridge worked and from another bridge was blocked; a published port was reachable only
+  from the allowed source; bans cut new and established connections and container connections to a banned
+  address; a whitelisted address stayed reachable; the same after rebuild, reload and reboot. Foreign tables —
+  Docker's and an unrelated application's — were unchanged by rebuild, reload, restore and disable.)
 - Disable/enable and recovery: disable persists across reboot (inert boot projection); the kernel parameter
   `nftban=disabled` is a per-boot emergency bypass effective before the first NFTBan rule load; commit-confirm
   (`firewall rebuild --confirm`) rollback was repaired; a failed rollback keeps the kernel state and alarms.
@@ -81,16 +85,23 @@ install legs) without a native run. Items not run natively are listed as such.
 - **`--repair` after an interrupted upgrade** ends DEGRADED (the boot projection is not re-rendered by a resumed
   repair); the firewall stays protected. Workaround: reinstall the same package, which completes the
   transaction (verified on the VM).
-- **SSH port detection** misses a non-22 port defined only in an `ssh.socket` override or an sshd `Include`
-  file; NFTBan's input policy could then block that port. Workaround: declare the port in
-  `/etc/nftban/ports.d/00-ssh.conf` before enabling NFTBan.
+- **SSH port detection** can miss a non-22 port that is defined only in an sshd `Include` file outside
+  `sshd_config.d`; NFTBan's input policy could then block that port. (An `ssh.socket` override port that was
+  listening was detected on Ubuntu 26.04.)
+  Workaround (verified: survives rebuild, maintenance and reboot, with a new SSH session each time): declare the
+  port in `/etc/nftban/ports.d/00-ssh.conf`, for example `2222/T/I`, before enabling NFTBan.
 - **Web servers that trust proxy headers from any client** (for example LiteSpeed "use client IP in header" for
   all sources) can let a forged `X-Forwarded-For` make BotScan ban an innocent address. Trust proxy headers only
   from your CDN's ranges. Not reproduced end to end.
 - The DDoS module's Xmas-scan sanity rule does not match FIN+PSH+URG scans; such packets are still dropped by
   the base invalid-state rule.
-- Docker host verification (forwarding lab arms) was not run for this release: review forwarding rules on
-  container hosts before upgrading (see `nftban firewall forward status`).
+- **Docker published ports over IPv6:** with Docker's default (no IPv6 on its bridges), Docker serves a
+  published port over IPv6 through `docker-proxy` on the host's input path, not the forward path. NFTBan keeps
+  that path closed (input policy drop): the port is NOT reachable over IPv6, from any source. A
+  `nftban firewall forward allow publish <port> --family 6` record is accepted but has no effect on this path.
+  Not tested: Docker with IPv6 enabled on its bridges, and opening such a port through NFTBan's input rules.
+- Container hosts: only the Docker bridge driver on one Ubuntu 26.04 host was tested; review
+  `nftban firewall forward status` before upgrading other container or routing setups.
 - On a host without `python3` (or `python3-yaml`), `nftban health` reports configuration files as "Invalid
   YAML/JSON" and counts an error; the files are not invalid. Workaround: install `python3` and `python3-yaml`.
 - Status shows Docker's own forward hook as a critical conflict; `container discover/status` verbs are not
