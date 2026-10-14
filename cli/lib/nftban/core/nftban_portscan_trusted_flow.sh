@@ -21,9 +21,12 @@
 set -Eeuo pipefail
 
 : "${NFTBAN_PORTSCAN_CONFIG_DIR:=${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan}"
-: "${NFTBAN_STATE_DIR:=/var/lib/nftban}"
 : "${NFTBAN_PORTSCAN_TRUSTED_FLOWS_FILE:=${NFTBAN_PORTSCAN_CONFIG_DIR}/trusted-flows.conf}"
-_PTF_STATE_FILE="${NFTBAN_PTF_STATE_FILE:-${NFTBAN_STATE_DIR}/portscan-trusted-flow.state}"
+# v1.235.1: read NFTBAN_STATE_DIR, never initialize it. It is the shared install-state dir
+# (default /var/lib/nftban/state, read by nftban_firewall_authority). A := default to the
+# data-dir root here initialized it first whenever it was unset, so every later IPC write in
+# the portscan process was DENIED no-install-state /var/lib/nftban/install_state.
+_PTF_STATE_FILE="${NFTBAN_PTF_STATE_FILE:-${NFTBAN_STATE_DIR:-/var/lib/nftban}/portscan-trusted-flow.state}"
 _PTF_RATE_WINDOW_SECS=60          # events_per_minute → fixed 60s window
 _PTF_SUPPORTED_PROTOS=" tcp udp " # explicitly supported protocols only
 
