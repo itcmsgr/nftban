@@ -11,6 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.235.1] - 2026-10-14 — PortScan classic mode upgrade fix
+
+A fix release for v1.235.0. Its known issues (see the v1.235.0 entry below) still apply.
+
+### Fixed
+
+- **Upgrading to v1.235.0 failed on hosts running PortScan in classic mode.** On such a host the installer
+  stopped in `FAILED_REBUILD`:
+  - **Cause.** The PortScan trusted-flow module initialized `NFTBAN_STATE_DIR` to `/var/lib/nftban` when the
+    variable was unset. The firewall-authority check added in v1.235.0 reads the same variable as the state
+    directory. After PortScan's module was loaded, the check therefore looked for
+    `/var/lib/nftban/install_state`, found nothing, and refused PortScan's rule writes.
+  - **What happened next.** The rebuild's post-check saw PortScan's chains missing and rolled back, so the
+    installer stopped.
+  - **Effect after a reboot.** NFTBan then had no firewall authority: its daemon did not start, and bans were
+    not loaded until the host was recovered. Timed bans that were active were lost.
+  - **The fix.** The module no longer sets the variable; the authority check is unchanged.
+  - **Not affected:** PortScan in Suricata mode, and hosts with PortScan disabled.
+  - **Recovery for a host already in this state:** reinstall v1.234.0, or install v1.235.1.
+
+### Release-test change
+
+- Release tests now run the upgrade from the previous release with the modules enabled, as on production
+  hosts. Each enabled module must answer a controlled trigger, verified in the kernel. The v1.235.0 tests
+  had run with PortScan disabled.
+
+---
+
 ## [v1.235.0] - 2026-10-10 — firewall authority, forwarding, disable/recovery contract
 
 An incremental release on v1.234.0; it is not a general-availability release. Verification levels are stated per
