@@ -327,7 +327,7 @@ esac
 SOCAT
 
 # ---- fake systemctl: nftband lifecycle, mirroring internal/portscan/module.go -
-# Stop(): reconcile only if the module was enabled when the daemon started.
+# Stop(): never reconciles (v1.235.1: Stop() != Disable(), as DDoS since v1.233.1).
 # Start(): reconcile only if the module is enabled now (the Start gate).
 # The daemon runs in a CLEAN environment (env -i), as systemd would start it, so
 # a lock or a transaction variable leaked by the CLI cannot reach it.
@@ -364,7 +364,6 @@ case "$*" in
     "restart nftband")
         prim "systemctl:restart"; pr=$?
         if (( pr == 10 )); then echo "Job for nftband.service failed (injected)" >&2; exit 1; fi
-        if [[ "$(cat "$FAKE_K/enabled_at_start" 2>/dev/null)" == "true" ]]; then daemon_reconcile stop || true; fi
         echo up > "$FAKE_K/daemon"; touch "$FAKE_T/restarted"
         if intent_enabled; then echo true > "$FAKE_K/enabled_at_start"; daemon_reconcile start || true
         else echo false > "$FAKE_K/enabled_at_start"; fi

@@ -349,8 +349,21 @@ func (m *Module) Stop() error {
 		m.cancel()
 	}
 
-	// Disable portscan detection
-	m.disable()
+	// ⛔ v1.235.1 — STOP() != DISABLE(), the rule DDoS adopted in v1.233.1.
+	// This used to call m.disable(), which ran the SAME nftban_portscan_reconcile as
+	// enable(): every graceful daemon stop with PORTSCAN_ENABLED=true RE-APPLIED the
+	// classic rules over IPC to this very daemon. gracefulShutdown has already closed
+	// the IPC listener when modules stop, so the request reached only the socket
+	// backlog, socat returned an empty response after its 0.5 s close timeout, and
+	// every stop/restart logged "Failed to apply fragment via IPC" / "Classic enable
+	// FAILED" (witnessed lab4 + lab2 during the v1.235.1 upgrade, and on every
+	// `systemctl restart nftband`). All portscan writes go through IPC, so the kernel
+	// was not changed; the failure was noise that looked like a defect.
+	//
+	// Stop() stops userspace only. Kernel rules stay at the last converged state
+	// while the daemon is offline; changing intent (and its teardown) belongs to
+	// the operator path (nftban_portscan_disable -> nftban_portscan_reconcile), and
+	// the next Start() re-converges from the persisted intent.
 
 	m.mu.Lock()
 	m.status.MarkStopped()
@@ -419,12 +432,6 @@ func (m *Module) detectMode() {
 
 // enable enables portscan detection
 func (m *Module) enable() error {
-	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_portscan_reconcile", "_", getPortscanScript())
-	return cmd.Run()
-}
-
-// disable disables portscan detection
-func (m *Module) disable() error {
 	cmd := procenv.Command("bash", "-c", "source \"$1\" && nftban_portscan_reconcile", "_", getPortscanScript())
 	return cmd.Run()
 }
