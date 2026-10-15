@@ -30,6 +30,13 @@ A fix release for v1.235.0. Its known issues (see the v1.235.0 entry below) stil
   - **The fix.** The module no longer sets the variable; the authority check is unchanged.
   - **Not affected:** PortScan in Suricata mode, and hosts with PortScan disabled.
   - **Recovery for a host already in this state:** reinstall v1.234.0, or install v1.235.1.
+- **`nftban portscan reload` reported success when PortScan's rules had not been applied.** It printed
+  "reloaded successfully" and exited 0 after a refused apply. It now exits non-zero and says the rules were
+  not applied, as `enable` and `disable` already did.
+- **Every daemon stop or restart logged "Classic enable FAILED" when PortScan was enabled.** The daemon's
+  shutdown re-sent PortScan's rules to itself after its own IPC listener had closed. The kernel was not
+  changed, and the restarted daemon re-applied the rules, but the logged failure was false. The daemon now
+  only stops its own work on shutdown, as DDoS has done since v1.233.1. This was also present in v1.234.0.
 
 ### Release-test change
 
