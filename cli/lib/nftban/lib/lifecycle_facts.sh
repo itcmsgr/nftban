@@ -66,7 +66,12 @@ nftban_lifecycle_collect() {
     LF_STORED=UNKNOWN
     if declare -F nftban_master_switch_on >/dev/null 2>&1; then
         rc="$(_nftban_lf_rc nftban_master_switch_on)"
-        case "$rc" in 0) LF_STORED=enabled ;; 1) LF_STORED=disabled ;; esac
+        case "$rc" in
+            0) LF_STORED=enabled ;;
+            1) LF_STORED=disabled ;;
+            # v1.235 K2/K2-c: INVALID / UNKNOWN are reported as such, never as enabled/disabled.
+            2) LF_STORED="$(nftban_master_switch_invalid_text 2>/dev/null)" ;;
+        esac
     fi
 
     # --- per-boot emergency bypass (contract §3/§6) ---------------------------------------
@@ -113,7 +118,7 @@ nftban_lifecycle_collect() {
 
     # --- commit-confirm (contract §4/§6) --------------------------------------------------
     local cs="${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/commit-confirm.state" c_id="" c_dl="" c_st="" c_at="" now rem
-    LF_CC_STATUS=""; LF_CC_CONFLICTS=""
+    LF_CC_STATUS=""; LF_CC_CONFLICTS=""; LF_CC_KERNEL=""
     # Applied baseline: rebuild --confirm needs a recorded last-known-good.
     local am="${NFTBAN_STATE_DIR:-/var/lib/nftban/state}/applied/meta" a_at=""
     if [[ ! -e "$am" ]]; then
@@ -137,6 +142,9 @@ nftban_lifecycle_collect() {
         local c_cf=""
         c_cf="$(grep -m1 -E '^conflicts=' "$cs" 2>/dev/null || true)"; c_cf="${c_cf#conflicts=}"
         LF_CC_CONFLICTS="$c_cf"
+        local c_k=""
+        c_k="$(grep -m1 -E '^kernel=' "$cs" 2>/dev/null || true)"; c_k="${c_k#kernel=}"
+        LF_CC_KERNEL="$c_k"
         case "$c_st" in
             pending)
                 if [[ "$c_dl" =~ ^[0-9]+$ ]]; then
@@ -211,8 +219,10 @@ nftban_lifecycle_collect() {
     fi
 
     # --- named mismatches ---------------------------------------------------------------
-    [[ "$LF_CC_STATUS" == rollback-failed ]] && LF_NOTES+=("DIVERGENCE: ROLLBACK FAILED: NFTBan rules removed, host NOT protected by NFTBan")
-    [[ -n "$LF_CC_CONFLICTS" ]] && LF_NOTES+=("EXPECTED: the rollback left file(s) edited again after the apply untouched: ${LF_CC_CONFLICTS}")
+    # v1.235 audit K6: D10 KEEPS the kernel state (owner); report the recorded kernel fact, never
+    # "rules removed". Unrestored conflicts mean the rollback is INCOMPLETE: a divergence.
+    [[ "$LF_CC_STATUS" == rollback-failed ]] && LF_NOTES+=("DIVERGENCE: ROLLBACK FAILED (D10 hold): NFTBan writers are held until the operator retries the rollback or abandons it; kernel: ${LF_CC_KERNEL:-UNKNOWN (not recorded)}")
+    [[ -n "$LF_CC_CONFLICTS" ]] && LF_NOTES+=("DIVERGENCE: rollback INCOMPLETE: file(s) edited again after the apply were NOT restored, left untouched: ${LF_CC_CONFLICTS}")
     [[ "$LF_CC" == UNKNOWN* ]] && LF_NOTES+=("UNKNOWN: commit-confirm record not read")
     if [[ "$LF_BYPASS" == DEGRADED* ]]; then
         LF_NOTES+=("DIVERGENCE: emergency bypass DEGRADED: ${LF_BYPASS#DEGRADED (}")
@@ -242,6 +252,10 @@ nftban_lifecycle_collect() {
                 fi
             fi
             [[ "$LF_PROJECTION" == active && "$LF_TABLES" == absent ]] && LF_NOTES+=("DIVERGENCE: stored disabled, projection active (NFTBan rules would load at reboot)") ;;
+        INVALID*)
+            # v1.235 K2: nothing switch-dependent changes while the value is invalid; the boot
+            # loads whatever projection was last published.
+            LF_NOTES+=("DIVERGENCE: NFTBAN_ENABLED is INVALID: rules, units and the boot projection are NOT changed until it is set to true or false; the next boot loads the last published projection (${LF_PROJECTION})") ;;
         *) LF_NOTES+=("UNKNOWN: stored choice not read; lifecycle consistency cannot be evaluated") ;;
     esac
     [[ "$LF_TABLES" == UNKNOWN ]] && LF_NOTES+=("UNKNOWN: kernel tables not read")

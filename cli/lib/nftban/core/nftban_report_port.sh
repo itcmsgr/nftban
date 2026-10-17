@@ -49,7 +49,8 @@ declare -g -A NFTBAN_PORT_NFT_GENERIC=()   # key: port_proto_chain -> action
 # v1.235 (PORT-REPORT-MISLABELS-DOCKER): published ports and the NFTBan forward verdict,
 # read from `nft -j list ruleset` (never from text, never by probing).
 declare -g -A NFTBAN_PORT_DNAT=()          # key: port_proto -> "family table" lines of foreign DNAT rules
-declare -g -A NFTBAN_PORT_FWD=()           # key: ip|ip6 -> "policy accepts" of the nftban forward chain
+declare -g -A NFTBAN_PORT_FWD=()           # key: ip|ip6 -> "policy accepts" of the nftban forward chain (accepts = UNMANAGED only)
+declare -g -A NFTBAN_PORT_FWD_PUB=()       # key: ip|ip6 -> " tcp 5432 udp 53 " NFTBan publish allows (fwd_publish_* sets)
 declare -g NFTBAN_PORT_RULESET_STATE="unread"   # read | unreadable (text ruleset)
 declare -g NFTBAN_PORT_DNAT_STATE="unread"      # read | unreadable (JSON ruleset)
 declare -g -A NFTBAN_PORT_SEEN=()          # key: port_proto -> 1
@@ -229,8 +230,10 @@ _nftban_port_forward_verdict() {
         printf '%s|%s|%s|%s\n' UNKNOWN UNKNOWN "?" "published by ${tables} DNAT -> UNKNOWN (${unknown})"
     elif (( accepts > 0 )); then
         printf '%s|%s|%s|%s\n' UNKNOWN UNKNOWN "?" "published by ${tables} DNAT -> NFTBan verdict UNKNOWN: the nftban forward chain has ${accepts} accept rule(s) not managed by this report (not evaluated)"
+    elif [[ "${NFTBAN_PORT_FWD_PUB[ip]:-} ${NFTBAN_PORT_FWD_PUB[ip6]:-}" == *" ${proto} ${port} "* ]]; then
+        printf '%s|%s|%s|%s\n' EXPOSED ALLOWED "!" "published by ${tables} DNAT -> allowed by an NFTBan forward publish allow (see: nftban firewall forward list)"
     else
-        printf '%s|%s|%s|%s\n' BLOCKED BLOCKED x "published by ${tables} DNAT -> blocked by the NFTBan forward policy (drop; no accept rule in the nftban forward chain)"
+        printf '%s|%s|%s|%s\n' BLOCKED BLOCKED x "published by ${tables} DNAT -> blocked by the NFTBan forward policy (drop; no accept rule for this port in the nftban forward chain)"
     fi
 }
 
@@ -456,12 +459,24 @@ nftban_port_gather_nft_rules() {
                   then (.set[] | select(type == "number")) else empty end)
             | "\($r.family) \($r.table) \($p) \(.)"' <<<"$rs_json" 2>/dev/null)
         for fam in ip ip6; do
+            # v1.235 audit K13: accept rules NFTBan manages (comment "nftban:fwd:...": return path,
+            # egress, publish) are not "unknown"; only UNMANAGED accepts make the verdict UNKNOWN.
+            # The publish allows are read from the fwd_publish_* sets (port . source).
             dl="$(jq -r --arg f "$fam" '
                 ([.nftables[] | select(.chain) | .chain | select(.family == $f and .table == "nftban" and .name == "forward") | .policy][0] // "MISSING") as $pol
                 | ([.nftables[] | select(.rule) | .rule | select(.family == $f and .table == "nftban" and .chain == "forward")
-                    | select(any(.expr[]?; type == "object" and has("accept")))] | length) as $acc
+                    | select(any(.expr[]?; type == "object" and has("accept")))
+                    | select(((.comment // "") | startswith("nftban:fwd:")) | not)] | length) as $acc
                 | "\($pol) \($acc)"' <<<"$rs_json" 2>/dev/null)" || dl=""
             NFTBAN_PORT_FWD["$fam"]="${dl:-UNREADABLE}"
+            NFTBAN_PORT_FWD_PUB["$fam"]=" $(jq -r --arg f "$fam" '
+                [.nftables[] | select(.set) | .set
+                  | select(.family == $f and .table == "nftban" and (.name | test("^fwd_publish_(tcp|udp)_ipv[46]$")))
+                  | (.name | capture("^fwd_publish_(?<p>tcp|udp)_").p) as $p
+                  | (.elem // [])[]
+                  | (if type == "object" and has("concat") then .concat[0]
+                     elif type == "object" and has("elem") then (.elem.val.concat[0]? // empty) else empty end)
+                  | select(type == "number") | "\($p) \(.)"] | join(" ")' <<<"$rs_json" 2>/dev/null) "
         done
     fi
 

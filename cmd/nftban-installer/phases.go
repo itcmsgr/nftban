@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/itcmsgr/nftban/internal/configloader"
 	"github.com/itcmsgr/nftban/internal/healthresource"
 	"github.com/itcmsgr/nftban/internal/installer/authority"
 	"github.com/itcmsgr/nftban/internal/installer/deps"
@@ -117,11 +118,19 @@ type phaseData struct {
 	lifecycleResolved bool
 	nftbanDisabled    bool
 	bypassActive      bool
+	// v1.235 K2 / K2-c: NFTBAN_ENABLED is neither on nor off: INVALID (a declared value that is
+	// not a switch word) or UNKNOWN (services.conf present but unreadable). Nothing
+	// switch-dependent changes (no rule load, no unit change, no boot projection publish) and
+	// the run ends FAILED, never COMMITTED or DEGRADED ("completed with warnings").
+	switchInvalid     bool
+	switchInvalidWhat string
 }
 
 // enforcementSkipped reports whether this run must not touch the firewall or
 // start/enable NFTBan units (disabled stored choice or emergency bypass).
-func (pd *phaseData) enforcementSkipped() bool { return pd.bypassActive || pd.nftbanDisabled }
+func (pd *phaseData) enforcementSkipped() bool {
+	return pd.bypassActive || pd.nftbanDisabled || pd.switchInvalid
+}
 
 // skipReason is the operator-facing terminal reason for a run that skipped
 // enforcement. Empty when enforcement was not skipped.
@@ -129,6 +138,8 @@ func (pd *phaseData) skipReason() string {
 	switch {
 	case pd.bypassActive:
 		return "EMERGENCY BYPASS ACTIVE (kernel nftban=disabled): files updated, no rules loaded, no units started; reboot without the parameter"
+	case pd.switchInvalid:
+		return "NFTBan master switch is " + pd.switchInvalidWhat + ": nothing switch-dependent was changed (no rules loaded or removed, no units changed, boot projection not published)"
 	case pd.nftbanDisabled:
 		return "NFTBan is disabled (stored choice): files updated; firewall not applied — run 'nftban enable'"
 	}
@@ -138,22 +149,25 @@ func (pd *phaseData) skipReason() string {
 // resolveLifecycleMode reads the stored master switch and the kernel bypass
 // once per run. Called at the start of every phase that can mutate the
 // firewall or units, so a repair/resume that skips phaseDetect still gets it.
-// An UNREADABLE stored choice keeps the pre-v1.235 behaviour (enforce) and is
-// logged loudly; an unreadable choice is never silently read as "disabled".
+// An UNREADABLE stored choice is UNKNOWN (K2-c, owner 2026-10-08): it is read neither as
+// "enabled" nor as "disabled"; it takes the INVALID path (nothing switch-dependent changes).
 func resolveLifecycleMode(exec executor.Executor, pd *phaseData, log *logging.Logger) {
 	if pd.lifecycleResolved {
 		return
 	}
 	pd.lifecycleResolved = true
 	pd.bypassActive = services.EmergencyBypassActive(exec)
-	on, known := services.MasterSwitchOn(exec, fhs.EtcDir)
-	if !known {
-		log.Warn("stored master switch NFTBAN_ENABLED could not be read — proceeding as ENABLED (pre-v1.235 behaviour)")
+	st, raw, file, _ := services.MasterSwitchState(exec, fhs.EtcDir)
+	pd.nftbanDisabled = st == configloader.SwitchOff
+	pd.switchInvalid = st == configloader.SwitchInvalid || st == configloader.SwitchUnknown
+	if pd.switchInvalid {
+		pd.switchInvalidWhat = configloader.SwitchProblem(st, raw, file)
 	}
-	pd.nftbanDisabled = known && !on
 	switch {
 	case pd.bypassActive:
 		log.Warn("EMERGENCY BYPASS ACTIVE (kernel parameter nftban=disabled): this run updates files only — no rule load, no render-boot, no unit start/enable, nftables.service untouched")
+	case pd.switchInvalid:
+		log.Error("%s", pd.skipReason())
 	case pd.nftbanDisabled:
 		log.Info("NFTBan is DISABLED (stored choice NFTBAN_ENABLED=false): this run updates files and keeps the boot projection inert — no rule load, no unit start/enable, nftables.service untouched")
 	}
@@ -311,7 +325,15 @@ func phaseDetect(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	// 6. Authority classification
 	// Read takeover flag from environment or config
 	forceApprove := exec.Getenv("NFTBAN_TAKEOVER") == "1"
-	pd.decision = authority.Classify(exec, pd.conflicts, pd.panel, forceApprove, pd.panelAutoApprove, log)
+	// v1.235: the decision this host's PREVIOUS transaction recorded (sf.Authority, before it
+	// is overwritten below) — only an authorized one lets orphan artifacts beside a conflict
+	// be repaired; a refused (ABORT) or absent record never does.
+	priorGrant := false
+	switch authority.Decision(sf.Authority) {
+	case authority.Fresh, authority.Takeover, authority.Update, authority.Ambiguous:
+		priorGrant = true
+	}
+	pd.decision = authority.ClassifyWithPriorGrant(exec, pd.conflicts, pd.panel, forceApprove, pd.panelAutoApprove, priorGrant, log)
 	sf.Authority = string(pd.decision)
 	log.Detect("authority", "decision", string(pd.decision))
 	log.StateChange(string(sf.State), string(state.StateDetectComplete), "authority="+string(pd.decision))
@@ -343,6 +365,16 @@ func phaseDetect(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	if err := preflight.EnsureMinDiskFree(stateDir, preflight.MinDiskFreeBytes()); err != nil {
 		log.Error("preflight: %v", err)
 		return sf.Transition(state.StateFailedPreflightDiskSpace, state.PhaseDetect, err.Error())
+	}
+
+	// v1.235 K2/K2-c (owner 2026-10-08): an INVALID or UNKNOWN master switch is refused HERE,
+	// before any installer mutation (the package pre-install check normally stopped the
+	// transaction already; this covers a switch that became unusable after it). The later
+	// phases keep their own no-change branches as defence in depth.
+	if pd.switchInvalid {
+		reason := pd.skipReason()
+		log.Error("preflight: %s", reason)
+		return sf.Transition(state.StateFailedConfigInvalid, state.PhaseDetect, reason)
 	}
 
 	log.PhaseEnd("Detect")
@@ -450,7 +482,15 @@ func phasePrepare(ctx context.Context, exec executor.Executor, sf *state.StateFi
 	// vector). For single-port hosts (the common case) pd.sshPorts is a
 	// single-element slice and the render output is byte-identical to the
 	// v1.124 single-port code path.
-	if err := render.RenderNftablesConfMultiPort(exec, pd.sshPorts, log); err != nil {
+	//
+	// v1.235 K2 (owner 2026-10-08): with an INVALID / UNKNOWN master switch nothing
+	// switch-dependent changes. A host upgraded from before v1.229.13 may still have its distro
+	// include pointing at this LEGACY file, so re-rendering it would change the boot rules: it is
+	// left exactly as it is (the next run with a usable switch renders it).
+	resolveLifecycleMode(exec, pd, log)
+	if pd.switchInvalid {
+		log.Error("nftables.conf NOT re-rendered: %s", pd.skipReason())
+	} else if err := render.RenderNftablesConfMultiPort(exec, pd.sshPorts, log); err != nil {
 		log.Error("nftables.conf render failed: %v", err)
 		return sf.Transition(state.StateFailedRender, state.PhasePrepare, err.Error())
 	}
@@ -483,6 +523,10 @@ func phasePrepare(ctx context.Context, exec executor.Executor, sf *state.StateFi
 	switch {
 	case pd.bypassActive:
 		log.Warn("boot projection NOT published: EMERGENCY BYPASS ACTIVE (projection is bind-mounted inert for this boot)")
+		pd.bootProjectionReady = false
+	case pd.switchInvalid:
+		// K2: neither active nor inert is published; the last published projection stays.
+		log.Error("boot projection NOT published: %s", pd.skipReason())
 		pd.bootProjectionReady = false
 	case pd.nftbanDisabled:
 		if err := switchop.RenderBootInert(exec, log); err != nil {
@@ -1102,10 +1146,21 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 // validateDisabledRun is phaseValidate for a run that skipped enforcement
 // (v1.235 row 486). It never mutates the firewall or starts a unit.
 //
+//	switch INVALID / UNKNOWN     -> FAILED_CONFIG_INVALID (K2 / K2-c), reason = the skip reason
 //	all disabled invariants pass -> COMMITTED, reason = the skip reason
 //	any fails                    -> DEGRADED,  reason = skip reason + failures
 func validateDisabledRun(exec executor.Executor, sf *state.StateFile, log *logging.Logger, pd *phaseData) error {
 	validate.RunPermissionsEnforce(exec, log)
+
+	if pd.switchInvalid {
+		// K2 / K2-c (owner 2026-10-08): a CONFIGURATION failure, never COMMITTED or DEGRADED
+		// ("completed with warnings"), and never FAILED_NO_FIREWALL (the existing firewall was
+		// deliberately left running). The package scripts fail the transaction on this state.
+		validate.SetImmutableFlags(exec, log)
+		reason := pd.skipReason()
+		log.Error("%s", reason)
+		return sf.Transition(state.StateFailedConfigInvalid, state.PhaseValidate, reason)
+	}
 
 	mode := validate.ModeStoredDisabled
 	if pd.bypassActive {

@@ -260,6 +260,25 @@ EOF
 fi
 
 # =============================================================================
+# v1.235 (owner 2026-10-10): everything below enables timers, starts the daemon or
+# rebuilds the firewall. A repair never grants itself authority and never undoes an
+# operator's disable: without firewall authority it stops here and changes nothing.
+# Fail closed: a decision that cannot be loaded is a refusal.
+# =============================================================================
+_ah_auth="DENIED check-unavailable lib/service_control.sh"
+# shellcheck source=/dev/null
+if source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" 2>/dev/null \
+        && declare -F nftban_firewall_authority >/dev/null 2>&1; then
+    _ah_auth="$(nftban_firewall_authority)" || true
+fi
+if [[ "$_ah_auth" != GRANTED* ]]; then
+    log_warn "SKIPPED timers/daemon/rebuild repair: NFTBan has no firewall authority on this host (${_ah_auth#DENIED })"
+    log_info "Health: NOT ASSESSED — repair of the firewall layer is not permitted in this state"
+    echo ""
+    exit 0
+fi
+
+# =============================================================================
 # 4. Enable and start critical systemd timers
 # =============================================================================
 log_info "Configuring critical systemd timers..."

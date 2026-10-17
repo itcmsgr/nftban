@@ -176,8 +176,8 @@ func (m *NFTManager) GetOrCreateIntervalSet(table *nftables.Table, setName strin
 
 // GetSetElements retrieves all elements from a set
 func (m *NFTManager) GetSetElements(set *nftables.Set) ([]string, error) {
-	// INV-NFT-TX-01: private connection, owned for this transaction only.
-	conn, errTx := m.txConn()
+	// INV-NFT-TX-01: private connection, owned for this transaction only (read-only).
+	conn, errTx := m.readConn()
 	if errTx != nil {
 		return nil, errTx
 	}
@@ -225,8 +225,8 @@ func decrementIP(ip net.IP) net.IP {
 // strings (WHITELIST_DURABLE_APPLY_RECONCILE Step 4). nftables stores an interval
 // [a,b] as a start element (a) + an interval-end marker (b+1, exclusive).
 func (m *NFTManager) GetSetElementsRanges(set *nftables.Set) ([]string, error) {
-	// INV-NFT-TX-01: private connection, owned for this transaction only.
-	conn, errTx := m.txConn()
+	// INV-NFT-TX-01: private connection, owned for this transaction only (read-only).
+	conn, errTx := m.readConn()
 	if errTx != nil {
 		return nil, errTx
 	}
@@ -366,8 +366,8 @@ func (m *NFTManager) FlushSet(set *nftables.Set) error {
 // GetSetCount returns the number of elements in a set
 // For interval sets, filters out IntervalEnd markers to return the true entry count
 func (m *NFTManager) GetSetCount(set *nftables.Set) (int, error) {
-	// INV-NFT-TX-01: private connection, owned for this transaction only.
-	conn, errTx := m.txConn()
+	// INV-NFT-TX-01: private connection, owned for this transaction only (read-only).
+	conn, errTx := m.readConn()
 	if errTx != nil {
 		return 0, errTx
 	}

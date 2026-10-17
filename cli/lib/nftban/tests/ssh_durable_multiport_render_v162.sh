@@ -13,7 +13,7 @@
 # meta:input="None (self-contained; sources cmd_firewall.sh with a mocked detector)"
 # meta:output="Pass/fail assertions; exit 0 on all-pass"
 # meta:depends="bash,grep,sed"
-# meta:inventory.files="cli/lib/nftban/cli/cmd_firewall.sh,install/nftables/nftables.conf.tpl"
+# meta:inventory.files="cli/lib/nftban/cli/cmd_firewall.sh,cli/lib/nftban/lib/nftban_forward.sh,install/nftables/nftables.conf.tpl"
 # meta:inventory.binaries="bash,grep,sed"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
@@ -52,7 +52,9 @@ SB="$(mktemp -d)"; trap 'rm -rf "$SB"' EXIT
 # -----------------------------------------------------------------------------
 export NFTBAN_LIB_DIR="$SB/empty-lib"
 export NFTBAN_CONFIG_DIR="$SB/empty-conf"   # no ports.d fallback file -> live mock wins
-mkdir -p "$NFTBAN_LIB_DIR" "$NFTBAN_CONFIG_DIR"
+mkdir -p "$NFTBAN_LIB_DIR/lib" "$NFTBAN_CONFIG_DIR"
+# v1.235: the render projects the forward store; its lib is the one library it needs.
+cp "$REPO_ROOT/cli/lib/nftban/lib/nftban_forward.sh" "$NFTBAN_LIB_DIR/lib/"
 
 # Source the command file (only the function definitions are needed; no
 # subcommand is dispatched). Guarded sources resolve to no-ops in the sandbox.

@@ -41,7 +41,7 @@ import (
 var allGateStates = []state.InstallState{
 	state.StateAppliedUnverified, state.StateCommitted, state.StateDegraded,
 	state.StateDetectComplete, state.StateFailedAbort, state.StateFailedNoFirewall,
-	state.StateFailedPreflightDiskSpace, state.StateFailedRebuild, state.StateFailedRender,
+	state.StateFailedPreflightDiskSpace, state.StateFailedConfigInvalid, state.StateFailedRebuild, state.StateFailedRender,
 	state.StateFailedSSH, state.StateFailedTakeover, state.StateFilesInstalled,
 	state.StatePrepareComplete, state.StateRebuildNotExecuted, state.StateRebuildRefusedBusy,
 	state.StateRestoreDecided, state.StateRestoreDegraded, state.StateRestoreExecuted,

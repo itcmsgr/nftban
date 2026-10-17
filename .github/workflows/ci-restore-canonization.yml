@@ -80,16 +80,16 @@ jobs:
         if: matrix.label == 'almalinux-9'
         run: |
           dnf -y install epel-release
-          dnf -y install jq git tar gzip procps-ng findutils sudo golang
+          dnf -y install jq git tar gzip procps-ng findutils diffutils sudo
 
-      - name: Set up Go (DEB only)
-        if: matrix.label == 'ubuntu-24.04'
+      - name: Set up Go (every leg uses the release compiler, never the distro package)
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v5.6.0
         with:
-          # v1.157 PR-C: pin exact patch (matches go.mod `go 1.25.13`).
-          # GOTOOLCHAIN=local intentionally NOT set here: the RPM matrix legs
-          # build with dnf-installed Go (not this step), whose patch may differ.
-          go-version: '1.25.13'
+          # v1.157 PR-C: pin exact patch (matches go.mod `go 1.26.9`).
+          # v1.235 (owner audit 2026-10-09): ALL legs build with this exact toolchain.
+          # The RPM legs used the distro golang (1.26.7 on almalinux-9): a build that
+          # is not the shipped build. The distro package is no longer installed.
+          go-version: '1.26.9'
 
       # ------------------------------------------------------------------
       # G4-RESTORE-NO-IMPLICIT-EXEC — static scan of the restore package

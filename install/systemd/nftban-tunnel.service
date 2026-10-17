@@ -34,6 +34,8 @@ User=root
 Group=root
 
 # Run tunnel scan
+# v1.235: skipped (not failed) without firewall authority.
+ExecCondition=+/usr/lib/nftban/bin/nftband --authority-check
 ExecStart=/usr/sbin/nftban tunnel scan --quiet
 
 # Logging

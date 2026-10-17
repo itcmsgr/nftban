@@ -42,6 +42,9 @@ ok()  { printf '  [PASS] %s\n' "$1"; PASS=$((PASS+1)); }
 bad() { printf '  [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); }
 
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
+# Never the host's /run/nftban: on an installed host the daemon's set_counts.json made the
+# check read the cache and the nft arm below never ran (lab2 2026-10-08).
+mkdir -p "$WORK/run"; NFTBAN_RUN_DIR="$WORK/run"; export NFTBAN_RUN_DIR
 # A fake nft whose behaviour is chosen per control. The point is to drive the
 # REAL consumers, so the assertion is about what an operator would see.
 cat > "$WORK/nft" <<'EOS'
@@ -135,6 +138,52 @@ if [[ "$SURF" == *UNKNOWN* ]]; then
     ok "set_sizes: UNKNOWN reaches the operator-facing collector (render input), not just the issues map"
 else
     bad "set_sizes: UNKNOWN never reached NFTBAN_HEALTH_ERRORS/WARNINGS — the operator would not see it (surfaced='${SURF:0:80}')"
+fi
+
+
+# --- B2. the daemon cache path (what every host running the daemon actually reads) ---
+# Shape = internal/stats/set_counters.go SetCountSnapshot: counts live under .sets.<name>.count.
+cache(){ # $1 = JSON body written verbatim
+    printf '%s\n' "$1" > "$NFTBAN_RUN_DIR/set_counts.json"
+}
+sets(){ # name=count ... -> daemon-shaped JSON
+    local out='{"timestamp":"2026-10-08T00:00:00Z","daemon_pid":1,"scale_mode":"NORMAL","exporter_interval_seconds":60,"sets":{' sep='' kv
+    for kv in "$@"; do out+="${sep}\"${kv%%=*}\":{\"count\":${kv#*=},\"scale\":\"NORMAL\",\"scale_num\":0,\"display\":\"${kv#*=}\",\"last_reconciled\":\"2026-10-08T00:00:00Z\",\"trend\":\"stable\"}"; sep=','; done
+    printf '%s}}' "$out"
+}
+if command -v jq >/dev/null 2>&1; then
+    NFT_MODE=fail; export NFT_MODE    # any fallback to nft would read UNKNOWN: the cache must carry the verdict
+    cache "$(sets blacklist_ipv4=0 blacklist_ipv6=0 blacklist_manual_ipv4=37 blacklist_manual_ipv6=0 whitelist_ipv4=0 whitelist_ipv6=0)"
+    run_health nftban_health_check_set_sizes
+    [[ "$ST" == "0" && "$ISS" != *UNKNOWN* ]] && ok "set_sizes cache: daemon shape with valid zeros -> OK, no UNKNOWN (a real 0 stays 0)" \
+                                              || bad "set_sizes cache: valid zeros gave status=$ST issues=${ISS:0:80}"
+    cache "$(sets blacklist_ipv4=150000 blacklist_ipv6=0 blacklist_manual_ipv4=0 blacklist_manual_ipv6=0 whitelist_ipv4=0 whitelist_ipv6=0)"
+    run_health nftban_health_check_set_sizes
+    [[ "$ST" == "1" && "$ISS" == *HUGE* ]] && ok "set_sizes cache: 150000 in blacklist_ipv4 -> WARNING (HUGE) read from the daemon cache" \
+                                           || bad "set_sizes cache: 150000 gave status=$ST issues=${ISS:0:80} (the old reader saw 0 here)"
+    cache "$(sets blacklist_ipv4=0 blacklist_ipv6=600000 blacklist_manual_ipv4=0 blacklist_manual_ipv6=0 whitelist_ipv4=0 whitelist_ipv6=0)"
+    run_health nftban_health_check_set_sizes
+    [[ "$ST" == "2" && "$ISS" == *CRITICAL_SCALE* ]] && ok "set_sizes cache: 600000 in blacklist_ipv6 -> CRITICAL" \
+                                                     || bad "set_sizes cache: 600000 gave status=$ST issues=${ISS:0:80}"
+    cache "$(sets blacklist_ipv4=0 blacklist_ipv6=0 blacklist_manual_ipv4=0 blacklist_manual_ipv6=0 whitelist_ipv4=12000 whitelist_ipv6=0)"
+    run_health nftban_health_check_set_sizes
+    [[ "$ST" == "1" && "$ISS" == *whitelist_ipv4* ]] && ok "set_sizes cache: 12000 whitelist entries -> WARNING" \
+                                                     || bad "set_sizes cache: whitelist 12000 gave status=$ST issues=${ISS:0:80}"
+    cache "$(sets blacklist_ipv4=0 blacklist_ipv6=0 blacklist_manual_ipv4=0 blacklist_manual_ipv6=0 whitelist_ipv4=0)"
+    run_health nftban_health_check_set_sizes
+    [[ "$ST" != "0" && "$ISS" == *"UNKNOWN: whitelist_ipv6"* ]] && ok "set_sizes cache: a set missing from the cache -> UNKNOWN for that set, never 0" \
+                                                                || bad "set_sizes cache: missing whitelist_ipv6 gave status=$ST issues=${ISS:0:80}"
+    cache '{"timestamp":"2026-10-08T00:00:00Z","sets":{"blacklist_ipv4":{"count":'
+    run_health nftban_health_check_set_sizes
+    [[ "$ST" != "0" && "$ISS" == *"UNKNOWN: blacklist_ipv4"* && "$ISS" == *"UNKNOWN: whitelist_ipv4"* ]] && ok "set_sizes cache: malformed JSON -> every set UNKNOWN, status non-OK" \
+                                                                                                    || bad "set_sizes cache: malformed JSON gave status=$ST issues=${ISS:0:80}"
+    cache '{"blacklist_ipv4":600000,"blacklist_ipv6":0,"whitelist_ipv4":0,"whitelist_ipv6":0}'
+    run_health nftban_health_check_set_sizes
+    [[ "$ST" != "0" && "$ISS" == *UNKNOWN* ]] && ok "set_sizes cache: a flat (non-daemon) shape is not read as sizes -> UNKNOWN, not healthy" \
+                                              || bad "set_sizes cache: flat shape gave status=$ST issues=${ISS:0:80}"
+    rm -f "$NFTBAN_RUN_DIR/set_counts.json"
+else
+    echo "  [NOT_EXECUTED] set_sizes cache arms: jq not installed (the product reads the cache only with jq)"
 fi
 
 # --------------------------------------------------------------------------

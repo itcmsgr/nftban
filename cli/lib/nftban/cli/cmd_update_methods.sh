@@ -411,6 +411,14 @@ _update_via_git() {
         return 1
     fi
 
+    # v1.235 K9: hand-added forward rules STOP the update before any change (same preflight as
+    # the package and the firewall verbs; the installer's rebuild would erase them).
+    if ! { declare -F nftban_forward_unmanaged_preflight >/dev/null 2>&1 \
+           || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_immutable_owned.sh" 2>/dev/null; }; then
+        _update_log ERROR "forward-rule check could not be loaded: update refused before any change"; return 3
+    fi
+    nftban_forward_unmanaged_preflight "nftban update" || return 3
+
     # v1.234: refuse on restrictions NFTBan does not own; unlock only owned +i.
     _remove_immutable_flags || return 3    # refused before any change
 
@@ -449,6 +457,14 @@ _update_via_local() {
     fi
 
     _update_log INFO "Source: $source_path"
+
+    # v1.235 K9: hand-added forward rules STOP the update before any change (same preflight as
+    # the package and the firewall verbs; the installer's rebuild would erase them).
+    if ! { declare -F nftban_forward_unmanaged_preflight >/dev/null 2>&1 \
+           || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_immutable_owned.sh" 2>/dev/null; }; then
+        _update_log ERROR "forward-rule check could not be loaded: update refused before any change"; return 3
+    fi
+    nftban_forward_unmanaged_preflight "nftban update" || return 3
 
     # v1.234: refuse on restrictions NFTBan does not own; unlock only owned +i.
     _remove_immutable_flags || return 3    # refused before any change

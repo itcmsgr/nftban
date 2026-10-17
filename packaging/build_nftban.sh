@@ -452,6 +452,8 @@ BuildRequires:  selinux-policy-devel
 BuildRequires:  make
 
 Requires:       nftables >= 0.9.0
+# v1.235 I2: uptime/free/ps/pgrep are called by the CLI (~40 sites); minimal images lack them.
+Requires:       procps-ng
 Requires:       systemd
 Requires:       bash >= 4.0
 Requires:       bash-completion
@@ -484,6 +486,9 @@ Recommends:     mailx
 Recommends:     netmask
 Recommends:     newt
 Requires(pre):  shadow-utils
+# v1.235 F1 (owner 2026-10-08): the pre-install scriptlet runs the forward preflight, which needs
+# nft; an absent nft is UNKNOWN -> STOP, so the package manager must install nftables BEFORE it.
+Requires(pre):  nftables >= 0.9.0
 
 %description
 NFTBan is an open-source Linux Intrusion Prevention System (IPS) and
@@ -846,6 +851,14 @@ end
 # (record-proven) and reports a re-lock that fails.
 ${rpm_immut_lib}
 trap '_nftban_rc=\$?; if [ "\$_nftban_rc" -ne 0 ]; then nftban_immut_relock_owned | sed "s/^/[NFTBan] immutable flag /" >&2; fi' EXIT
+# v1.235 C20 (owner D5): stop before the rebuild would erase forward rules NFTBan did
+# not create (srv1-class Docker hosts). Nothing has changed yet; the trap above relocks.
+# Every install and upgrade (owner 2026-10-08): confirmed absence proceeds; unmanaged
+# forward rules STOP; an unreadable kernel (EPERM included) is UNKNOWN and STOPS.
+# v1.235 K2/K2-c (owner 2026-10-08): an INVALID or unreadable master switch stops here, before
+# any change (absent = the agreed default). Same reader as every other.
+nftban_master_switch_preflight || exit 1
+nftban_forward_unmanaged_preflight || exit 1
 # =============================================================================
 # v108-item7c: Deprecated nftban-ui / GOTH GUI unit cleanup (NEW-package-side)
 # =============================================================================
@@ -1667,6 +1680,29 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
         echo "[NFTBan] Recovery: follow the RECOVERY_CLASS line printed above by the installer."
     fi
 
+    # v1.235 (owner 2026-10-10, HANDLES:289 messaging only — the exit status is unchanged and
+    # stays an open GA requirement): when the installer did not activate the firewall, say so
+    # in words that cannot be read as success of the whole install.
+    case "\$INSTALLER_EXIT" in
+        0|1|14) ;;
+        *)
+            _nb_st=\$(sed -n 's/^INSTALL_STATE=//p' /var/lib/nftban/state/install_state 2>/dev/null | head -1)
+            echo "[NFTBan] PACKAGE INSTALLED — FIREWALL NOT ACTIVATED (INSTALL_STATE=\${_nb_st:-unknown}, installer exit \${INSTALLER_EXIT})."
+            echo "[NFTBan] rpm reports the package files only. NFTBan has no firewall authority on this host:"
+            echo "[NFTBan] its daemon, timers and repairs change nothing until the recovery above is run."
+            ;;
+    esac
+
+    # v1.235 K2/K2-c (owner 2026-10-08): the installer refused because the master switch became
+    # INVALID or unreadable after the pre-install check. The banner and the state file do not replace the exit
+    # status: THIS scriptlet fails (only for this state). rpm keeps the package installed and
+    # reports the scriptlet failure; nothing is rolled back, nothing switch-dependent changed.
+    if [ "\$INSTALLER_EXIT" -eq 2 ] && grep -qx 'INSTALL_STATE=FAILED_CONFIG_INVALID' /var/lib/nftban/state/install_state 2>/dev/null; then
+        echo "[NFTBan] ERROR: NFTBan master switch NFTBAN_ENABLED is not usable (see the Reason above): this %%post FAILS." >&2
+        echo "[NFTBan] Fix the setting, then run: /usr/lib/nftban/bin/nftban-installer --repair" >&2
+        exit 1
+    fi
+
     # --- v1.145 PR-A.1: upgrade-path SSH rate-limit migration ---
     # On upgrade the installer's rebuild path (switchop.Rebuild ->
     # \`nftban firewall rebuild\`) rebuilds from the v1.145 template
@@ -1683,7 +1719,19 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
     # safe/handoff state. \`nftban firewall reload\` is atomic (nft -f — the
     # kernel never sees an empty/partial ruleset) and this call is NON-FATAL:
     # a reload failure is warned and the package upgrade continues.
-    if [ "\$INSTALL_MODE" = "upgrade" ] && { [ "\${INSTALLER_EXIT:-0}" -le 1 ] || [ "\${INSTALLER_EXIT:-0}" -eq 14 ]; } && [ -x /usr/sbin/nftban ]; then
+    # v1.235 audit H3 (owner U1): a DISABLED host loads no NFTBan rules on upgrade. The shared
+    # reader (service_control.sh nftban_is_enabled) answers on/off; anything else = the switch
+    # could NOT be read: reload skipped and said so, never reported as "disabled".
+    _nftban_switch=\$(bash -c '. /usr/lib/nftban/lib/service_control.sh >/dev/null 2>&1 || exit 0; _r=0; nftban_is_enabled || _r=\$?; case \$_r in 0) echo on ;; 2) case \$(nftban_master_switch_state) in unknown*) echo unknown ;; *) echo invalid ;; esac ;; *) echo off ;; esac' 2>/dev/null) || _nftban_switch=""
+    if [ "\$INSTALL_MODE" = "upgrade" ] && [ -x /usr/sbin/nftban ] && [ "\$_nftban_switch" = "off" ]; then
+        echo "[NFTBan] v1.235: NFTBan is disabled (stored choice or nftban=disabled): no firewall reload on upgrade."
+    elif [ "\$INSTALL_MODE" = "upgrade" ] && [ -x /usr/sbin/nftban ] && [ "\$_nftban_switch" = "invalid" ]; then
+        echo "[NFTBan] WARN: v1.235: NFTBAN_ENABLED is INVALID (set it to true or false): no firewall reload on upgrade; nothing switch-dependent was changed."
+    elif [ "\$INSTALL_MODE" = "upgrade" ] && [ -x /usr/sbin/nftban ] && [ "\$_nftban_switch" = "unknown" ]; then
+        echo "[NFTBan] WARN: v1.235: NFTBAN_ENABLED is UNKNOWN (services.conf present but unreadable; make it readable): no firewall reload on upgrade; nothing switch-dependent was changed."
+    elif [ "\$INSTALL_MODE" = "upgrade" ] && [ -x /usr/sbin/nftban ] && [ "\$_nftban_switch" != "on" ]; then
+        echo "[NFTBan] WARN: v1.235: the NFTBan master switch could not be read: no firewall reload on upgrade (check it, then run: nftban firewall reload)."
+    elif [ "\$INSTALL_MODE" = "upgrade" ] && { [ "\${INSTALLER_EXIT:-0}" -le 1 ] || [ "\${INSTALLER_EXIT:-0}" -eq 14 ]; } && [ -x /usr/sbin/nftban ]; then
         echo "[NFTBan] v1.145: re-applying set-driven SSH rate-limit rule (atomic firewall reload)..."
         if /usr/sbin/nftban firewall reload --quiet >/dev/null 2>&1; then
             echo "[NFTBan] v1.145: SSH brute-force rule migrated to @ssh_ports (set-driven)."
@@ -2246,7 +2294,9 @@ fi
 # v1.234.0: no file under /etc/nftban/patterns.d/botscan is package-owned (operator
 # surface); the shipped rules are /usr/lib/nftban/data/botscan_*.patterns (data/*).
 /usr/share/nftban/templates/patterns.d/botscan/custom.patterns
-%attr(644,root,nftban) /etc/nftban/distros/*.conf
+# v1.235 audit K19: operator-editable like every other /etc/nftban *.conf (DEB: conffile); an RPM
+# upgrade must not overwrite edits.
+%attr(644,root,nftban) %config(noreplace) /etc/nftban/distros/*.conf
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/suricata/profiles/*.yaml
 %config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/config/profile.conf
 # D3 (UNINSTALL-PR2): NOT %config — the package must not own operator state.
@@ -2416,7 +2466,8 @@ Version: ${PKG_VERSION}
 Section: net
 Priority: optional
 Architecture: amd64
-Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, bc, gawk, socat, acl, logrotate, polkitd | policykit-1
+Pre-Depends: nftables (>= 0.9.0)
+Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, bc, gawk, socat, acl, logrotate, procps, polkitd | policykit-1
 Recommends: dnsutils, mailutils, netmask, whiptail, conntrack
 Maintainer: NFTBan Team <noreply@nftban.com>
 Description: Open-source Linux IPS and nftables firewall manager
@@ -2946,8 +2997,10 @@ main() {
     ls -lh "${BUILD_DIR}"/*.{deb,rpm} 2>/dev/null || ls -lh "${BUILD_DIR}/RPMS"/*/*.rpm 2>/dev/null || true
     echo ""
     log_info "To install on lab servers:"
-    echo "  DEB: sudo dpkg -i ${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"
-    echo "  RPM: sudo rpm -ivh ${BUILD_DIR}/RPMS/x86_64/nftban-core-${PKG_VERSION}-${PKG_RELEASE}.*.rpm"
+    # v1.235 F1: install through the package manager so nftables (a pre-install dependency) is
+    # resolved first; dpkg -i / rpm -i do not resolve dependencies.
+    echo "  DEB: sudo apt-get update && sudo apt-get install ${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"
+    echo "  RPM: sudo dnf install ${BUILD_DIR}/RPMS/x86_64/nftban-core-${PKG_VERSION}-${PKG_RELEASE}.*.rpm"
 }
 
 # Run main only when executed directly (allows sourcing for unit tests).

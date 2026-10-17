@@ -15,7 +15,7 @@
 # meta:depends="bash,grep,install,stat"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
-# meta:inventory.env_vars="NFTBAN_RUN_DIR,NFTBAN_VALIDATE_BIN"
+# meta:inventory.env_vars="NFTBAN_VALIDATE_DIR,NFTBAN_VALIDATE_BIN"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
@@ -68,25 +68,25 @@ echo "==========================================================================
 
 # ----------------------------------------------------------------------------
 # A: the setgid (2750 root:nftban) handoff dir is created by tmpfiles at boot
-# (the authoritative creator) AND by the unit's +ExecStartPre per-start.
+# (the SINGLE creator since v1.235; the unit's +ExecStartPre was removed).
 # v1.175 BUG-TMPFILES D-1 (Option I): the root-under-nftban tmpfiles entry is
 # RETAINED as an ACCEPTED non-fatal exit-73 SECURITY EXCEPTION (root-only-writer
 # of last.json). ExecStartPre-sole was REJECTED (lab-disproven 226/NAMESPACE).
 # The setgid semantics (2750 root:nftban → last.json inherits group nftban without
-# CAP_CHOWN) are carried by BOTH the tmpfiles entry and the ExecStartPre `-m 2750`.
+# CAP_CHOWN) are carried by the tmpfiles entry (v1.235: its only creator).
 # ----------------------------------------------------------------------------
 echo "--- A: tmpfiles (generated) ---"
 
 # A1: exact setgid line present (mode 2750, owner root, group nftban) — boot creator.
-if grep -qE '^d /run/nftban/firewall-validate 2750 root nftban -$' "$_tmpfiles"; then
-    _t_assert "A1: tmpfiles has exact 'd /run/nftban/firewall-validate 2750 root nftban -' (security-exception boot creator)" 0
+if grep -qE '^d /run/nftban-firewall-validate 2750 root nftban -$' "$_tmpfiles"; then
+    _t_assert "A1: tmpfiles has exact 'd /run/nftban-firewall-validate 2750 root nftban -' (single creator)" 0
 else
-    _t_assert "A1: tmpfiles has exact 'd /run/nftban/firewall-validate 2750 root nftban -' (security-exception boot creator)" 1 \
-        "got: [$(grep -E '/run/nftban/firewall-validate' "$_tmpfiles" | head -1)]"
+    _t_assert "A1: tmpfiles has exact 'd /run/nftban-firewall-validate 2750 root nftban -' (single creator)" 1 \
+        "got: [$(grep -E '/run/nftban-firewall-validate' "$_tmpfiles" | head -1)]"
 fi
 
 # A2: the old non-setgid 0750 form is GONE (no stale mode left behind).
-if grep -qE '^[dz] /run/nftban/firewall-validate 0750 ' "$_tmpfiles"; then
+if grep -qE '^[dz] /run/nftban-firewall-validate 0750 ' "$_tmpfiles"; then
     _t_assert "A2: stale non-setgid 0750 tmpfiles entry is absent" 1 \
         "0750 entry still present — generator did not pick up the 2750 mode"
 else
@@ -94,21 +94,17 @@ else
 fi
 
 # ----------------------------------------------------------------------------
-# B: unit — setgid ExecStartPre + preserved hardening, NO CAP_CHOWN.
+# B: unit — preserved hardening, NO CAP_CHOWN, NO ExecStartPre creator (v1.235).
 # ----------------------------------------------------------------------------
-echo "--- B: unit ExecStartPre + hardening ---"
+echo "--- B: unit hardening (no ExecStartPre creator) ---"
 
-# B1: ExecStartPre install -d uses -m 2750 AND -o root AND -g nftban AND the dir.
-_espre=$(grep -E '^ExecStartPre=\+/usr/bin/install -d ' "$_unit_file" | head -1)
-if [[ -n "$_espre" ]] \
-    && grep -qE '\-m 2750' <<<"$_espre" \
-    && grep -qE '\-o root' <<<"$_espre" \
-    && grep -qE '\-g nftban' <<<"$_espre" \
-    && grep -qE '/run/nftban/firewall-validate' <<<"$_espre"; then
-    _t_assert "B1: ExecStartPre install -d has -m 2750 -o root -g nftban + the dir path" 0
+# B1: v1.235 — the setgid 2750 root:nftban attributes are carried by the SINGLE creator,
+# the tmpfiles line (A1); the unit has NO ExecStartPre creating the dir any more.
+if ! grep -qE '^ExecStartPre=.*firewall-validate' "$_unit_file"; then
+    _t_assert "B1: no ExecStartPre creates the dir (tmpfiles line A1 carries 2750 root nftban)" 0
 else
-    _t_assert "B1: ExecStartPre install -d has -m 2750 -o root -g nftban + the dir path" 1 \
-        "line: [$_espre]"
+    _t_assert "B1: no ExecStartPre creates the dir (tmpfiles line A1 carries 2750 root nftban)" 1 \
+        "line: [$(grep -E '^ExecStartPre=' "$_unit_file" | head -1)]"
 fi
 
 # B2: unit keeps CapabilityBoundingSet=CAP_NET_ADMIN (exact, only).
@@ -138,10 +134,10 @@ else
 fi
 
 # B5: narrow ReadWritePaths preserved (the v1.131.2 subdir grant stays).
-if grep -qE '^ReadWritePaths=/run/nftban/firewall-validate' "$_unit_file"; then
-    _t_assert "B5: unit keeps ReadWritePaths=/run/nftban/firewall-validate" 0
+if grep -qE '^ReadWritePaths=/run/nftban-firewall-validate' "$_unit_file"; then
+    _t_assert "B5: unit keeps ReadWritePaths=/run/nftban-firewall-validate" 0
 else
-    _t_assert "B5: unit keeps ReadWritePaths=/run/nftban/firewall-validate" 1
+    _t_assert "B5: unit keeps ReadWritePaths=/run/nftban-firewall-validate" 1
 fi
 
 # ----------------------------------------------------------------------------
@@ -228,7 +224,7 @@ STUB
     chmod +x "$_drun_stub"
 
     # Pre-create the setgid handoff dir owned by the test group (production:
-    # tmpfiles + +ExecStartPre create it 2750 root nftban). chmod 2750 AFTER
+    # tmpfiles creates it 2750 root nftban). chmod 2750 AFTER
     # chgrp so the setgid bit is not stripped by the ownership change.
     mkdir -p "$_drun_sub"
     if chgrp "$_d_grp" "$_drun_sub" 2>/dev/null && chmod 2750 "$_drun_sub" 2>/dev/null; then
@@ -238,7 +234,7 @@ STUB
             --property=AmbientCapabilities=CAP_NET_ADMIN \
             --property=ProtectSystem=strict \
             --property=ReadWritePaths="$_drun_sub" \
-            --setenv=NFTBAN_RUN_DIR="$_drun" \
+            --setenv=NFTBAN_VALIDATE_DIR="$_drun/firewall-validate" \
             --setenv=NFTBAN_VALIDATE_BIN="$_drun_stub" \
             bash "$_wrapper" >/dev/null 2>&1
         if [[ -f "$_drun_file" ]]; then

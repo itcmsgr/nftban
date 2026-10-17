@@ -9,12 +9,12 @@
 # meta:version="2.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-09-30"
-# meta:description="v1.234 PR #1439 acceptance. Drives the REAL cli/lib/nftban/lib/nftban_immutable_owned.sh (through the real CLI helpers in cmd_update_helpers.sh, through the RPM preun/posttrans text in packaging/build_nftban.sh, and through the generated DEB copies) against stub lsattr/chattr/findmnt/dpkg-query/test over a sandbox tree. Pins: (1) NFTBan removes or restores only flags whose ownership is PROVEN by the record (inode+ctime) or the pre-v1.234 installer.log line - a candidate PATH alone is never proof; (2) every blocked destination is refused before any chattr, with its cause - IMMUTABLE, APPEND-ONLY, READ-ONLY, WRITE-DENIED (permission/MAC never reported as immutable) - and an immutable directory blocks its own entries only, not the tree; inspection that cannot run is UNMEASURED; (3) the optional /usr/bin/yq link never aborts a maintainer script, never replaces an existing yq, and internal callers use the bundled yq; (4) the RPM preun strips only on erase, the RPM posttrans restores only flags NFTBan set in this transaction. FAILS on v1.233.1, PASSES on the fix."
+# meta:description="v1.234 PR #1439 acceptance. Drives the REAL cli/lib/nftban/lib/nftban_immutable_owned.sh (through the real CLI helpers in cmd_update_helpers.sh, through the RPM preun/posttrans text in packaging/build_nftban.sh, and through the generated DEB copies) against stub lsattr/chattr/findmnt/dpkg-query over a sandbox tree, plus REAL-BINARY arms R1/R2 (v1.235): the library under /bin/sh with the host's own lsattr, findmnt and test, no stub (R1 a writable tree is not refused; R2, non-root only, a real denial is WRITE-DENIED). Pins: (1) NFTBan removes or restores only flags whose ownership is PROVEN by the record (inode+ctime) or the pre-v1.234 installer.log line - a candidate PATH alone is never proof; (2) every blocked destination is refused before any chattr, with its cause - IMMUTABLE, APPEND-ONLY, READ-ONLY, WRITE-DENIED (permission/MAC never reported as immutable) - and an immutable directory blocks its own entries only, not the tree; inspection that cannot run is UNMEASURED; (3) the optional /usr/bin/yq link never aborts a maintainer script, never replaces an existing yq, and internal callers use the bundled yq; (4) the RPM preun strips only on erase, the RPM posttrans restores only flags NFTBan set in this transaction. FAILS on v1.233.1, PASSES on the fix."
 # meta:input="cli/lib/nftban/lib/nftban_immutable_owned.sh, cli/lib/nftban/cli/cmd_update_helpers.sh, packaging/deb/postinst, packaging/deb/preinst, packaging/build_nftban.sh, build/+i-lifecycle-matrix.yaml, build/generate-immutable-owned-blocks.sh"
 # meta:output="Pass/fail assertions; exit 0 on all-pass"
-# meta:depends="bash,awk,grep,sed,mktemp,stat,date"
+# meta:depends="bash,sh,awk,grep,sed,mktemp,stat,date,lsattr,findmnt,readlink,tr"
 # meta:inventory.files="cli/lib/nftban/lib/nftban_immutable_owned.sh,cli/lib/nftban/cli/cmd_update_helpers.sh,packaging/deb/postinst,packaging/deb/preinst,packaging/build_nftban.sh,build/+i-lifecycle-matrix.yaml"
-# meta:inventory.binaries="bash,awk,grep,sed,mktemp,stat,date"
+# meta:inventory.binaries="bash,sh,awk,grep,sed,mktemp,stat,date,lsattr,findmnt,readlink,tr"
 # meta:inventory.env_vars="NFTBAN_IMMUT_RECORD,NFTBAN_IMMUT_INSTALLER_LOG,NFTBAN_IMMUT_CANDIDATES,NFTBAN_IMMUT_FIXED_DIRS,NFTBAN_IMMUT_TEST_BIN,UPDATE_LOG_FILE"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -253,6 +253,37 @@ else no "U1 uutils false WRITE-DENIED" "rc=$rc out=$(head -c 300 "$WORK/out")"; 
 mk_tree; setattr "----i------I--e-------" "$S/usr/lib/nftban/data"
 rc=0; run_subject '_remove_immutable_flags' || rc=$?
 if [[ $rc -eq 0 ]]; then ok "T6d immutable dir holding no payload entry does not block (not recursive)"; else no "T6d not recursive" "rc=$rc out=$(head -c 300 "$WORK/out")"; fi
+
+# R — REAL BINARIES (v1.235 assurance repair). Every arm above decides through stub
+# lsattr/findmnt; the 26.04 refusal came from a real external binary whose behaviour
+# differed from the one the test assumed. R drives the shared library's
+# nftban_fs_preflight under /bin/sh (the maintainer-script shell) with the HOST's own
+# lsattr, findmnt and test in PATH and no stub. R1 must not refuse a writable tree;
+# R2 (non-root only) must name a real denial WRITE-DENIED, not IMMUTABLE.
+REALP="$WORK/real"; mkdir -p "$REALP/lib/bin" "$REALP/etc"; : > "$REALP/lib/bin/nftband"; : > "$REALP/etc/nftban.conf"
+printf '%s\n' "$REALP/lib/bin" "$REALP/lib/bin/nftband" "$REALP/etc" "$REALP/etc/nftban.conf" "$REALP/lib/new/x.sh" > "$WORK/real.paths"
+real_pf(){
+    env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME="$WORK" NFTBAN_IMMUT_RECORD="$WORK/real.record" \
+        NFTBAN_IMMUT_INSTALLER_LOG="$WORK/real.installer.log" \
+        /bin/sh -c '. "$1"; nftban_fs_preflight /dev/null' _ "$LIB" < "$WORK/real.paths" > "$WORK/real.out" 2>&1
+}
+real_tools="lsattr=$(type -P lsattr || echo absent) findmnt=$(type -P findmnt || echo absent) test=$(readlink -f "$(type -P test || echo absent)")"
+rc=0; real_pf || rc=$?
+r1_out=$(tr '\n' ';' < "$WORK/real.out"); r1_unm=$(grep -c '^UNMEASURED' "$WORK/real.out" || true)
+if [[ $rc -eq 0 ]] && ! grep -q '^BLOCKED' "$WORK/real.out"; then
+    ok "R1 real binaries ($real_tools): a writable tree is not refused (UNMEASURED lines: $r1_unm)"
+else no "R1 real-binary preflight refused a writable tree" "rc=$rc ${r1_out:0:300}"; fi
+if [[ $(id -u) -eq 0 ]]; then
+    printf '  [NOT_EXECUTED] R2 real-binary write denial needs a non-root runner (root overrides mode bits)\n'
+else
+    chmod 0555 "$REALP/lib/bin"
+    rc=0; real_pf || rc=$?
+    chmod 0755 "$REALP/lib/bin"
+    r2_out=$(tr '\n' ';' < "$WORK/real.out")
+    if [[ $rc -ne 0 ]] && grep -q "^BLOCKED WRITE-DENIED dir $REALP/lib/bin " "$WORK/real.out" && ! grep -q '^BLOCKED IMMUTABLE ' "$WORK/real.out"; then
+        ok "R2 real binaries: a real permission denial is WRITE-DENIED (not immutable)"
+    else no "R2 real-binary write denial" "rc=$rc ${r2_out:0:300}"; fi
+fi
 
 # T7 — unsupported attribute inspection: UNMEASURED, never "no restriction".
 mk_tree

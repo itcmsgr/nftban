@@ -44,6 +44,8 @@ Group=nftban
 # flock: Prevent timer+manual overlap (non-blocking, exit if already running)
 # NOTE: Lock file in /var/cache/nftban (owned by nftban:nftban) NOT /run/nftban
 #       to avoid chicken-and-egg: health check can't run if /run/nftban perms broken
+# v1.235: skipped (not failed) without firewall authority — auto-heal never grants itself authority.
+ExecCondition=+/usr/lib/nftban/bin/nftband --authority-check
 ExecStart=/usr/bin/flock -n /var/cache/nftban/health.lock /usr/sbin/nftban health check --auto-heal --cache-status
 
 # NOTE: Root-level permission fixes (nftban-health-fix.service) are NOT

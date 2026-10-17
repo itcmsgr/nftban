@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-05-18"
-# meta:description="V116 §7 Test 9 — asserts nftban_blacklist_list queries BOTH blacklist_ipv4 (interval) AND blacklist_manual_ipv4 (hash) and merges results. Pre-V119 only blacklist_ipv4 was queried, silently hiding all blacklist_manual_ipv4 entries."
+# meta:description="V116 §7 Test 9 — asserts nftban_blacklist_list queries BOTH blacklist_ipv4 (interval) AND blacklist_manual_ipv4 (hash) and merges results. Pre-V119 only blacklist_ipv4 was queried, silently hiding all blacklist_manual_ipv4 entries. K12 (v1.235 audit): `blacklist reconcile` reaches the daemon through the shared IPC client (it sourced a helper that never existed)."
 # meta:input="None (self-contained sandbox with stubbed nft)"
 # meta:output="Pass/fail assertions on stdout; exit 0 on all-pass"
 # meta:depends="bash,grep,sort"
@@ -204,6 +204,25 @@ fi
 # =============================================================================
 # Summary
 # =============================================================================
+# =============================================================================
+# K12 (audit, v1.235): `blacklist reconcile` reaches the daemon through the shared IPC client.
+# It sourced helpers/ipc_client.sh, which never existed, so it ALWAYS failed.
+# =============================================================================
+echo "K12: blacklist reconcile uses the shared IPC client and the daemon 'reconcile' method"
+K12LOG="$(mktemp)"
+k12_out=$( (
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR}/cli/cmd_blacklist.sh"
+    nft_ipc_request(){ echo "IPC ${1-}" >> "$K12LOG"; echo '{"success":true,"data":"reconciled 3"}'; }
+    nftban_cmd_blacklist reconcile
+) 2>&1 ) && k12_rc=0 || k12_rc=$?
+if [[ $k12_rc -eq 0 && "$k12_out" == *"Reconciliation completed successfully"* ]] && grep -qx 'IPC reconcile' "$K12LOG"; then
+    log_pass "K12 reconcile -> daemon IPC 'reconcile', success reported"
+else
+    log_fail "K12 reconcile (rc=$k12_rc out=${k12_out:0:160})"
+fi
+rm -f "$K12LOG"
+
 echo ""
 echo "─────────────────────────────────────────────"
 echo "Total: PASS=$PASS  FAIL=$FAIL"

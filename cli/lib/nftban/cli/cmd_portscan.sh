@@ -602,8 +602,17 @@ nftban_cmd_portscan() {
             # v1.229.7 PR-3A wired the firewall lane here too (cmd_firewall.sh
             # reload/rebuild/reset previously called `portscan enable`, which
             # rewrites durable intent from a convergence path).
-            nftban_portscan_reconcile
+            # v1.235.1: the reconcile exit code IS the verdict (same rule as enable/disable
+            # above: errexit is suspended here, so a bare call reported success and rc 0
+            # after the classic rules were refused).
+            local _reload_rc=0
+            nftban_portscan_reconcile || _reload_rc=$?
             echo ""
+            if (( _reload_rc != 0 )); then
+                echo "ERROR: port scan detection reload FAILED (rc=${_reload_rc}): portscan rules for mode '${NFTBAN_PLAN_EFFECTIVE_MODE:-unknown}' were NOT applied." >&2
+                echo "       See ${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan.log and portscan-classic.log" >&2
+                return "$_reload_rc"
+            fi
             echo "Port scan detection reloaded successfully"
             ;;
 

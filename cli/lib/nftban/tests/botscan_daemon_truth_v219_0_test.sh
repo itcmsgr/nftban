@@ -13,8 +13,8 @@
 # meta:input="None (extracts + stubs the health render with consumer-status fixtures)"
 # meta:output="Pass/fail assertions; exit 0 on all-pass"
 # meta:depends="bash,awk,grep,jq"
-# meta:inventory.files="cli/lib/nftban/core/nftban_health_checks_modules.sh,internal/botguard/botscan_truth.go"
-# meta:inventory.binaries="bash,awk,grep,jq"
+# meta:inventory.files="cli/lib/nftban/core/nftban_health_checks_modules.sh,cli/lib/nftban/tests/health_strict_harness.sh,internal/botguard/botscan_truth.go"
+# meta:inventory.binaries="bash,grep,jq,tr"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_DATA_DIR"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -49,8 +49,13 @@ has(){ [[ "$1" == *"$2"* ]]; }
 
 echo "=== v1.219.0 PR-B BotScan daemon-truth (shell consumes handoff status) ==="
 
-awk '/^_nftban_health_botscan_facts\(\)/{c=1} c{print} /^_nftban_health_render_botscan\(\)/{r=1} r&&/^}/{print "";exit}' "$HMOD" > "$SB/render.sh"
-[[ -s "$SB/render.sh" ]] && ok "extracted health facts+render block" || no "extract render block"
+# The REAL module, sourced under the dispatcher's strict plane (health_strict_harness.sh);
+# an aborted facts read is a failure here, not a DISABLED render that passes.
+# shellcheck source=cli/lib/nftban/tests/health_strict_harness.sh
+source "$SCRIPT_DIR/health_strict_harness.sh"
+hs_init "$SB" && ok "strict harness bound to $HMOD" || { no "strict harness: subject files missing"; exit 1; }
+hs_fn_source "${HS_BOTSCAN_READERS[@]}" > "$SB/render.sh" || true
+[[ -s "$SB/render.sh" ]] && ok "real facts+render definitions read from the module" || no "facts+render definitions not found"
 
 # render <handoff_errors|MISSING> <stale:true|false>
 render(){
@@ -62,12 +67,13 @@ render(){
   if [[ "$he" != MISSING ]]; then
     printf '{"batch_handoff_errors":%s,"batch_consumer_stale_backlog":%s}\n' "$he" "$stale" > "$SB/data/botguard/botscan_consumer_status.json"
   fi
-  NFTBAN_CONFIG_DIR="$SB" NFTBAN_DATA_DIR="$SB/data" STIMER=active bash -c '
-    set +e
-    systemctl(){ [ "${STIMER:-}" = active ] && return 0 || return 1; }
-    source "'"$SB/render.sh"'"
-    _nftban_health_render_botscan
-  '
+  local rc=0
+  NFTBAN_CONFIG_DIR="$SB" NFTBAN_DATA_DIR="$SB/data" HS_TIMER=active \
+    hs_call _nftban_health_render_botscan || rc=$?
+  # Recorded, not asserted here: render() runs inside $(...), where a counter is lost.
+  if [[ "$rc" -ne 0 ]] || hs_err_banner; then
+    printf 'render(%s,%s) rc=%s %s\n' "$he" "$stale" "$rc" "$(hs_err_first)" >> "$SB/strict.fail"
+  fi
 }
 
 out=$(render 3 true)
@@ -83,6 +89,10 @@ has "$out" "ENABLED + timer active" && ok "healthy handoff: enforcing verdict" |
 
 out=$(render MISSING false)
 has "$out" "handoff=UNKNOWN" && ok "missing daemon status: honest UNKNOWN (not assumed-healthy)" || no "missing status not UNKNOWN"
+
+if [[ -s "$SB/strict.fail" ]]; then
+  no "strict plane: a render aborted or printed the ERR banner: $(tr '\n' ';' < "$SB/strict.fail")"
+else ok "strict plane: every render exited 0 with no ERR-trap banner"; fi
 
 # Go side wired + present
 grep -q 'defer m.writeBotscanConsumerStatus()' "$REPO/internal/botguard/guard.go" && ok "go: consumer status published every cycle (defer)" || no "go: status not wired"

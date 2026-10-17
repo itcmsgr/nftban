@@ -36,6 +36,7 @@ no(){ fail=$((fail+1)); printf '  FAIL  %s\n' "$1"; }
 SB=$(mktemp -d); trap 'rm -rf "$SB"' EXIT
 mkdir -p "$SB/lib/lib" "$SB/lib/templates" "$SB/conf"
 cp "$ROOT/install/nftables/nftables.conf.tpl" "$SB/lib/templates/"
+cp "$ROOT/cli/lib/nftban/lib/nftban_forward.sh" "$SB/lib/lib/"   # v1.235: the render projects the forward store
 # env.sh supplies _source_local, which the substitution authority calls to load
 # the optional classic.conf.local override. Present on every real host; the
 # sandbox must carry it or the authority runs in a shape production never sees.

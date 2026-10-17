@@ -305,7 +305,9 @@ func LoadServicesConfig() (map[string]bool, error) {
 				// Map to service names
 				switch key {
 				case "NFTBAN_ENABLED":
-					services["nftban"] = enabled
+					// v1.235 K2: the ONE switch contract (ParseSwitch); INVALID is not ON.
+					// Callers that must tell OFF from INVALID use MasterSwitch.
+					services["nftban"] = ParseSwitch(value) == SwitchOn
 				case "NFTABLES_ENABLED":
 					services["nftables"] = enabled
 				case "FAIL2BAN_ENABLED":

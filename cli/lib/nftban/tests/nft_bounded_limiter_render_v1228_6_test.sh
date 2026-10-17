@@ -34,6 +34,8 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
+# The SUBJECT's libraries, never /usr/lib/nftban (audit I24, 2026-10-08: same class as I23).
+export NFTBAN_LIB_DIR="$ROOT/cli/lib/nftban"
 PASS=0; FAIL=0
 ok()  { printf '  [PASS] %s\n' "$1"; PASS=$((PASS+1)); }
 bad() { printf '  [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); }

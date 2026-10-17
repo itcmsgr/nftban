@@ -9,13 +9,13 @@
 # meta:version="1.131.2"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-05-26"
-# meta:description="Deterministic assertions locking the V131.2 D13 sandbox-write repair (Option C). The v1.131.1 wrapper wrote /run/nftban/firewall-validate/last.json correctly standalone but FAILED under the real nftban-firewall-validate.service because ProtectSystem=strict made /run read-only with no ReadWritePaths, so the service exited non-zero and the file was never created (the v1.131.1 PASS was a false positive: its grep matched a banner word, and its behavioral run used NFTBAN_RUN_DIR=/tmp OUTSIDE the sandbox). This test asserts the unit grants exactly ReadWritePaths=/run/nftban/firewall-validate (narrow, NOT the broad /run/nftban) while keeping ProtectSystem=strict, adds the +-prefixed ExecStartPre install -d, expands no journal group and uses no pkexec; the generated tmpfiles.d contains the handoff dir entry; the wrapper preserves the validator rc and writes the file root:nftban 0640 with stale-cleanup; cmd_firewall.sh reads the file as primary with journalctl only a guarded last resort. The KEY new assertion (the class that would have caught the v1.131.1 miss) runs the wrapper UNDER an actual systemd-run ProtectSystem=strict sandbox with/without ReadWritePaths and proves the handoff file is/is-not created — SKIPPED with a clear note when not root / systemd-run absent (the real sandbox proof then happens in lab package validation)."
+# meta:description="Deterministic assertions locking the V131.2 D13 sandbox-write repair (Option C). The v1.131.1 wrapper wrote /run/nftban-firewall-validate/last.json correctly standalone but FAILED under the real nftban-firewall-validate.service because ProtectSystem=strict made /run read-only with no ReadWritePaths, so the service exited non-zero and the file was never created (the v1.131.1 PASS was a false positive: its grep matched a banner word, and its behavioral run used NFTBAN_RUN_DIR=/tmp OUTSIDE the sandbox). This test asserts the unit grants exactly ReadWritePaths=/run/nftban-firewall-validate (narrow, NOT the broad /run/nftban) while keeping ProtectSystem=strict, adds the +-prefixed ExecStartPre install -d, expands no journal group and uses no pkexec; the generated tmpfiles.d contains the handoff dir entry; the wrapper preserves the validator rc and writes the file root:nftban 0640 with stale-cleanup; cmd_firewall.sh reads the file as primary with journalctl only a guarded last resort. The KEY new assertion (the class that would have caught the v1.131.1 miss) runs the wrapper UNDER an actual systemd-run ProtectSystem=strict sandbox with/without ReadWritePaths and proves the handoff file is/is-not created — SKIPPED with a clear note when not root / systemd-run absent (the real sandbox proof then happens in lab package validation)."
 # meta:input="self-contained; pattern-greps the source files + runs the wrapper against a stub validator, optionally under systemd-run"
 # meta:output="[PASS]/[FAIL]/[SKIP] per assertion; exit 0 iff no failures"
 # meta:depends="bash,grep,install"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
-# meta:inventory.env_vars="NFTBAN_RUN_DIR,NFTBAN_VALIDATE_BIN"
+# meta:inventory.env_vars="NFTBAN_VALIDATE_DIR,NFTBAN_VALIDATE_BIN"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
@@ -68,16 +68,16 @@ echo "  Repo root: $_repo_root"
 echo "==============================================================================="
 
 # ----------------------------------------------------------------------------
-# A: unit hardening — narrow ReadWritePaths, strict preserved, +ExecStartPre,
+# A: unit hardening — narrow ReadWritePaths, strict preserved, NO ExecStartPre creator (v1.235),
 #    no journal-group expansion, no pkexec.
 # ----------------------------------------------------------------------------
 echo "--- A: unit hardening ---"
 
 # A1: unit grants the narrow ReadWritePaths for the handoff dir.
-if grep -qE '^ReadWritePaths=/run/nftban/firewall-validate' "$_unit_file"; then
-    _t_assert "A1: unit grants ReadWritePaths=/run/nftban/firewall-validate" 0
+if grep -qE '^ReadWritePaths=/run/nftban-firewall-validate' "$_unit_file"; then
+    _t_assert "A1: unit grants ReadWritePaths=/run/nftban-firewall-validate" 0
 else
-    _t_assert "A1: unit grants ReadWritePaths=/run/nftban/firewall-validate" 1
+    _t_assert "A1: unit grants ReadWritePaths=/run/nftban-firewall-validate" 1
 fi
 
 # A2: ProtectSystem=strict is preserved (no global weakening).
@@ -96,13 +96,15 @@ else
     _t_assert "A3: broad ReadWritePaths=/run/nftban is NOT present" 0
 fi
 
-# A4: +-prefixed ExecStartPre creates the dir via /usr/bin/install (the `+`
+# A4 (v1.235 inverted): there used to be a +-prefixed ExecStartPre install -d here (the `+`
 #     exempts it from the sandbox so it succeeds under ProtectSystem=strict;
 #     ReadWritePaths=<subdir> needs the subdir to exist at start).
-if grep -qE '^ExecStartPre=\+/usr/bin/install -d .* /run/nftban/firewall-validate' "$_unit_file"; then
-    _t_assert "A4: unit has +-prefixed ExecStartPre install -d for the handoff dir" 0
+# v1.235: tmpfiles is the SINGLE creator (parent /run is root-owned, no unsafe transition);
+# the former per-start +ExecStartPre install -d (a second creator) must be GONE.
+if ! grep -qE '^ExecStartPre=.*firewall-validate' "$_unit_file"; then
+    _t_assert "A4: unit has NO ExecStartPre creating the handoff dir (tmpfiles is the single creator)" 0
 else
-    _t_assert "A4: unit has +-prefixed ExecStartPre install -d for the handoff dir" 1
+    _t_assert "A4: unit has NO ExecStartPre creating the handoff dir (tmpfiles is the single creator)" 1
 fi
 
 # A5: no journal-group expansion (SupplementaryGroups / systemd-journal / adm)
@@ -120,36 +122,36 @@ fi
 
 # ----------------------------------------------------------------------------
 # B: the handoff dir is created by tmpfiles at boot (the authoritative creator),
-# with the unit's +ExecStartPre as an idempotent per-start belt-and-suspenders.
+# (v1.235: tmpfiles is the SINGLE creator; the +ExecStartPre belt-and-suspenders is removed.)
 # v1.175 BUG-TMPFILES D-1 (Option I): this root-owned child (2750 root:nftban)
 # under the nftban-owned /run/nftban is RETAINED in tmpfiles as an ACCEPTED
 # non-fatal exit-73 SECURITY EXCEPTION — root-only-writer of last.json. The
 # ExecStartPre-SOLE-creator alternative was REJECTED (lab-disproven 226/NAMESPACE:
 # ReadWritePaths binds at namespace setup on tmpfs, before ExecStartPre runs).
 # ----------------------------------------------------------------------------
-echo "--- B: handoff dir creator (tmpfiles at boot + ExecStartPre belt-and-suspenders) ---"
+echo "--- B: handoff dir creator (tmpfiles, single creator, root-owned parent) ---"
 
 # B1: tmpfiles.d carries the exact handoff dir entry (boot creator; required —
 # ReadWritePaths needs the path to pre-exist at namespace setup on tmpfs).
-if grep -qE '^d /run/nftban/firewall-validate 2750 root nftban -$' "$_tmpfiles"; then
-    _t_assert "B1: tmpfiles.d/nftban.conf has 'd /run/nftban/firewall-validate 2750 root nftban -' (security-exception boot creator)" 0
+if grep -qE '^d /run/nftban-firewall-validate 2750 root nftban -$' "$_tmpfiles"; then
+    _t_assert "B1: tmpfiles.d/nftban.conf has 'd /run/nftban-firewall-validate 2750 root nftban -' (single creator, root parent)" 0
 else
-    _t_assert "B1: tmpfiles.d/nftban.conf has 'd /run/nftban/firewall-validate 2750 root nftban -' (security-exception boot creator)" 1 \
-        "got: [$(grep -E '/run/nftban/firewall-validate' "$_tmpfiles" | head -1)]"
+    _t_assert "B1: tmpfiles.d/nftban.conf has 'd /run/nftban-firewall-validate 2750 root nftban -' (single creator, root parent)" 1 \
+        "got: [$(grep -E '/run/nftban-firewall-validate' "$_tmpfiles" | head -1)]"
 fi
 
-# B1b: the unit's +-prefixed ExecStartPre ALSO creates the dir (2750 root:nftban)
+# B1b (v1.235): the old root-under-nftban path is no longer declared at all
 # as an idempotent per-start belt-and-suspenders (NOT the sole creator).
-if grep -qE '^ExecStartPre=\+/usr/bin/install -d .*-m 2750 .*/run/nftban/firewall-validate' "$_unit_file"; then
-    _t_assert "B1b: unit +ExecStartPre install -d -m 2750 also creates the handoff dir (per-start belt-and-suspenders)" 0
+if ! grep -qE '/run/nftban/firewall-validate' "$_tmpfiles"; then
+    _t_assert "B1b: the old root-under-nftban path /run/nftban/firewall-validate is gone from tmpfiles" 0
 else
-    _t_assert "B1b: unit +ExecStartPre install -d -m 2750 also creates the handoff dir (per-start belt-and-suspenders)" 1 \
-        "line: [$(grep -E '^ExecStartPre=' "$_unit_file" | head -1)]"
+    _t_assert "B1b: the old root-under-nftban path /run/nftban/firewall-validate is gone from tmpfiles" 1 \
+        "got: [$(grep -E '/run/nftban/firewall-validate' "$_tmpfiles" | head -1)]"
 fi
 
 # ----------------------------------------------------------------------------
 # C: wrapper — rc preservation, file write with chgrp/chmod, stale cleanup.
-#    Stub validator via NFTBAN_RUN_DIR + NFTBAN_VALIDATE_BIN (no root/group).
+#    Stub validator via NFTBAN_VALIDATE_DIR + NFTBAN_VALIDATE_BIN (no root/group).
 # ----------------------------------------------------------------------------
 echo "--- C: wrapper behavior (stub validator) ---"
 
@@ -174,7 +176,7 @@ chmod +x "$_stub"
 _runfile="$_tmp/firewall-validate/last.json"
 
 # C1: rc=0 preserved + file written with the JSON.
-STUB_RC=0 NFTBAN_RUN_DIR="$_tmp" NFTBAN_VALIDATE_BIN="$_stub" bash "$_wrapper" >/dev/null 2>&1
+STUB_RC=0 NFTBAN_VALIDATE_DIR="$_tmp/firewall-validate" NFTBAN_VALIDATE_BIN="$_stub" bash "$_wrapper" >/dev/null 2>&1
 _w_rc=$?
 [[ "$_w_rc" == "0" ]] \
     && _t_assert "C1a: wrapper preserves rc=0" 0 \
@@ -187,7 +189,7 @@ else
 fi
 
 # C2: rc=3 (DEGRADED) preserved.
-STUB_RC=3 NFTBAN_RUN_DIR="$_tmp" NFTBAN_VALIDATE_BIN="$_stub" bash "$_wrapper" >/dev/null 2>&1
+STUB_RC=3 NFTBAN_VALIDATE_DIR="$_tmp/firewall-validate" NFTBAN_VALIDATE_BIN="$_stub" bash "$_wrapper" >/dev/null 2>&1
 _w_rc=$?
 [[ "$_w_rc" == "3" ]] \
     && _t_assert "C2: wrapper preserves non-zero rc=3 (DEGRADED propagates)" 0 \
@@ -203,7 +205,7 @@ STUB
 chmod +x "$_silent"
 mkdir -p "$_tmp/firewall-validate"
 printf '%s\n' '{"status":"STALE_OLD_RUN"}' > "$_runfile"
-STUB_RC=1 NFTBAN_RUN_DIR="$_tmp" NFTBAN_VALIDATE_BIN="$_silent" bash "$_wrapper" >/dev/null 2>&1
+STUB_RC=1 NFTBAN_VALIDATE_DIR="$_tmp/firewall-validate" NFTBAN_VALIDATE_BIN="$_silent" bash "$_wrapper" >/dev/null 2>&1
 if ! grep -q 'STALE_OLD_RUN' "$_runfile" 2>/dev/null; then
     _t_assert "C3: pre-run rm -f removes stale prior last.json content" 0
 else
@@ -218,9 +220,9 @@ echo "--- D: CLI read path ---"
 
 # D1: cmd_firewall.sh reads the last.json file.
 if grep -qE 'firewall-validate/last\.json' "$_firewall_cli"; then
-    _t_assert "D1: cmd_firewall.sh reads /run/nftban/firewall-validate/last.json" 0
+    _t_assert "D1: cmd_firewall.sh reads /run/nftban-firewall-validate/last.json" 0
 else
-    _t_assert "D1: cmd_firewall.sh reads /run/nftban/firewall-validate/last.json" 1
+    _t_assert "D1: cmd_firewall.sh reads /run/nftban-firewall-validate/last.json" 1
 fi
 
 # D2: journalctl is only a guarded last-resort: the journalctl read must be
@@ -269,13 +271,13 @@ STUB
 
     # E1 (positive): WITH ReadWritePaths the subdir is writable under strict →
     # the handoff file IS created. Pre-create the subdir (tmpfiles does this in
-    # production / the +ExecStartPre does it per-start).
+    # production, tmpfiles at boot/install).
     mkdir -p "$_sbx/firewall-validate"
     rm -f "$_sbx_run"
     systemd-run --quiet --pipe \
         --property=ProtectSystem=strict \
         --property=ReadWritePaths="$_sbx/firewall-validate" \
-        --setenv=NFTBAN_RUN_DIR="$_sbx" \
+        --setenv=NFTBAN_VALIDATE_DIR="$_sbx/firewall-validate" \
         --setenv=NFTBAN_VALIDATE_BIN="$_sbx_stub" \
         bash "$_wrapper" >/dev/null 2>&1
     if [[ -f "$_sbx_run" ]] && grep -q '"status":"OK"' "$_sbx_run"; then
@@ -293,7 +295,7 @@ STUB
     rm -f "$_sbx_run"
     systemd-run --quiet --pipe \
         --property=ProtectSystem=strict \
-        --setenv=NFTBAN_RUN_DIR="$_sbx" \
+        --setenv=NFTBAN_VALIDATE_DIR="$_sbx/firewall-validate" \
         --setenv=NFTBAN_VALIDATE_BIN="$_sbx_stub" \
         bash "$_wrapper" >/dev/null 2>&1
     if [[ ! -f "$_sbx_run" ]]; then

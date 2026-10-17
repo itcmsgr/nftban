@@ -50,7 +50,9 @@ done
 
 SB=$(mktemp -d) || exit 1
 trap 'rm -rf "$SB"' EXIT
-mkdir -p "$SB/empty-lib" "$SB/conf"
+mkdir -p "$SB/empty-lib/lib" "$SB/conf"
+# v1.235: the render projects the forward store; its lib is the one library it needs.
+cp "$ROOT/cli/lib/nftban/lib/nftban_forward.sh" "$SB/empty-lib/lib/"
 export NFTBAN_LIB_DIR="$SB/empty-lib"
 export NFTBAN_CONFIG_DIR="$SB/conf"
 

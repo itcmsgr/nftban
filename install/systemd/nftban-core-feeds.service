@@ -36,6 +36,8 @@ User=root
 Group=root
 
 # Log to both journal AND file for easy viewing
+# v1.235: skipped (not failed) without firewall authority.
+ExecCondition=+/usr/lib/nftban/bin/nftband --authority-check
 ExecStart=/bin/bash -c '/usr/sbin/nftban feeds update 2>&1 | tee -a /var/log/nftban/feeds.log'
 StandardOutput=journal
 StandardError=journal

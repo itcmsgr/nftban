@@ -37,6 +37,8 @@ Before=nftban-botscan.service
 
 [Service]
 Type=oneshot
+# v1.235: skipped (not failed) without firewall authority.
+ExecCondition=+/usr/lib/nftban/bin/nftband --authority-check
 ExecStart=/usr/lib/nftban/sbin/nftban-botscan-collector
 StandardOutput=journal
 StandardError=journal

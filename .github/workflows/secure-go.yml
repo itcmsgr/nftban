@@ -110,11 +110,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v5.6.0
         with:
-          # v1.157 PR-C: pin exact patch (matches go.mod `go 1.25.13`).
+          # v1.157 PR-C: pin exact patch (matches go.mod `go 1.26.9`).
           # GOTOOLCHAIN=local intentionally NOT set: this job `go install`s
           # third-party tools (staticcheck, gosec) whose own go directive may
           # require a newer toolchain; local would block that auto-fetch.
-          go-version: '1.25.13'
+          go-version: '1.26.9'
 
       - name: Cache Go build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4.3.0
@@ -226,6 +226,19 @@ jobs:
           # ⛔ In SARIF/JSON mode govulncheck EXITS 0 EVEN WITH FINDINGS.
           #    GOVULNCHECK_RC0 != NO_VULNERABILITIES  (verified: rc=0 with 7 results)
           #    A non-zero rc here therefore means the TOOL failed, not that findings exist.
+          # v1.235 (owner audit 2026-10-09): the scan must judge the SAME Go standard library
+          # the release is built with. On 2026-10-09 a lab scan via `go run ...@latest`
+          # silently ran under an auto-switched newer toolchain and reported "0 reachable"
+          # for advisories that ARE reachable in the go1.25.13 build. govulncheck evaluates
+          # the stdlib of the `go` it finds; refuse any difference from go.mod's directive.
+          GVC_VERSION_OUT=$("$(go env GOPATH)/bin/govulncheck" -version 2>/dev/null || true)
+          SCAN_GO=$(awk '/^Go:/{print $2; exit}' <<<"$GVC_VERSION_OUT")
+          MOD_GO="go$(awk '/^go /{print $2; exit}' go.mod)"
+          echo "govulncheck evaluates ${SCAN_GO:-<unknown>}; release toolchain (go.mod) is ${MOD_GO}"
+          if [[ -z "$SCAN_GO" || "$SCAN_GO" != "$MOD_GO" ]]; then
+            echo "::error::SCANNED_TOOLCHAIN_MISMATCH — govulncheck would judge ${SCAN_GO:-an unknown} standard library, the release is built with ${MOD_GO}. No vulnerability conclusion can be drawn."
+            exit 1
+          fi
           set +e
           "$(go env GOPATH)/bin/govulncheck" -format sarif ./... > govulncheck.sarif 2> govulncheck.err
           GVC_RC=$?

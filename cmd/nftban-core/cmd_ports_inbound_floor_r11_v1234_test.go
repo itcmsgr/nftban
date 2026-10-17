@@ -27,6 +27,7 @@ import (
 	"testing"
 
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/ports"
 )
 
 // TestR11RenderEffectiveHelperProcess is NOT a test on its own: it is the child
@@ -38,6 +39,8 @@ func TestR11RenderEffectiveHelperProcess(t *testing.T) {
 		t.Skip("helper process only")
 	}
 	nftbanconf.DefaultConfigFile = conf
+	// v1.235: never the host's panel state (the test must not depend on, or read, the host).
+	ports.PanelStateFile = filepath.Join(filepath.Dir(conf), "panels", "enabled.conf")
 	cfg, err := nftbanconf.Load()
 	if err != nil {
 		os.Stdout.WriteString("LOAD_ERROR " + err.Error() + "\n")

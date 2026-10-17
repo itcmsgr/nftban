@@ -119,13 +119,13 @@ nftban_cmd_blacklist() {
         reconcile)
             # Trigger manual reconciliation via daemon IPC (v1.35.0)
             echo "Triggering blacklist reconciliation..."
-            local ipc_helper="${NFTBAN_LIB_DIR}/helpers/ipc_client.sh"
-            if [[ -f "$ipc_helper" ]]; then
-                # shellcheck source=/dev/null
-                source "$ipc_helper" || return 1
+            # v1.235 audit K12: helpers/ipc_client.sh never existed, so this always failed. Use the
+            # shared IPC client (lib/nft_ipc.sh) and the daemon's "reconcile" method.
+            if declare -F nft_ipc_request >/dev/null 2>&1 \
+               || source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null; then
                 local result
-                result=$(nftban_ipc_send '{"method":"reconcile"}' 2>&1)
-                if echo "$result" | grep -q '"success":true'; then
+                result=$(nft_ipc_request "reconcile" 2>&1) || true
+                if [[ "$result" == *'"success":true'* ]]; then
                     echo "Reconciliation completed successfully"
                     echo "$result" | grep -o '"data":"[^"]*"' | sed 's/"data":"//;s/"//'
                 else
@@ -134,7 +134,7 @@ nftban_cmd_blacklist() {
                     return 1
                 fi
             else
-                echo "ERROR: IPC client not found. Is nftband running?" >&2
+                echo "ERROR: ${NFTBAN_LIB_DIR}/lib/nft_ipc.sh not found (IPC client)" >&2
                 return 1
             fi
             ;;

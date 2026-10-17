@@ -281,6 +281,15 @@ RPMSEED=$(awk '/D3 \(UNINSTALL-PR2\): seed operator state/{n=1} n{print} n && /^
 [ "${SEEDCALL:-0}" -eq 0 ] && ok "seed lives in %post, not %postun (install-time, not removal)" \
                            || no "seed logic leaked into %postun" "count=$SEEDCALL"
 
+# K19 (audit, v1.235): every /etc/nftban *.conf the RPM %files ships is %config(noreplace), as the DEB
+# build marks every etc/nftban/**/*.conf a conffile. Excluded on both sides: the generated
+# /etc/nftban/nftables.conf. (distros/*.conf was shipped plain: an RPM upgrade overwrote edits.)
+if [ -s "${SPEC:-}" ]; then
+    _k19=$(awk '/^%files/{f=1} f' "$SPEC" | grep -E '^[^#]*/etc/nftban/[^ ]*\.conf[[:space:]]*$' \
+           | grep -v '/etc/nftban/nftables\.conf' | grep -v '%config' || true)
+    if [ -z "$_k19" ]; then ok "K19 every shipped /etc/nftban *.conf is %config(noreplace) in the RPM (DEB conffile parity)"
+    else no "K19 RPM ships /etc/nftban *.conf WITHOUT %config (an upgrade overwrites edits)" "$_k19"; fi
+fi
 echo
 echo "══ RESULT: PASS=$PASS FAIL=$FAIL ══"
 [ "$FAIL" -eq 0 ] || exit 1

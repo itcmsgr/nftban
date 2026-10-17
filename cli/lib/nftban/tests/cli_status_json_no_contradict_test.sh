@@ -40,6 +40,20 @@ REPO=$(cd "$SCRIPT_DIR/../../../.." && pwd)
 export NFTBAN_LIB_DIR="$REPO/cli/lib/nftban"
 export NFTBAN_NO_BANNER=1
 export NFTBAN_NONINTERACTIVE=1
+# --- v1.235 host isolation (TEST-HARNESS-MUTATES-LIVE-HOST-STATE-WHEN-RUN-AS-ROOT) ---
+# Run as root, this test wrote live host state (2026-10-07 overlay sweep). Every product
+# root it can reach now defaults into the sandbox, EXPORTED so every child shell inherits it;
+# arms that need their own value still override locally.
+_HI="$(mktemp -d)"
+trap 'rm -rf "$_HI"' EXIT
+export NFTBAN_CONFIG_DIR="$_HI/etc" NFTBAN_DATA_DIR="$_HI/data" NFTBAN_LOG_DIR="$_HI/log" \
+       NFTBAN_CACHE_DIR="$_HI/cache" NFTBAN_RUN_DIR="$_HI/run" NFTBAN_STATE_DIR="$_HI/data/state"
+mkdir -p "$NFTBAN_CONFIG_DIR" "$NFTBAN_DATA_DIR/state" "$NFTBAN_LOG_DIR" "$NFTBAN_CACHE_DIR" "$NFTBAN_RUN_DIR"
+# Host guard: the HOST config paths this test once wrote must be unchanged at the end
+# (logs/state/cache are rewritten by a live product, so those are checked in the sandbox).
+_hg_state(){ local p; for p in "$@"; do if [[ ! -e "$p" ]]; then echo "$p ABSENT"; elif [[ -r "$p" ]]; then echo "$p $(sha256sum < "$p" | cut -c1-16) $(stat -c %Y "$p")"; else echo "$p UNREADABLE $(stat -c %Y "$p" 2>/dev/null)"; fi; done; }
+_HG_PATHS=("/etc/nftban/ports.d/00-ssh.conf")
+_HG_BEFORE="$(_hg_state "${_HG_PATHS[@]}")"
 
 command -v jq >/dev/null 2>&1 || { echo "SKIP: jq not installed"; exit 0; }
 
@@ -133,6 +147,11 @@ else
     no "T4 kernel-over-cache" "banned_ips=$banned_ips cache_count=$cache_count (expected 18 vs 999)"
 fi
 
+# --- host isolation guard (TEST-HARNESS-MUTATES-LIVE-HOST-STATE-WHEN-RUN-AS-ROOT) ---
+if [[ "$(_hg_state "${_HG_PATHS[@]}")" == "$_HG_BEFORE" ]]; then ok "HOST-GUARD host config paths unchanged (${_HG_PATHS[*]})"
+else no "HOST-GUARD host config CHANGED by this test" "$(_hg_state "${_HG_PATHS[@]}" | tr '\n' ';')"; fi
+if [[ -e "$_HI/data/state/ssh_port_active.state" ]]; then ok "HOST-GUARD ssh_port_active.state landed in the sandbox"
+else no "HOST-GUARD ssh_port_active.state not in the sandbox" "redirection lost?"; fi
 echo "=========================================================="
 echo "RESULTS: PASS=$PASS FAIL=$FAIL"
 if (( FAIL > 0 )); then

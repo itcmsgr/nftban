@@ -538,7 +538,7 @@ func TestRuling_DeferredRuntimeNeverProvesSuccess(t *testing.T) {
 		StateFilesInstalled, StateDetectComplete, StatePrepareComplete,
 		StateSwitchComplete, StateServicesComplete, StateDegraded,
 		StateFailedSSH, StateFailedAbort, StateFailedRender, StateFailedRebuild,
-		StateFailedNoFirewall, StateFailedTakeover, StateFailedPreflightDiskSpace,
+		StateFailedNoFirewall, StateFailedTakeover, StateFailedPreflightDiskSpace, StateFailedConfigInvalid,
 		StateRebuildRefusedBusy, StateRebuildNotExecuted,
 	}
 	for _, s := range installClass {

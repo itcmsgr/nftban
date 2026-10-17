@@ -720,7 +720,10 @@ _nftban_portscan_classic_warn_backlog() {
     size="$(stat -c %s "$f" 2>/dev/null)" || return 0
     ino="$(stat -c %i "$f" 2>/dev/null)"  || return 0
     [[ "$size" =~ ^[0-9]+$ && "$ino" =~ ^[0-9]+$ ]] || return 0
-    key="$(printf '%s' "$f" | tr '/' '_')"
+    # v1.235: the SAME key the reader writes (nftban_http_cursor_key), so a long path whose
+    # key is hashed (part c1 of BUG-HTTP-READ-INCREMENTAL-…) is still found here.
+    if declare -F nftban_http_cursor_key >/dev/null 2>&1; then key="$(nftban_http_cursor_key "$f")"
+    else key="$(printf '%s' "$f" | tr '/' '_')"; fi
     state="${PORTSCAN_CLASSIC_CURSOR_DIR}/${key}"
     # No cursor yet: the bounded current tail IS the intended first read, not a skip.
     [[ -r "$state" ]] || return 0

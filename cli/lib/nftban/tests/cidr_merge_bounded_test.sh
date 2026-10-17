@@ -31,7 +31,23 @@ ok()  { echo "  [PASS] $1"; PASS=$((PASS+1)); }
 bad() { echo "  [FAIL] $1"; FAIL=$((FAIL+1)); }
 
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
-mkdir -p "$T/bin"; export PATH="$T/bin:$PATH"   # no netmask/aggregate6 -> bash path
+# SELECT the pure-bash path explicitly. Prepending an empty dir to PATH does NOT hide an
+# installed netmask/aggregate6 (lab2 has /usr/bin/netmask: every arm then measured netmask,
+# never the bounded fallback). Build a PATH holding every tool EXCEPT those two, then assert it.
+mkdir -p "$T/bin"
+IFS=: read -r -a _pdirs <<<"$PATH"
+for _d in "${_pdirs[@]}"; do
+    [[ -d "$_d" ]] || continue
+    for _f in "$_d"/*; do
+        _b="${_f##*/}"
+        [[ "$_b" == netmask || "$_b" == aggregate6 || -e "$T/bin/$_b" || ! -x "$_f" ]] && continue
+        ln -s "$_f" "$T/bin/$_b"
+    done
+done
+export PATH="$T/bin"
+if command -v netmask >/dev/null 2>&1 || command -v aggregate6 >/dev/null 2>&1; then
+    echo "  NOT_EXECUTED: could not hide netmask/aggregate6 — the pure-bash path is not selected"; exit 3
+fi
 # shellcheck source=/dev/null
 source "${LIB_DIR}/lib/nftban_dataset_cidr.sh"
 set +e

@@ -1030,14 +1030,21 @@ nftban_health_check_set_sizes() {
     local set_issues=()
 
     # Read from daemon cache (fast) or fall back to nft (slow)
-    local cache_file="/run/nftban/set_counts.json"
+    local cache_file="${NFTBAN_RUN_DIR:-/run/nftban}/set_counts.json"
     local -A set_counts=()
 
     if [[ -f "$cache_file" ]] && command -v jq &>/dev/null; then
-        # Parse cache file — keys are set names, values are counts
-        while IFS='=' read -r key val; do
-            set_counts["$key"]="$val"
-        done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' "$cache_file" 2>/dev/null || true)
+        # v1.235: the daemon writes {"timestamp":…,"sets":{"<name>":{"count":N,…}}}
+        # (internal/stats/set_counters.go SetCountSnapshot). The top-level keys were read
+        # before, so no set name ever matched and every size defaulted to 0: scale
+        # warnings could never fire on a host running the daemon. A cache that cannot be
+        # parsed leaves set_counts empty, and every set below then reads UNKNOWN, never 0.
+        local _cache_rows key val
+        if _cache_rows=$(jq -r '.sets | to_entries[] | "\(.key)=\(.value.count)"' "$cache_file" 2>/dev/null); then
+            while IFS='=' read -r key val; do
+                [[ -n "$key" ]] && set_counts["$key"]="$val"
+            done <<<"$_cache_rows"
+        fi
     else
         # Fallback: query kernel directly for key sets
         for set_name in blacklist_ipv4 blacklist_ipv6 blacklist_manual_ipv4 blacklist_manual_ipv6 whitelist_ipv4 whitelist_ipv6; do
@@ -1060,7 +1067,7 @@ nftban_health_check_set_sizes() {
 
     # Check interval sets (O(n) performance concern)
     for set_name in blacklist_ipv4 blacklist_ipv6; do
-        local count="${set_counts[$set_name]:-0}"
+        local count="${set_counts[$set_name]:-UNKNOWN}"   # absent = unmeasured, not 0
         if [[ ! "$count" =~ ^[0-9]+$ ]]; then
             # Unmeasured is not small. Comparing UNKNOWN numerically would both
             # error and silently pass the threshold.
@@ -1079,7 +1086,7 @@ nftban_health_check_set_sizes() {
 
     # Check whitelist sets (should be small)
     for set_name in whitelist_ipv4 whitelist_ipv6; do
-        local count="${set_counts[$set_name]:-0}"
+        local count="${set_counts[$set_name]:-UNKNOWN}"   # absent = unmeasured, not 0
         if [[ ! "$count" =~ ^[0-9]+$ ]]; then
             set_issues+=("UNKNOWN: $set_name size could not be measured — whitelist size NOT evaluated")
             [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING

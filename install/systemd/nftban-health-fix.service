@@ -40,6 +40,8 @@ Type=oneshot
 User=root
 
 # Fix all detected issues
+# v1.235: skipped (not failed) without firewall authority — a repair never grants itself authority.
+ExecCondition=+/usr/lib/nftban/bin/nftband --authority-check
 ExecStart=/usr/sbin/nftban health fix all
 
 # Logging

@@ -91,6 +91,59 @@ unit_state(){
     fi
     printf '%s' "$s"
 }
+# v1.235 T1 (BUG-INTERVAL-TIMERS-UNSCHEDULED-AFTER-FRESH-START-ON-LONG-UPTIME): an
+# ACTIVE timer can have NO next run (interval timers after remove -> install), and
+# is-active alone passed it (RC-1 on an install after remove was green). Mirrors
+# timerIsWedged (internal/installer/services/timers_post_install.go): one key=value
+# read, order-independent; a calendar trigger needs NextElapseUSecRealtime, an
+# interval trigger NextElapseUSecMonotonic; a run in progress legitimately has none.
+#   -> scheduled | run-in-progress | UNSCHEDULED | not-active | unclassified | BLOCKED
+_next_elapse_set() { case "$1" in ""|0|n/a|infinity) return 1 ;; esac; return 0; }
+timer_next_run() { # timer
+    command -v systemctl >/dev/null 2>&1 || { printf '%s' "$BLOCKED_TOKEN"; return 0; }
+    local props k v act="" unit="" cal="" mono="" nr="" nm="" sact=""
+    props="$(systemctl show "$1" -p ActiveState -p Unit -p TimersCalendar -p TimersMonotonic \
+        -p NextElapseUSecRealtime -p NextElapseUSecMonotonic 2>/dev/null)" || { printf '%s' "$BLOCKED_TOKEN"; return 0; }
+    while IFS='=' read -r k v; do
+        case "$k" in
+            ActiveState) act="$v" ;;
+            Unit) unit="$v" ;;
+            TimersCalendar) if [[ -n "$v" ]]; then cal=1; fi ;;
+            TimersMonotonic) if [[ -n "$v" ]]; then mono=1; fi ;;
+            NextElapseUSecRealtime) nr="$v" ;;
+            NextElapseUSecMonotonic) nm="$v" ;;
+        esac
+    done <<< "$props"
+    if [[ "$act" != active ]]; then printf 'not-active'; return 0; fi
+    if [[ -z "$cal" && -z "$mono" ]]; then printf 'unclassified'; return 0; fi
+    if [[ -n "$cal" ]] && _next_elapse_set "$nr"; then printf 'scheduled'; return 0; fi
+    if [[ -n "$mono" ]] && _next_elapse_set "$nm"; then printf 'scheduled'; return 0; fi
+    sact="$(systemctl show "$unit" -p ActiveState --value 2>/dev/null || true)"
+    case "$sact" in
+        active|activating|reloading|deactivating) printf 'run-in-progress' ;;
+        *) printf 'UNSCHEDULED' ;;
+    esac
+}
+# Every ACTIVE nftban-*.timer, enumerated from systemd (not a list copied from
+# timers.go), has a next run. Calls <assert_vm want got description>.
+check_timers_scheduled() { # assert_vm_function
+    local av="$1" list u _rest got want n=0
+    if [[ "$VM_ASSERTIONS" != "1" ]] || ! command -v systemctl >/dev/null 2>&1; then
+        "$av" present "$BLOCKED_TOKEN" "every active nftban timer has a next run (T1)"
+        return 0
+    fi
+    list="$(systemctl list-units --type=timer --state=active --plain --no-legend 'nftban-*.timer' 2>/dev/null)" || list=""
+    while read -r u _rest; do
+        [[ "$u" == *.timer ]] || continue
+        n=$((n + 1))
+        got="$(timer_next_run "$u")"
+        want=scheduled; [[ "$got" == run-in-progress ]] && want=run-in-progress
+        "$av" "$want" "$got" "timer ${u} has a next run (NextElapseUSec*, T1)"
+    done <<< "$list"
+    if (( n == 0 )); then
+        "$av" present absent "at least one active nftban timer enumerated for the next-run check"
+    fi
+}
 fw(){
     command -v nft >/dev/null 2>&1 || { printf '%s' "$BLOCKED_TOKEN"; return 0; }
     nft list table ip nftban >/dev/null 2>&1 && echo present || echo absent
@@ -135,6 +188,7 @@ assert_healthy_install(){ # outfile expected_version
     eq "$want" "$(ver)" "rpm database version"
     eq_vm active "$(unit_state nftband.service)" "nftband.service"
     eq_vm active "$(unit_state nftban-maintenance.timer)" "critical timer"
+    check_timers_scheduled eq_vm
     eq_vm present "$(fw)" "nftables table ip nftban"
     # A8: this probe was the one survivor of the BLOCKED_ENVIRONMENT conversion —
     # the three lines above use eq_vm, this used bare `eq`. Four traps stacked:

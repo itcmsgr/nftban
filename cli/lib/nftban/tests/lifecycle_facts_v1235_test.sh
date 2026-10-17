@@ -171,10 +171,13 @@ STORED=0 PROJ=active run_lf c1
 l="$(grep -m1 'Commit-confirm' <<<"$(txt c1)" || true)"
 [[ "$l" == *"PENDING apply a1b2c3"* && "$l" == *"remaining"* && "$l" == *"nftban firewall confirm a1b2c3"* ]] \
     && ok "C1 pending apply: ID, deadline with remaining seconds, exact confirm command" || no "C1 pending apply" "$l"
-printf 'apply_id=a1b2c3\ndeadline_epoch=1\nstatus=rollback-failed\nat=2026-10-06T11:07:00Z\n' > "$W/state/commit-confirm.state"
+# C2 (audit K6, 2026-10-08): D10 KEEPS the kernel state; the note reports the hold and the RECORDED
+# kernel fact, never "rules removed / NOT protected" (the old text asserted the opposite of D10).
+printf 'apply_id=a1b2c3\ndeadline_epoch=1\nstatus=rollback-failed\nat=2026-10-06T11:07:00Z\nkernel=candidate still active (rollback transaction rejected; kernel unchanged)\n' > "$W/state/commit-confirm.state"
 STORED=0 PROJ=active run_lf c2
-[[ "$(txt c2)" == *"DIVERGENCE: ROLLBACK FAILED: NFTBan rules removed, host NOT protected by NFTBan"* ]] \
-    && ok "C2 rollback-failed -> DIVERGENCE (host NOT protected by NFTBan)" || no "C2 rollback failure not flagged"
+[[ "$(txt c2)" == *"DIVERGENCE: ROLLBACK FAILED (D10 hold)"* && "$(txt c2)" == *"kernel: candidate still active (rollback transaction rejected; kernel unchanged)"* \
+   && "$(txt c2)" != *"rules removed"* ]] \
+    && ok "C2 rollback-failed -> DIVERGENCE (D10 hold) with the recorded kernel fact, never 'rules removed'" || no "C2 rollback-failed note" "$(grep -m1 'ROLLBACK FAILED' <<<"$(txt c2)" || true)"
 printf 'apply_id=a1b2c3\ndeadline_epoch=1\nstatus=rolled-back\nat=2026-10-06T11:07:00Z\nconflicts=/etc/nftban/conf.d/ddos/main.conf.local\n' > "$W/state/commit-confirm.state"
 STORED=0 PROJ=active run_lf c4
 [[ "$(txt c4)" == *"last outcome: rolled-back at 2026-10-06T11:07:00Z (apply a1b2c3)"* && "$(txt c4)" == *"untouched: /etc/nftban/conf.d/ddos/main.conf.local"* ]] \

@@ -128,7 +128,7 @@ nftban_stats_cmd_comms() {
             { [[ -r "$_mail_lib" ]] && { # shellcheck source=/dev/null
                 source "$_mail_lib" >/dev/null 2>&1; }; }
         set +e +o pipefail
-        declare -F nftban_mail_detect_mta >/dev/null 2>&1 && nftban_mail_detect_mta 2>/dev/null || true
+        declare -F nftban_mail_detect_mta >/dev/null 2>&1 && nftban_mail_detect_mta --passive 2>/dev/null || true
     )
     [[ -z "$_transport" ]] && _transport="none"
     if [[ -n "$_recipient" ]]; then

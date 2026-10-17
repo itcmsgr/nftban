@@ -510,7 +510,11 @@ nftban_botscan_pattern_sidecars() {
         [[ -e "$f" ]] && printf '%s\n' "$f"
     done
     if [[ "${1:-}" == "all" ]]; then
-        for f in "$od"/*.patterns.migrated-v1234; do [[ -e "$f" ]] && printf '%s\n' "$f"; done
+        # v1.235 (BUG-BOTSCAN-STATUS-MISSES-DEB-MIGRATED-PATTERN-FILES): the migration renames
+        # the file it PROCESSED, so the suffix follows the input's name: DEB
+        # <cat>.patterns.nftban-saved.migrated-v1234, RPM <cat>.patterns.rpmsave.migrated-v1234,
+        # file-drop <cat>.patterns.migrated-v1234. The old glob matched only the last.
+        for f in "$od"/*.patterns*.migrated-v1234; do [[ -e "$f" ]] && printf '%s\n' "$f"; done
     fi
     return 0
 }
@@ -667,7 +671,29 @@ nftban_botscan_migrate_legacy_patterns() {
         while IFS='|' read -r on os _; do [[ -z "$on" || "$on" =~ ^# ]] && continue; _ov["${on// /}"]=1; done < "$od/override.local"
     fi
 
-    local n_files=0 n_state=0 n_kept=0 n_dropped=0 ts c sfx
+    # --- v1.235 (BUG-BOTSCAN-PATTERN-MIGRATION-NOT-APPLIED-DEFINITIONS-SILENT): definitions
+    # that a RELEASED version shipped (data/botscan_legacy_shipped.list, generated from the
+    # release tags by scripts/generate-botscan-legacy-shipped.sh). Comparing only with the
+    # v1.234 defaults reported every definition v1.234 itself changed (url-* -> distinct-*,
+    # regex hardening) as an operator edit: "82 edited definition(s) NOT applied" on every
+    # rollout host, with untouched files (legacy files untouched since install). An old definition that
+    # matches one of these is UNEDITED: it is upgraded to the v1.234 default silently.
+    #   _ldef[name|pattern|type|thr|win|ban] = " <enabled values shipped with it> "
+    local -A _ldef=()
+    local _lrec _lk _le _have_legacy=0
+    _lrec="$(nftban_botscan_shipped_patterns_dir)/botscan_legacy_shipped.list"
+    if [[ -r "$_lrec" ]]; then
+        while IFS= read -r l || [[ -n "$l" ]]; do
+            [[ -z "$l" || "$l" == \#* ]] && continue
+            _le="${l##*|}"; _lk="${l%|*}"
+            _ldef["$_lk"]="${_ldef[$_lk]:- } ${_le} "
+            _have_legacy=1
+        done < "$_lrec"
+    fi
+    (( _have_legacy )) || printf '%s WARNING: %s missing — every definition that differs from the v1.234 default is reported as edited (cannot tell old shipped from operator edits)\n' \
+        "$(date -u +%FT%TZ 2>/dev/null || echo unknown)" "$_lrec" >> "$report" 2>/dev/null || true
+
+    local n_files=0 n_state=0 n_kept=0 n_dropped=0 n_upgraded=0 ts c sfx
     ts="$(date -u +%FT%TZ 2>/dev/null || echo unknown)"
     # IFS-independent split: the module runs under IFS=$'\n\t' (v1.186.1 class)
     local -a _cats=()
@@ -691,15 +717,29 @@ nftban_botscan_migrate_legacy_patterns() {
                     printf '  kept   %s (not a shipped name) -> local-migrated.patterns\n' "$nm" >> "$report" 2>/dev/null || true
                     continue
                 fi
-                if [[ "$_BSREC_enabled" != "${_sen[$nm]}" && -z "${_ov[$nm]:-}" ]]; then
+                local _dk="${nm}|${_BSREC_pattern}|${_BSREC_match_type}|${_BSREC_threshold}|${_BSREC_window}|${_BSREC_ban}"
+                local _pristine=0
+                [[ -n "${_ldef[$_dk]:-}" ]] && _pristine=1
+                # State: an operator decision only when it differs from what was SHIPPED with
+                # this exact definition (an unedited record carries the old default's state).
+                local _state_edited=1
+                (( _pristine )) && [[ "${_ldef[$_dk]}" == *" ${_BSREC_enabled} "* ]] && _state_edited=0
+                if (( _state_edited )) && [[ "$_BSREC_enabled" != "${_sen[$nm]}" && -z "${_ov[$nm]:-}" ]]; then
                     printf '%s|%s|migrated from %s (v1.234)\n' "$nm" "$_BSREC_enabled" "${f##*/}" >> "$od/override.local" 2>/dev/null \
                         && { _ov["$nm"]=1; n_state=$(( n_state + 1 )); }
                     printf '  state  %s -> override.local %s\n' "$nm" "$_BSREC_enabled" >> "$report" 2>/dev/null || true
                 fi
-                if [[ "${_BSREC_pattern}${_BS_US}${_BSREC_match_type}${_BS_US}${_BSREC_threshold}${_BS_US}${_BSREC_window}${_BS_US}${_BSREC_ban}" != "${_sdef[$nm]}" ]]; then
+                local _cur="${_BSREC_pattern}${_BS_US}${_BSREC_match_type}${_BS_US}${_BSREC_threshold}${_BS_US}${_BSREC_window}${_BS_US}${_BSREC_ban}"
+                if [[ "$_cur" == "${_sdef[$nm]}" ]]; then
+                    :   # identical to the v1.234 default: nothing to report
+                elif (( _pristine )); then
+                    n_upgraded=$(( n_upgraded + 1 ))
+                    printf '  upgraded %s: unedited previously shipped definition -> v1.234 default\n' "$nm" >> "$report" 2>/dev/null || true
+                else
                     n_dropped=$(( n_dropped + 1 ))
-                    printf '  NOT APPLIED %s: local definition differs from the v1.234 default (%s|%s|%s|%s|%s); re-create it under a new name if still wanted\n' \
-                        "$nm" "$_BSREC_pattern" "$_BSREC_match_type" "$_BSREC_threshold" "$_BSREC_window" "$_BSREC_ban" >> "$report" 2>/dev/null || true
+                    local _new="${_sdef[$nm]//$_BS_US/|}"
+                    printf '  NOT APPLIED %s: your edited definition (%s|%s|%s|%s|%s) matches no shipped release; the v1.234 default (%s) applies; re-create yours under a new name if still wanted\n' \
+                        "$nm" "$_BSREC_pattern" "$_BSREC_match_type" "$_BSREC_threshold" "$_BSREC_window" "$_BSREC_ban" "$_new" >> "$report" 2>/dev/null || true
                 fi
             done < "$f"
             mv -f "$f" "${f}.migrated-v1234" 2>/dev/null || true
@@ -708,7 +748,7 @@ nftban_botscan_migrate_legacy_patterns() {
     [[ -f "$od/override.local" ]] && _bs_mig_perm "$od/override.local"
     [[ -f "$od/local-migrated.patterns" ]] && _bs_mig_perm "$od/local-migrated.patterns"
     if (( n_files > 0 )); then
-        echo "botscan pattern migration: ${n_files} legacy file(s): ${n_state} enable/disable decision(s) -> override.local, ${n_kept} operator record(s) kept, ${n_dropped} edited definition(s) NOT applied (report: ${report})"
+        echo "botscan pattern migration: ${n_files} legacy file(s): ${n_upgraded} unedited shipped definition(s) upgraded, ${n_state} enable/disable decision(s) -> override.local, ${n_kept} operator record(s) kept, ${n_dropped} edited definition(s) NOT applied (report: ${report})"
     fi
     return 0
 }
@@ -2710,7 +2750,14 @@ nftban_botscan_process_logs() {
         _bs_lo="$(_nftban_botscan_cursor_offset "$_bs_last_f")"
         _bs_ls="$(stat -c%s "$_bs_last_f" 2>/dev/null || echo 0)"
         if [[ -f "$_bs_last_f" && "$_bs_lo" =~ ^[0-9]+$ && "$_bs_lo" -lt "$_bs_ls" ]]; then
-            printf '%s|%s\n' "$(basename "$_bs_last_f")" "$(( _bs_pin_tries + 1 ))" \
+            # v1.235 (OPEN-BOTSCAN-SCAN-PIN-RETRY-BUDGET-IS-GLOBAL-NOT-PER-OBJECT): the attempt
+            # budget is PER OBJECT. The same pinned object continues its count; a different
+            # object starts at 1. Before, a new object inherited the previous object's count
+            # (srv3: ...egialion-iqia.com.log|16 -> ...getsfinance.gr.log|17), so "pin budget
+            # exhausted after N cycles" could name an object pinned for a single cycle.
+            local _bs_next_tries=1
+            [[ "$(basename "$_bs_last_f")" == "$_bs_pinned" ]] && _bs_next_tries=$(( _bs_pin_tries + 1 ))
+            printf '%s|%s\n' "$(basename "$_bs_last_f")" "$_bs_next_tries" \
                 > "${_bs_pin_file}.tmp" 2>/dev/null \
                 && mv -f "${_bs_pin_file}.tmp" "$_bs_pin_file" 2>/dev/null || true
         else

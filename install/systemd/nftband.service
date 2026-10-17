@@ -76,6 +76,10 @@ WatchdogSec=120s
 User=root
 Group=root
 
+# v1.235 (owner 2026-10-10): run only with granted firewall authority (a refused,
+# interrupted or failed install, a disabled NFTBan, the emergency bypass: skipped, not
+# failed). Same decision as the CLI (state.FirewallAuthority / nftban_firewall_authority).
+ExecCondition=/usr/lib/nftban/bin/nftband --authority-check
 ExecStart=/usr/lib/nftban/bin/nftband
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure

@@ -406,7 +406,10 @@ nftban_geoban_apply_to_nftables() {
             nftban_success "Added $cidr_count_v6 IPv6 CIDRs to $set_v6"
         else
             rm -f "$element_fragment" 2>/dev/null
-            nftban_warn "Failed to add IPv6 CIDRs (IPC command failed)"
+            # v1.235 P1S-A (owner 2026-10-08): propagate the failure like IPv4 (it only
+            # warned, so the caller reported success with the IPv6 CIDRs missing).
+            nftban_error "Failed to add IPv6 CIDRs (IPC command failed; the full sync is owed and retried by maintenance)"
+            return 1
         fi
     fi
 

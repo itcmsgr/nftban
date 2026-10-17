@@ -51,6 +51,8 @@ Type=oneshot
 # Must run as root for nftables operations
 User=root
 
+# v1.235: skipped (not failed) without firewall authority — a repair never grants itself authority.
+ExecCondition=+/usr/lib/nftban/bin/nftband --authority-check
 ExecStart=/usr/lib/nftban/core/nftban_rebuild_recovery.sh
 
 # Logging

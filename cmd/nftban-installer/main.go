@@ -919,6 +919,18 @@ func report(sf *state.StateFile, log *logging.Logger) int {
 			log.Result("[NFTBan] Reason: %s", sf.FailureReason)
 		}
 		emitRecovery(sf.State, log)
+	case state.StateFailedConfigInvalid:
+		// v1.235 K2/K2-c (owner 2026-10-08): a CONFIGURATION failure, kept apart from the
+		// protection state: nothing switch-dependent was changed by this run.
+		log.Result("[NFTBan] Install/upgrade FAILED: the master switch NFTBAN_ENABLED is not usable.")
+		log.Result("[NFTBan] State: %s", sf.State)
+		if sf.FailureReason != "" {
+			log.Result("[NFTBan] Reason: %s", sf.FailureReason)
+		}
+		log.Result("[NFTBan] Nothing switch-dependent was changed: the firewall that was running before is")
+		log.Result("[NFTBan] still running (check: nftban status); no rules were loaded or removed, no units")
+		log.Result("[NFTBan] changed, the boot projection was not published.")
+		emitRecovery(sf.State, log)
 	default:
 		log.Result("[NFTBan] Install/upgrade FAILED.")
 		log.Result("[NFTBan] State: %s", sf.State)
@@ -1094,7 +1106,7 @@ func historyStatusForState(s state.InstallState) string {
 	case state.StateFailedRebuild, state.StateFailedRender, state.StateFailedSSH,
 		state.StateFailedAbort, state.StateFailedNoFirewall, state.StateFailedTakeover,
 		state.StateRebuildRefusedBusy, state.StateRebuildNotExecuted,
-		state.StateFailedPreflightDiskSpace,
+		state.StateFailedPreflightDiskSpace, state.StateFailedConfigInvalid,
 		// v1.232.2: the INTERMEDIATE states, named explicitly rather than being
 		// swept up by a default. An interrupted apply (timeout / signal) leaves the
 		// record on one of these, and "the installer stopped mid-flight" IS an

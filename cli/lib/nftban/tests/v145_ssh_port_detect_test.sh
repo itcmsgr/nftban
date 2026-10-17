@@ -31,6 +31,8 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
+# The SUBJECT's libraries, never /usr/lib/nftban (audit I24, 2026-10-08: same class as I23).
+export NFTBAN_LIB_DIR="$REPO_ROOT/cli/lib/nftban"
 # shellcheck source=/dev/null
 source "$REPO_ROOT/cli/lib/nftban/lib/ssh_port_detect.sh"
 

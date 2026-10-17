@@ -8,7 +8,7 @@
 # meta:type="test"
 # meta:version="1.213.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:description="Design A: feeds/geoban/trust write durable source then trigger a FULL daemon sync (quick=false) via nft_ipc_sync; debounced; IPC-fail falls back to legacy additive apply with a visible WARN; no quick-sync; no additive push on sync success"
+# meta:description="Design A: feeds/geoban/trust write durable source then trigger a FULL daemon sync (quick=false) via nft_ipc_sync; debounced; IPC-fail attempts the legacy apply with a visible WARN that the full sync is OWED; v1.235 P1S-A: a failed full sync leaves the pending marker the maintenance cycle consumes, a REFUSED apply (enforcement-set add) propagates a non-zero rc with an explicit NOT-applied error, a degraded sync (exemption_split_limit) is printed; no quick-sync; no additive push on sync success"
 # meta:input="None (self-contained sandbox; sources real cli/lib/nftban/lib/nft_ipc.sh; stubs nft_ipc_request/apply_ruleset)"
 # meta:output="Pass/fail assertions on stdout; exit 0 on all-pass"
 # meta:depends="bash,grep,mktemp,date"
@@ -67,6 +67,8 @@ STUB_LOG="$SBX/ipc_calls.log"
 
 # Stub controls
 SYNC_SHOULD_FAIL=0     # 1 => the daemon "sync" verb reports failure
+SYNC_DEGRADED=0        # 1 => the sync succeeds but reports degraded (exemption_split_limit)
+APPLY_REFUSED=0        # 1 => apply_ruleset is refused (P1S-A: enforcement-set element add)
 ORDER_PROBE=""         # if set, the sync stub records PRESENT/ABSENT of this path
 
 # Source the REAL helper library, then override the transport with a recorder.
@@ -88,6 +90,10 @@ nft_ipc_request() {
             echo '{"success":false,"error":"stub sync fail"}'
             return 1
         fi
+        if [[ "$SYNC_DEGRADED" == "1" ]]; then
+            echo '{"success":true,"data":{"exempt_split_limit_omitted":1,"degraded":true,"degraded_reason":"exemption_split_limit"}}'
+            return 0
+        fi
         echo '{"success":true}'
         return 0
     fi
@@ -96,6 +102,7 @@ nft_ipc_request() {
 }
 nft_ipc_apply_ruleset() {
     echo "APPLY file=${1:-}" >> "$STUB_LOG"
+    [[ "$APPLY_REFUSED" == "1" ]] && return 1
     return 0
 }
 
@@ -149,7 +156,7 @@ for mod in feeds geoban trust; do
 done
 
 # ---------------------------------------------------------------------------
-echo "--- per-module IPC-fail fallback: legacy additive apply + visible WARN ---"
+echo "--- per-module IPC-fail fallback: legacy apply attempted + visible WARN naming the OWED sync ---"
 for mod in feeds geoban trust; do
     reset_log
     SYNC_SHOULD_FAIL=1
@@ -158,8 +165,8 @@ for mod in feeds geoban trust; do
     rc=0; nft_ipc_sync_or_apply "$mod" "$frag" 2>"$warn" || rc=$?
     SYNC_SHOULD_FAIL=0
     if grep -q "APPLY file=${frag}" "$STUB_LOG" \
-       && grep -qi "\[WARN\] ${mod}: sync IPC failed, fell back to legacy additive apply" "$warn"; then
-        ok "$mod: sync IPC failure falls back to legacy additive apply with a visible WARN"
+       && grep -qi "\[WARN\] ${mod}: full sync IPC failed; the sync is OWED (maintenance retries it within 15 min)" "$warn"; then
+        ok "$mod: sync IPC failure attempts the legacy apply with a visible WARN that the sync is OWED"
     else
         bad "$mod: fallback/WARN missing (apply=$(count_apply) warn='$(cat "$warn" 2>/dev/null)')"
     fi
@@ -207,6 +214,61 @@ if grep -q 'SYNC_SAW probe=ABSENT' "$STUB_LOG"; then
     ok "delete path: durable source absent at sync time (remove-durable-THEN-sync)"
 else
     bad "delete path: durable source still present when the sync ran"
+fi
+
+# ---------------------------------------------------------------------------
+# v1.235 P1S-A integration (owner 2026-10-08)
+echo "--- a full sync that never ran is OWED: pending marker set for the maintenance backstop ---"
+reset_log
+SYNC_SHOULD_FAIL=1
+rc=0; nft_ipc_sync 1 || rc=$?
+SYNC_SHOULD_FAIL=0
+if [[ "$rc" -ne 0 && -f "$NFTBAN_RUN_DIR/.sync_last.pending" ]]; then
+    ok "failed full sync (all attempts) leaves .sync_last.pending (maintenance re-requests it)"
+else
+    bad "failed full sync: rc=$rc pending=$([[ -f "$NFTBAN_RUN_DIR/.sync_last.pending" ]] && echo yes || echo NO)"
+fi
+SYNC_SHOULD_FAIL=0; rc=0; nft_ipc_sync 1 || rc=$?
+if [[ "$rc" -eq 0 && ! -f "$NFTBAN_RUN_DIR/.sync_last.pending" ]]; then
+    ok "the next successful full sync clears the owed marker"
+else
+    bad "successful sync did not clear the owed marker (rc=$rc)"
+fi
+
+echo "--- refused legacy apply (enforcement-set add): failure propagates, nothing claimed ---"
+for mod in feeds geoban; do
+    reset_log
+    SYNC_SHOULD_FAIL=1; APPLY_REFUSED=1
+    frag="$SBX/${mod}_ref.nft"; echo "add element ip nftban blacklist_ipv4 { 5.6.7.0/24 }" > "$frag"
+    err="$SBX/${mod}_ref.txt"
+    rc=0; nft_ipc_sync_or_apply "$mod" "$frag" 2>"$err" || rc=$?
+    SYNC_SHOULD_FAIL=0; APPLY_REFUSED=0
+    if [[ "$rc" -ne 0 ]] && grep -q "\[ERROR\] ${mod}: NOT applied now" "$err" && [[ -f "$NFTBAN_RUN_DIR/.sync_last.pending" ]]; then
+        ok "$mod: sync failed + apply refused -> rc $rc, explicit NOT-applied error, sync owed"
+    else
+        bad "$mod: refused apply not propagated (rc=$rc err='$(cat "$err" 2>/dev/null)')"
+    fi
+done
+
+echo "--- degraded sync (exemption_split_limit) is said, never a silent OK ---"
+reset_log
+SYNC_DEGRADED=1
+out="$SBX/degraded.txt"
+rc=0; nft_ipc_sync 1 > "$out" 2>&1 || rc=$?
+SYNC_DEGRADED=0
+if grep -q "WARNING: full sync DEGRADED (exemption_split_limit)" "$out"; then
+    ok "a degraded full sync prints the exemption_split_limit warning (stdout; rc=$rc: the sync ran)"
+else
+    bad "degraded sync printed no warning (rc=$rc out='$(cat "$out")')"
+fi
+
+echo "--- the maintenance cycle consumes the owed marker (static census; runtime proof on the lab) ---"
+MAINT="$(cd "$(dirname "$IPC_LIB")/.." && pwd)/cron/maintenance.sh"
+if grep -q 'if \[\[ -f "${NFTBAN_RUN_DIR:-/run/nftban}/.sync_last.pending" \]\]; then' "$MAINT" \
+   && grep -q '_os_out=$(nft_ipc_sync 1 2>&1) || _os_rc=$?' "$MAINT"; then
+    ok "cron/maintenance.sh re-requests the owed full sync (force) while .sync_last.pending exists"
+else
+    bad "cron/maintenance.sh does not consume .sync_last.pending (the owed sync would wait for the module timer)"
 fi
 
 echo ""

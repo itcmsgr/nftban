@@ -231,6 +231,37 @@ table ip nftban {
     }
 
     # =========================================================================
+    # FORWARDING ALLOWS (v1.235, owner D2=E/D3/D4) — projected at every render from
+    # /etc/nftban/forward.d/forward.conf; an empty store = nothing is forwarded.
+    # =========================================================================
+
+    set fwd_egress_ifaces {
+        type ifname
+        comment "D3: admin-approved bridge egress (forward.conf egress records)"
+__FWD_EGRESS_ELEMENTS__
+    }
+
+    set fwd_uplink_ifaces {
+        type ifname
+        comment "D3: admin-approved uplinks for that egress (forward.conf uplink records)"
+__FWD_UPLINK_ELEMENTS__
+    }
+
+    set fwd_publish_tcp_ipv4 {
+        type inet_service . ipv4_addr
+        flags interval
+        comment "D4: admin-approved published TCP host port . source"
+__FWD_PUBLISH_TCP4_ELEMENTS__
+    }
+
+    set fwd_publish_udp_ipv4 {
+        type inet_service . ipv4_addr
+        flags interval
+        comment "D4: admin-approved published UDP host port . source"
+__FWD_PUBLISH_UDP4_ELEMENTS__
+    }
+
+    # =========================================================================
     # BOUNDED RATE-LIMIT STATE (v1.228.6)
     # =========================================================================
     # The `meter NAME { … }` shorthand created an IMPLICIT dynamic set: capped at
@@ -500,6 +531,19 @@ table ip nftban {
 
     chain forward {
         type filter hook forward priority 0; policy drop;
+        # v1.235 (owner D2=E 2026-10-06; bans Q1/Q2 2026-10-08, FINAL). The ORDER is part of
+        # the decision: bans (a whitelisted source is EXEMPT from the ban, never accepted here)
+        # -> return path -> managed allows -> policy drop. A ban matches the SOURCE in either
+        # direction: it cuts existing and new flows from a banned client (Q1) and the replies of
+        # a banned server to a container-initiated flow (Q2). Every rule is tagged
+        # "nftban:fwd:<id>"; a rule in this chain WITHOUT that tag is unmanaged (C20 STOP).
+        ip saddr != @whitelist_ipv4 ip saddr @blacklist_manual_ipv4 counter drop comment "nftban:fwd:ban-manual"
+        ip saddr != @whitelist_ipv4 ip saddr @blacklist_ipv4 counter drop comment "nftban:fwd:ban"
+        ct state established,related counter accept comment "nftban:fwd:ct"
+        ct state invalid counter drop comment "nftban:fwd:invalid"
+        iifname @fwd_egress_ifaces oifname @fwd_uplink_ifaces counter accept comment "nftban:fwd:egress"
+        ct status dnat meta l4proto tcp ct original proto-dst . ip saddr @fwd_publish_tcp_ipv4 counter accept comment "nftban:fwd:publish-tcp"
+        ct status dnat meta l4proto udp ct original proto-dst . ip saddr @fwd_publish_udp_ipv4 counter accept comment "nftban:fwd:publish-udp"
     }
 
     # =========================================================================
@@ -647,6 +691,37 @@ table ip6 nftban {
         type ipv6_addr . inet_service
         flags timeout
         comment "Per-IP UDP port access"
+    }
+
+    # =========================================================================
+    # FORWARDING ALLOWS (v1.235, owner D2=E/D3/D4) — projected at every render from
+    # /etc/nftban/forward.d/forward.conf; an empty store = nothing is forwarded.
+    # =========================================================================
+
+    set fwd_egress_ifaces {
+        type ifname
+        comment "D3: admin-approved bridge egress (forward.conf egress records)"
+__FWD_EGRESS_ELEMENTS__
+    }
+
+    set fwd_uplink_ifaces {
+        type ifname
+        comment "D3: admin-approved uplinks for that egress (forward.conf uplink records)"
+__FWD_UPLINK_ELEMENTS__
+    }
+
+    set fwd_publish_tcp_ipv6 {
+        type inet_service . ipv6_addr
+        flags interval
+        comment "D4: admin-approved published TCP host port . source"
+__FWD_PUBLISH_TCP6_ELEMENTS__
+    }
+
+    set fwd_publish_udp_ipv6 {
+        type inet_service . ipv6_addr
+        flags interval
+        comment "D4: admin-approved published UDP host port . source"
+__FWD_PUBLISH_UDP6_ELEMENTS__
     }
 
     # =========================================================================
@@ -946,6 +1021,19 @@ table ip6 nftban {
 
     chain forward {
         type filter hook forward priority 0; policy drop;
+        # v1.235 (owner D2=E 2026-10-06; bans Q1/Q2 2026-10-08, FINAL). The ORDER is part of
+        # the decision: bans (a whitelisted source is EXEMPT from the ban, never accepted here)
+        # -> return path -> managed allows -> policy drop. A ban matches the SOURCE in either
+        # direction: it cuts existing and new flows from a banned client (Q1) and the replies of
+        # a banned server to a container-initiated flow (Q2). Every rule is tagged
+        # "nftban:fwd:<id>"; a rule in this chain WITHOUT that tag is unmanaged (C20 STOP).
+        ip6 saddr != @whitelist_ipv6 ip6 saddr @blacklist_manual_ipv6 counter drop comment "nftban:fwd:ban-manual"
+        ip6 saddr != @whitelist_ipv6 ip6 saddr @blacklist_ipv6 counter drop comment "nftban:fwd:ban"
+        ct state established,related counter accept comment "nftban:fwd:ct"
+        ct state invalid counter drop comment "nftban:fwd:invalid"
+        iifname @fwd_egress_ifaces oifname @fwd_uplink_ifaces counter accept comment "nftban:fwd:egress"
+        ct status dnat meta l4proto tcp ct original proto-dst . ip6 saddr @fwd_publish_tcp_ipv6 counter accept comment "nftban:fwd:publish-tcp"
+        ct status dnat meta l4proto udp ct original proto-dst . ip6 saddr @fwd_publish_udp_ipv6 counter accept comment "nftban:fwd:publish-udp"
     }
 
     # =========================================================================

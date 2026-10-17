@@ -109,6 +109,22 @@ func Classify(
 	panelAutoApprove bool,
 	log *logging.Logger,
 ) Decision {
+	return ClassifyWithPriorGrant(exec, conflicts, panel, forceApprove, panelAutoApprove, false, log)
+}
+
+// ClassifyWithPriorGrant is Classify for the installer, which knows the decision its
+// PREVIOUS transaction recorded on this host (install_state AUTHORITY before this run).
+// priorGrant = that decision was FRESH, TAKEOVER, UPDATE or AMBIGUOUS (v1.235, owner
+// 2026-10-10): only then may orphan NFTBan artifacts beside a conflict be repaired (4d).
+func ClassifyWithPriorGrant(
+	exec executor.Executor,
+	conflicts []detect.Conflict,
+	panel detect.PanelType,
+	forceApprove bool,
+	panelAutoApprove bool,
+	priorGrant bool,
+	log *logging.Logger,
+) Decision {
 	// 1. NFTBan fully authoritative — UPDATE.
 	//
 	// CSF-CLOSE-4: this check no longer short-circuits unconditionally.
@@ -151,18 +167,22 @@ func Classify(
 		return Update
 	}
 
-	// 2. Orphan nftban artifacts without full authority — AMBIGUOUS.
-	// A later phase must NOT treat this as a clean Fresh or ignore it:
-	// the operator needs to see that the host carries stale state, and
+	// 2. No conflicts: orphan NFTBan artifacts → AMBIGUOUS, else FRESH.
+	//
+	// v1.235 (owner 2026-10-10): conflicts are decided BEFORE orphan artifacts. A leftover
+	// NFTBan table is not consent to take over an active firewall: measured on f2-p8-u2604,
+	// an empty orphan `table ip nftban` + active, unapproved UFW classified AMBIGUOUS and the
+	// install COMMITTED the full policy-drop ruleset next to UFW (DisableConflicts runs only
+	// for TAKEOVER). With conflicts present, only an explicit approval (4a-4c) proceeds.
+	// AMBIGUOUS keeps its meaning for a host without an active conflict (e.g. an interrupted,
+	// previously authorized upgrade): the later phase must NOT treat it as a clean Fresh, and
 	// the emergency-SSH path must kick in before any mutation.
-	if hasOrphanNftbanArtifacts(exec) {
-		log.Detect("authority", "decision", string(Ambiguous))
-		log.Detect("authority", "reason", "nftban artifact present but not authoritative (table or daemon in partial state)")
-		return Ambiguous
-	}
-
-	// 3. No conflicts → FRESH install
 	if len(conflicts) == 0 {
+		if hasOrphanNftbanArtifacts(exec) {
+			log.Detect("authority", "decision", string(Ambiguous))
+			log.Detect("authority", "reason", "nftban artifact present but not authoritative (table or daemon in partial state)")
+			return Ambiguous
+		}
 		log.Detect("authority", "decision", string(Fresh))
 		log.Detect("authority", "reason", "no conflicts; no nftban artifacts")
 		return Fresh
@@ -188,6 +208,18 @@ func Classify(
 		log.Detect("authority", "decision", string(Takeover))
 		log.Detect("authority", "reason", "panel auto-approve ("+string(panel)+") with --panel-auto-takeover")
 		return Takeover
+	}
+
+	// 4d. No approval, but orphan NFTBan artifacts on a host whose PREVIOUS transaction
+	// recorded an authorized decision: the repair of that installation (e.g. an upgrade
+	// interrupted after a takeover, while the disarmed firewall's iptables-nft tables are
+	// still loaded and detected as a conflict). Measured on f2-p8-u2604: without this the
+	// repair ABORTed. A refused install records ABORT and a purged host has no record, so
+	// neither passes; a leftover table alone is never consent.
+	if priorGrant && hasOrphanNftbanArtifacts(exec) {
+		log.Detect("authority", "decision", string(Ambiguous))
+		log.Detect("authority", "reason", "nftban artifact present, previous transaction authorized — repair of that installation")
+		return Ambiguous
 	}
 
 	// 5. No approval → ABORT

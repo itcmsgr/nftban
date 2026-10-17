@@ -175,6 +175,17 @@ const (
 	// host correctly re-refuses).
 	StateFailedPreflightDiskSpace InstallState = "FAILED_PREFLIGHT_DISK_SPACE"
 
+	// StateFailedConfigInvalid (v1.235 K2/K2-c, owner 2026-10-08) is the terminal failure of a
+	// run whose master switch NFTBAN_ENABLED is INVALID or UNKNOWN (services.conf present but
+	// unreadable). It is a CONFIGURATION failure, not a statement about protection: nothing
+	// switch-dependent was changed, so the firewall that was running before is still running
+	// (the protection verdict comes from the kernel, never from this state). The package
+	// pre-install check normally stops such a transaction before any change; this state covers
+	// a switch that became unusable after that check. ExitCode = ExitFailed (2), as for every
+	// other failure; the package scripts read THIS state and fail the package transaction.
+	// ResumePhase falls through to PhaseDetect: after the value is fixed, --repair re-runs it all.
+	StateFailedConfigInvalid InstallState = "FAILED_CONFIG_INVALID"
+
 	// StateUninstallPlanning is the terminal state for v1.100 PR-22's
 	// detect + dry-run plan orchestrator. The planner reaches this
 	// state after classifying current authority, probing the optional
@@ -409,6 +420,8 @@ func (s InstallState) IsApplyTerminal() bool {
 		// fleet operators can see "this host refused-install due to
 		// disk space" alongside other failure terminals.
 		StateFailedPreflightDiskSpace,
+		// v1.235 K2: a definitive configuration refusal, recorded like the disk-space one.
+		StateFailedConfigInvalid,
 		// v1.230.0 Gate 6R: an apply was attempted and reached a definitive
 		// outcome — "the rebuild never ran, retry owed". Fleet operators need
 		// that in history, and it must be visibly DISTINCT from install_fail's
@@ -498,6 +511,8 @@ func (s InstallState) IsFailed() bool {
 		// purpose of IsFailed-driven control flow (e.g., ExitCode
 		// default-branch mapping to ExitFailed=2, IsTerminal coverage).
 		StateFailedPreflightDiskSpace,
+		// v1.235 K2: master switch INVALID / UNKNOWN.
+		StateFailedConfigInvalid,
 		// PR-23 uninstall failure terminal.
 		StateUninstallFailedRelease,
 		// PR-25 restore execution failure terminals (contract §22).

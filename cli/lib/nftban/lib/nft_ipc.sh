@@ -119,6 +119,37 @@ nft_ipc_is_daemon_running() {
     [[ "$resp" == *'"success":true'* ]]
 }
 
+# v1.235 (owner 2026-10-10): the shared firewall-authority decision (lib/service_control.sh).
+# Loaded in a subshell so this library's callers keep their own shell options and functions
+# (service_control.sh defines names other libraries also define); a decision that cannot be
+# loaded is a refusal (fail closed).
+_nft_ipc_authority() {
+    if declare -F nftban_firewall_authority >/dev/null 2>&1; then
+        nftban_firewall_authority
+        return
+    fi
+    (
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" >/dev/null 2>&1 \
+            || { echo "DENIED check-unavailable lib/service_control.sh"; exit 1; }
+        nftban_firewall_authority
+    )
+}
+
+# _nft_ipc_authority_cached: the same decision, re-evaluated at most every 2 s per process
+# (the daemon's own write gate uses the same window): a sync can send hundreds of requests.
+# Sets _NFT_IPC_AUTH_OUT; rc 0 granted, 1 denied. Never called in a command substitution
+# (the cache must live in this shell).
+_NFT_IPC_AUTH_OUT=""; _NFT_IPC_AUTH_AT=-10
+_nft_ipc_authority_cached() {
+    if [[ -z "$_NFT_IPC_AUTH_OUT" ]] || (( SECONDS - _NFT_IPC_AUTH_AT >= 2 )); then
+        _NFT_IPC_AUTH_OUT="$(_nft_ipc_authority)" || true
+        [[ -n "$_NFT_IPC_AUTH_OUT" ]] || _NFT_IPC_AUTH_OUT="DENIED check-unavailable no-answer"
+        _NFT_IPC_AUTH_AT=$SECONDS
+    fi
+    [[ "$_NFT_IPC_AUTH_OUT" == GRANTED* ]]
+}
+
 # Send a raw request to the daemon
 # Usage: nft_ipc_request <method> [json_params]
 # Returns: JSON response
@@ -126,6 +157,13 @@ nft_ipc_request() {
     local method="$1"
     local params="${2-}"
     [[ -z "$params" ]] && params="{}"
+
+    # No authority, no request: a connection would socket-activate a daemon that may not
+    # run (its unit is skipped), and the refusal is reported here instead of a timeout.
+    if ! _nft_ipc_authority_cached; then
+        _nft_ipc_json_error "refused: NFTBan has no firewall authority on this host (${_NFT_IPC_AUTH_OUT#DENIED })"
+        return 1
+    fi
 
     _nft_ipc_check_socat || return 1
 
@@ -409,7 +447,8 @@ nft_ipc_sync() {
         now="$(date +%s 2>/dev/null || echo 0)"
         if [[ "$now" -ge "$last" && $((now - last)) -lt "${NFTBAN_SYNC_DEBOUNCE_SECONDS}" ]]; then
             # A full sync ran within the debounce window; coalesce this request.
-            # The periodic reconcile timer flushes the pending marker as a backstop.
+            # The maintenance cycle (cron/maintenance.sh, every 15 min) runs the owed
+            # sync while the pending marker exists (v1.235: before that NOTHING read it).
             #
             # ⛔ THIS RETURNED 0 AND THAT WAS A FALSE SUCCESS. The debounce reasons
             #    "a full sync ran recently, so your state is committed" — which is
@@ -437,6 +476,12 @@ nft_ipc_sync() {
         if nft_ipc_success "$response"; then
             date +%s > "$marker" 2>/dev/null || true
             rm -f "${marker}.pending" 2>/dev/null || true
+            # v1.235 (owner 2026-10-08): a sync that committed everything EXCEPT inputs
+            # dropped at the never-ban split limit says so (stdout: some callers discard
+            # stderr). The sync did run; the gap is named, never hidden behind "OK".
+            if [[ "$response" == *'"degraded":true'* ]]; then
+                echo "[NFTBan] WARNING: full sync DEGRADED (exemption_split_limit): some blacklist prefixes were NOT loaded because splitting them around never-ban addresses would exceed the split limit; their non-exempt addresses are not blocked (daemon log: [NEVER-BAN] exemption_split_limit)"
+            fi
             return 0
         fi
         attempt=$((attempt + 1))
@@ -445,6 +490,10 @@ nft_ipc_sync() {
             delay=$((delay * 2))
         fi
     done
+    # v1.235 (owner 2026-10-08): a full sync that never ran is OWED. Mark it, so the
+    # maintenance cycle (every 15 min) re-requests it; without the marker the next
+    # attempt was the module's own timer (feeds daily, geoban weekly).
+    : > "${marker}.pending" 2>/dev/null || true
     return 1
 }
 
@@ -474,12 +523,19 @@ nft_ipc_sync_or_apply() {
         fi
     fi
 
-    echo "[WARN] ${module}: sync IPC failed, fell back to legacy additive apply" >&2
-    logger -t nftban "[WARN] ${module}: sync IPC failed, fell back to legacy additive apply" 2>/dev/null || true
+    # v1.235 P1S-A: the daemon REFUSES an additive element-add into an enforcement
+    # (drop) set through apply_ruleset (no never-ban check is possible there), so for
+    # feeds/geoban the fallback below fails by design; deletes and whitelist adds are
+    # still accepted. Either way the full sync stays OWED (pending marker set by
+    # nft_ipc_sync) and the maintenance cycle re-requests it every 15 min.
+    echo "[WARN] ${module}: full sync IPC failed; the sync is OWED (maintenance retries it within 15 min); trying the legacy apply (refused for enforcement-set adds)" >&2
+    logger -t nftban "[WARN] ${module}: full sync IPC failed; sync owed; legacy apply attempted" 2>/dev/null || true
 
     if [[ -n "$fallback_file" && -f "$fallback_file" ]]; then
-        nft_ipc_apply_ruleset "$fallback_file"
-        return $?
+        local _ap_rc=0
+        nft_ipc_apply_ruleset "$fallback_file" || _ap_rc=$?
+        [[ $_ap_rc -eq 0 ]] || echo "[ERROR] ${module}: NOT applied now (sync failed, legacy apply refused/failed rc=${_ap_rc}); the existing kernel state is unchanged and the owed sync will apply the stored source" >&2
+        return $_ap_rc
     fi
     return 1
 }

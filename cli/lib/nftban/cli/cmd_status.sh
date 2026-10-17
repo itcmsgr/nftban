@@ -670,7 +670,12 @@ _status_json_install_transaction() {
        && nftban_install_state_is_known_literal "$_state"; then
         _known=true
     fi
+    local _fa="UNKNOWN check-unavailable _status_firewall_authority" _fa_g=false _fa_r _fa_d
+    declare -F _status_firewall_authority >/dev/null 2>&1 && _fa="$(_status_firewall_authority)"
+    [[ "$_fa" == GRANTED* ]] && _fa_g=true
+    _fa_r="${_fa#* }"; _fa_d="${_fa_r#* }"; _fa_r="${_fa_r%% *}"
     echo "  \"install_transaction\": {"
+    echo "    \"firewall_authority\": {\"granted\": $_fa_g, \"reason\": \"$(json_escape "$_fa_r")\", \"detail\": \"$(json_escape "$_fa_d")\"},"
     echo "    \"state\": \"$(json_escape "$_state")\","
     echo "    \"class\": \"$(json_escape "$_class")\","
     echo "    \"committed\": $_committed,"
@@ -760,6 +765,55 @@ _status_overall_state() {
     else
         printf '%s' "$runtime"
     fi
+}
+
+# v1.235 (owner 2026-10-10): may NFTBan write firewall rules here (lib/service_control.sh
+# nftban_firewall_authority — the same decision the daemon, the timers and the firewall
+# verbs obey). Prints "GRANTED|DENIED <reason> <detail>", or "UNKNOWN check-unavailable".
+_status_firewall_authority() {
+    declare -F nftban_firewall_authority >/dev/null 2>&1 \
+        || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" >/dev/null 2>&1 || true
+    if ! declare -F nftban_firewall_authority >/dev/null 2>&1; then
+        echo "UNKNOWN check-unavailable lib/service_control.sh"; return 0
+    fi
+    nftban_firewall_authority || true
+}
+
+# Silent when authority is granted. Otherwise: why, what is in the kernel, and that NFTBan
+# maintains none of it (no bans, feeds or repairs) until authority is restored.
+_status_section_firewall_authority() {
+    local _a _r _d _k
+    _a="$(_status_firewall_authority)"
+    [[ "$_a" == GRANTED* ]] && return 0
+    _r="${_a#* }"; _d="${_r#* }"; _r="${_r%% *}"
+    # The typed probe authority (lib/nft_probe.sh): CANNOT_READ is never reported as "none".
+    declare -F nftban_nft_probe_table >/dev/null 2>&1 \
+        || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_probe.sh" >/dev/null 2>&1 || true
+    NFTBAN_NFT_PROBE_VERDICT=""
+    if declare -F nftban_nft_probe_table >/dev/null 2>&1; then
+        nftban_nft_probe_table ip nftban status >/dev/null 2>&1 || true
+    fi
+    case "${NFTBAN_NFT_PROBE_VERDICT:-}" in
+        PRESENT) _k="present in the kernel — KEPT, but NOT maintained: bans, feeds and repairs are not applied" ;;
+        ABSENT)  _k="none loaded" ;;
+        *)  if [[ "${NFTBAN_NFT_PROBE_CLASS:-}" == "EMPTY_OUTPUT_NO_ABSENCE_PROOF" ]]; then
+                _k="none seen — the kernel ruleset read back empty"
+            else
+                _k="UNKNOWN — the nftables ruleset could not be read"
+            fi ;;
+    esac
+    echo "FIREWALL AUTHORITY"
+    echo "───────────────────────────────────────────────────────────────"
+    echo "  Authority:           NOT GRANTED (${_r}: ${_d})"
+    echo "  NFTBan rules:        ${_k}"
+    echo "  NFTBan daemon/timers/repairs and firewall verbs change nothing in this state."
+    case "$_r" in
+        disabled)  echo "  To resume:           nftban enable" ;;
+        refused)   echo "  To approve takeover: sudo NFTBAN_TAKEOVER=1 /usr/lib/nftban/bin/nftban-installer --repair" ;;
+        emergency-bypass) echo "  To resume:           reboot without the kernel parameter nftban=disabled" ;;
+        *)         echo "  To resume:           sudo /usr/lib/nftban/bin/nftban-installer --repair" ;;
+    esac
+    echo ""
 }
 
 _status_section_install_transaction() {
@@ -941,25 +995,34 @@ _status_section_firewall() {
     # v1.150 MOD-09: source the BASE services.conf first, then the .local
     # override. Pre-v1.150 only the .local file was sourced, so NFTBAN_ENABLED=false
     # set in the base services.conf was ignored and status reported ENABLED.
-    local master_enabled="true"
+    # (The files are still loaded for the other settings this section reads.)
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/services.conf" ]]; then
         # shellcheck source=/dev/null
         source "${NFTBAN_CONFIG_DIR}/conf.d/services.conf" 2>/dev/null || true
-        master_enabled="${NFTBAN_ENABLED:-true}"
     fi
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local" ]]; then
         # shellcheck source=/dev/null
         # IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
         declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
         _source_local "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local"
-        master_enabled="${NFTBAN_ENABLED:-true}"
     fi
 
-    local master_status="ENABLED"
+    # v1.235 audit K2-a: the switch itself is decided by the ONE NFTBAN_ENABLED contract
+    # (lib/service_control.sh nftban_master_switch_state), never by the raw sourced value.
+    local master_status="ENABLED" _sw=""
+    declare -F nftban_master_switch_state >/dev/null 2>&1 \
+        || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" >/dev/null 2>&1 || true
     if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
         master_status="DISABLED (kernel)"
-    elif [[ "${master_enabled,,}" =~ ^(no|false|0|off)$ ]]; then
-        master_status="DISABLED (config)"
+    elif ! declare -F nftban_master_switch_state >/dev/null 2>&1; then
+        master_status="UNKNOWN (stored choice not read)"
+    else
+        _sw="$(nftban_master_switch_state)"; _sw="${_sw%%$'\t'*}"
+        case "$_sw" in
+            on)  master_status="ENABLED" ;;
+            off) master_status="DISABLED (config)" ;;
+            *)   master_status="$(nftban_master_switch_invalid_text)" ;;
+        esac
     fi
     printf "  %-20s %s\n" "Master Control......" "$master_status"
     # v1.235 (row 486 contract D8): stored / applied / on-reboot / recovery as separate
@@ -1030,6 +1093,17 @@ _status_section_authority() {
         nftban_kv "Firewall authority" "⚠️  AMBIGUOUS"
         if [[ -n "$conflicts" ]]; then
             nftban_kv "Active conflicts" "$conflicts"
+        fi
+    elif [[ "$(_status_firewall_authority)" != GRANTED* ]]; then
+        # v1.235: a recorded AUTHORITY is not authority. A refused install (ABORT) never
+        # neutralized anything, and an interrupted/failed one holds no standing grant.
+        local _fa
+        _fa="$(_status_firewall_authority)"; _fa="${_fa#* }"
+        nftban_kv "Firewall authority" "NOT GRANTED (${_fa%% *}; recorded decision: $authority)"
+        if [[ -n "$conflicts" && "$authority" == "ABORT" ]]; then
+            nftban_kv "Other firewalls" "LEFT AS THEY WERE: $conflicts"
+        elif [[ -n "$conflicts" ]]; then
+            nftban_kv "Recorded conflicts" "$conflicts"
         fi
     else
         nftban_kv "Firewall authority" "🔒 EXCLUSIVE ($authority)"
@@ -1978,10 +2052,12 @@ _status_section_communication() {
         source "${NFTBAN_LIB_DIR}/core/nftban_mail.sh" 2>/dev/null || true
     fi
     declare -F nftban_mail_status_summary >/dev/null 2>&1 || return 0
-    local transport; transport="$(nftban_mail_detect_mta 2>/dev/null || echo none)"
+    # Passive detection: status never runs a transport probe (v1.235; `sendmail -bv` queues mail).
+    local transport; transport="$(nftban_mail_detect_mta --passive 2>/dev/null || echo none)"
     echo ""
     echo "COMMUNICATION"
-    printf "  %-21s %s\n" "Transport............" "$transport"
+    printf "  %-21s %s\n" "Transport............" "$transport (detected)"
+    printf "  %-21s %s\n" "Delivery............." "not verified here (run: nftban mail test)"
     # recipient / spool depth+age / last success / last failure (all A2a state, sanitized)
     nftban_mail_status_summary 2>/dev/null
     return 0
@@ -2273,6 +2349,7 @@ output_terminal() {
     # v1.230.0 P0-D4: immediately after the headline/SYSTEM block, so a failed or
     # incomplete transaction is never buried below a reassuring PROTECTED line.
     _status_section_install_transaction
+    _status_section_firewall_authority
     _status_section_firewall "$quiet_mode"
     _status_section_authority
     _status_section_services
@@ -2491,7 +2568,6 @@ output_json() {
     _status_json_install_transaction
 
     # Master control
-    local master_enabled="true"
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local" ]]; then
         # shellcheck source=/dev/null
         _source_local "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local"
@@ -2500,12 +2576,27 @@ output_json() {
         # operator override is applied LAST: BASE < MODULE_LOCAL < CENTRAL.
         declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
             && nftban_config_apply_final_operator_overlay
-        master_enabled="${NFTBAN_ENABLED:-true}"
     fi
+    # v1.235 audit K2-a: NFTBAN_ENABLED is NOT taken from the transaction above: it follows the ONE
+    # switch contract every acting reader uses (services.conf, then services.conf.local; the central
+    # nftban.conf.local is not a switch source anywhere). The JSON value is always true/false/null (an
+    # unquoted raw value broke --json, even for valid words such as "on"); INVALID is null + text.
+    local _sw="" _mjson="null" _mdesc="unknown"
+    declare -F nftban_master_switch_state >/dev/null 2>&1 \
+        || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" >/dev/null 2>&1 || true
     if grep -q 'nftban=disabled' /proc/cmdline 2>/dev/null; then
-        master_enabled="false"
+        _mjson="false"; _mdesc="disabled (kernel nftban=disabled)"
+    elif declare -F nftban_master_switch_state >/dev/null 2>&1; then
+        _sw="$(nftban_master_switch_state)"; _sw="${_sw%%$'\t'*}"
+        case "$_sw" in
+            on)  _mjson="true";  _mdesc="enabled" ;;
+            off) _mjson="false"; _mdesc="disabled" ;;
+            *)   _mjson="null";  _mdesc="$(nftban_master_switch_invalid_text)" ;;
+        esac
     fi
-    echo "  \"master_enabled\": $master_enabled,"
+    _mdesc="${_mdesc//\\/\\\\}"; _mdesc="${_mdesc//\"/\\\"}"
+    echo "  \"master_enabled\": $_mjson,"
+    echo "  \"master_switch\": \"$_mdesc\","
 
     # Services (detailed)
     echo "  \"services\": {"

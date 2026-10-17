@@ -762,7 +762,8 @@ nftban_health_check_communication() {
         recipient="$(nftban_mail_resolve_recipient "" 2>/dev/null || echo "")"
 
     local transport="none"
-    declare -F nftban_mail_detect_mta >/dev/null 2>&1 && transport="$(nftban_mail_detect_mta 2>/dev/null || echo none)"
+    # Passive: health never runs a transport probe (v1.235; `sendmail -bv` queues mail).
+    declare -F nftban_mail_detect_mta >/dev/null 2>&1 && transport="$(nftban_mail_detect_mta --passive 2>/dev/null || echo none)"
 
     # v1.218.1 policy: missing comms config is only WARN when an alert PRODUCER is enabled
     # (a path that generates outbound notifications). Otherwise it is INFO/NOT CONFIGURED —

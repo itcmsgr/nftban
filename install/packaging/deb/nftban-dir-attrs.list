@@ -39,6 +39,7 @@
 /etc/nftban/ports.d|0750|root|nftban
 /etc/nftban/rules.d|0750|root|nftban
 /etc/nftban/access.d|0750|root|nftban
+/etc/nftban/forward.d|0750|root|nftban
 /etc/nftban/conf.d/rbl|0750|root|nftban
 /etc/nftban/conf.d/geoban|0750|root|nftban
 /etc/nftban/conf.d/geoip|0750|root|nftban

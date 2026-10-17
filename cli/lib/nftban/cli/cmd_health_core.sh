@@ -81,6 +81,24 @@ nftban_health_cmd_check() {
         }
     fi
 
+    # v1.235 (owner 2026-10-10): auto-heal starts units and rebuilds the firewall; it never
+    # grants itself authority. Without it the check still runs, read-only. Fail closed.
+    if [[ $auto_heal -eq 1 || "${NFTBAN_HEALTH_AUTO_HEAL:-false}" == "true" ]]; then
+        local _hc_auth="DENIED check-unavailable lib/service_control.sh"
+        if ! declare -F nftban_firewall_authority >/dev/null 2>&1; then
+            # shellcheck source=/dev/null
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" 2>/dev/null || true
+        fi
+        if declare -F nftban_firewall_authority >/dev/null 2>&1; then
+            _hc_auth="$(nftban_firewall_authority)" || true
+        fi
+        if [[ "$_hc_auth" != GRANTED* ]]; then
+            auto_heal=0
+            NFTBAN_HEALTH_AUTO_HEAL=false   # the services check also honours this switch
+            echo "Auto-heal: DISABLED for this run — NFTBan has no firewall authority on this host (${_hc_auth#DENIED })" >&2
+        fi
+    fi
+
     if [[ $quiet -eq 0 ]]; then
         # Show unified banner with health indicator
         if type -t nftban_banner >/dev/null 2>&1; then
@@ -341,6 +359,26 @@ nftban_health_cmd_fix() {
         echo "Running as: $(whoami) (can fix owned files, will report what requires elevated privileges)"
     fi
     echo ""
+
+    # v1.235 (owner 2026-10-10): the firewall-layer fixes (remove conflicting firewalls, build
+    # nftables, start the daemon, sync the whitelist into the kernel) need firewall authority;
+    # a repair never grants it to itself. File-level fixes (permissions, directories, config,
+    # polkit) and --dry-run stay available.
+    case "$what" in
+        services|nftables|daemon|memory|whitelist|all)
+            if [[ $dry_run -eq 0 ]]; then
+                if ! declare -F nftban_refuse_without_authority >/dev/null 2>&1; then
+                    # shellcheck source=/dev/null
+                    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" 2>/dev/null || true
+                fi
+                if ! declare -F nftban_refuse_without_authority >/dev/null 2>&1; then
+                    echo "REFUSED: health fix $what — the firewall-authority check could not be loaded (lib/service_control.sh)" >&2
+                    return 1
+                fi
+                nftban_refuse_without_authority "health fix $what" || return 1
+            fi
+            ;;
+    esac
 
     # Confirmation prompt (unless --yes or --dry-run)
     if [[ "$what" == "all" && $auto_yes -eq 0 && $dry_run -eq 0 && -t 0 ]]; then
