@@ -241,160 +241,175 @@ func (m *NFTManager) AddIPWithTimeout(set *nftables.Set, ipStr string, timeout t
 	return nil
 }
 
-// PermanentAddResult reports the EFFECT of AddPermanentIPsBatch per element, not only that it
-// ran (v1.236 safety lane: one operation result = execution state + effect; counts follow the
-// effect).
-type PermanentAddResult struct {
-	Added     int // was absent, now a permanent element
-	Replaced  int // was present WITH a timeout; the timeout is dropped (audit H11)
-	Unchanged int // was already a permanent element
-	Invalid   int // not a single IP of the set's family (skipped, reported)
-	PerIP     int // applied through AddIPWithTimeout (interval set, or a chunk that hit a race)
+// upsertConn is the subset of *nftables.Conn the permanent upsert commit uses, so its
+// single-transaction semantics are unit-testable with a recording fake (no kernel, no root).
+type upsertConn interface {
+	SetDeleteElements(s *nftables.Set, vals []nftables.SetElement) error
+	SetAddElements(s *nftables.Set, vals []nftables.SetElement) error
+	Flush() error
 }
 
-// permanentAddChunk bounds one netlink transaction (each element is a few dozen bytes; a
-// replace is a delete + add pair).
-const permanentAddChunk = 512
+// upsertMaxCommits bounds UpsertPermanentElements: the first commit, plus one corrective commit
+// when the verification read shows another writer changed some of the elements meanwhile.
+const upsertMaxCommits = 2
 
-// AddPermanentIPsBatch makes every single IP in ips a PERMANENT element of set, with ONE read of
-// the set and a few chunked transactions, instead of AddIPWithTimeout's two or three
-// transactions per IP (v1.236 safety lane stage 1: with ~3200 blacklist.d bans the v1.235.1
-// daemon sync took 15-30 s against 0.5 s on v1.234.0, longer than the installer's 15 s wait).
-//
-// Semantics are those of AddIPWithTimeout(set, ip, 0), element by element:
-//   - absent                  -> added permanent;
-//   - present with a timeout  -> deleted and re-added permanent in the SAME transaction, so the
-//     IP is never absent (audit H11: a plain add keeps the old timeout);
-//   - present and permanent   -> left alone.
-//
-// Interval sets keep the per-IP path (netlink interval markers, see AddIPWithTimeout). If a
-// chunk fails because another writer changed the same elements between the read and the
-// commit (ENOENT on a replace, EEXIST on an add), that chunk is redone per IP with today's
-// semantics. Callers filter never-ban/non-bannable addresses BEFORE calling.
-func (m *NFTManager) AddPermanentIPsBatch(set *nftables.Set, ips []string) (PermanentAddResult, error) {
-	var res PermanentAddResult
-	perIP := func(list []string) error {
-		for _, ip := range list {
-			if err := m.AddIPWithTimeout(set, ip, 0); err != nil {
-				return err
-			}
-			res.PerIP++
-		}
-		return nil
-	}
-	if set.Interval {
-		return res, perIP(ips)
-	}
-
-	rconn, err := m.readConn()
-	if err != nil {
-		return res, err
-	}
-	current, err := rconn.GetSetElements(set)
-	if err != nil {
-		return res, fmt.Errorf("failed to read set %s: %w", set.Name, err)
-	}
-	timed := make(map[string]bool, len(current)) // element key -> carries a timeout
+// planPermanentUpsert compares the wanted canonical keys with the set's current elements:
+// absent -> add; present WITH a timeout -> replace (audit H11: a plain add keeps the timeout);
+// present and permanent -> unchanged. Pure, so the decision is unit-tested on its own.
+func planPermanentUpsert(current []nftables.SetElement, want [][]byte) (add, replace [][]byte, unchanged int) {
+	timed := make(map[string]bool, len(current))
 	for _, e := range current {
 		if e.IntervalEnd {
 			continue
 		}
 		timed[string(e.Key)] = e.Timeout > 0 || e.Expires > 0
 	}
-
-	type item struct {
-		str string
-		key []byte
-	}
-	var toAdd, toReplace []item
-	seen := make(map[string]struct{}, len(ips))
-	for _, s := range ips {
-		ip := net.ParseIP(strings.TrimSpace(s))
-		var key []byte
-		switch {
-		case ip == nil:
-		case set.KeyType == nftables.TypeIPAddr:
-			key = ip.To4()
-		case ip.To4() == nil:
-			key = ip.To16()
-		}
-		if key == nil {
-			res.Invalid++
-			continue
-		}
-		k := string(key)
-		if _, dup := seen[k]; dup {
-			continue
-		}
-		seen[k] = struct{}{}
-		isTimed, present := timed[k]
+	for _, k := range want {
+		isTimed, present := timed[string(k)]
 		switch {
 		case !present:
-			toAdd = append(toAdd, item{s, key})
+			add = append(add, k)
 		case isTimed:
-			toReplace = append(toReplace, item{s, key})
+			replace = append(replace, k)
 		default:
-			res.Unchanged++
+			unchanged++
 		}
 	}
+	return add, replace, unchanged
+}
 
-	strs := func(list []item) []string {
-		out := make([]string, len(list))
-		for i, it := range list {
-			out[i] = it.str
+// commitPermanentUpsert applies one plan in ONE transaction on conn: the timed elements are
+// deleted and every add/replace key is added permanent, all queued in replaceAddBatch batches
+// (queueInBatches, shared with ReplaceSetElements) and committed by a single Flush. The kernel
+// applies all of it or none of it: a replaced element is never absent, and no element is
+// committed unless the whole plan is.
+func commitPermanentUpsert(conn upsertConn, set *nftables.Set, add, replace [][]byte) error {
+	els := func(keys [][]byte) []nftables.SetElement {
+		out := make([]nftables.SetElement, len(keys))
+		for i, k := range keys {
+			out[i] = nftables.SetElement{Key: k}
 		}
 		return out
 	}
-	commit := func(list []item, replace bool) error {
-		for start := 0; start < len(list); start += permanentAddChunk {
-			end := start + permanentAddChunk
-			if end > len(list) {
-				end = len(list)
+	if start, end, err := queueInBatches(set, els(replace), conn.SetDeleteElements); err != nil {
+		return fmt.Errorf("upsert %s: queue delete batch [%d:%d]: %w", set.Name, start, end, err)
+	}
+	if start, end, err := queueInBatches(set, els(append(append([][]byte{}, replace...), add...)), conn.SetAddElements); err != nil {
+		return fmt.Errorf("upsert %s: queue add batch [%d:%d]: %w", set.Name, start, end, err)
+	}
+	if err := conn.Flush(); err != nil {
+		return fmt.Errorf("upsert %s: commit transaction: %w", set.Name, err)
+	}
+	return nil
+}
+
+// UpsertPermanentElements makes every single IP in values a PERMANENT element of the hash set,
+// keeping every OTHER element (it is additive: unlike ReplaceSetElements it never flushes the
+// set, so runtime timed and kernel-only bans survive). v1.236 safety lane stage 1: it replaces the
+// sync's per-IP AddIPWithTimeout(ip, 0) loop (2-3 transactions per IP; ~3200 bans took 15-30 s).
+//
+// Rules shared with ReplaceSetElements: hashSetIsV4 (interval sets refused, family from KeyType)
+// and canonicalHashKey; batching via queueInBatches. Per element, the effect equals
+// AddIPWithTimeout(ip, 0): absent -> added; timed -> replaced in the same transaction (H11);
+// permanent -> unchanged.
+//
+// Each plan commits atomically (commitPermanentUpsert). A verification read follows every commit.
+// If another writer changed wanted elements meanwhile (a timed ban added after our read, an
+// expiry, an unban), one corrective plan is committed; durable blacklist.d intent wins over a
+// concurrent timed ban. A commit the kernel rejects (ENOENT: a timed element expired before the
+// commit; EEXIST) applied NOTHING, so it is re-planned from a fresh read within the same bound.
+//
+// Accounting follows ACKNOWLEDGED commits only, each key counted once, so a retry never counts
+// twice. Converged reports whether the final read showed every wanted key present and permanent;
+// Converged=false with a nil error means "applied, not verified converged" (another writer kept
+// changing them). NOT solved here (stage 2 snapshot boundary): a concurrent unban of a key that
+// is still in blacklist.d is re-added by this sync, exactly as the per-IP loop did.
+func (m *NFTManager) UpsertPermanentElements(set *nftables.Set, values []string) (*SyncStats, error) {
+	return upsertPermanentElements(set, values,
+		func() (setReader, error) { return m.readConn() },
+		func() (upsertConn, error) { return m.txConn() })
+}
+
+// setReader is the subset of *nftables.Conn the upsert reads with (unit-testable).
+type setReader interface {
+	GetSetElements(s *nftables.Set) ([]nftables.SetElement, error)
+}
+
+func upsertPermanentElements(set *nftables.Set, values []string,
+	read func() (setReader, error), tx func() (upsertConn, error)) (*SyncStats, error) {
+	started := time.Now()
+	stats := &SyncStats{SetName: set.Name, TotalDesired: len(values)}
+	done := func(err error) (*SyncStats, error) {
+		stats.Error = err
+		stats.Duration = time.Since(started)
+		return stats, err
+	}
+	isV4, err := hashSetIsV4(set)
+	if err != nil {
+		return done(fmt.Errorf("upsert %s: %w", set.Name, err))
+	}
+	want := make([][]byte, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, v := range values {
+		key, kerr := canonicalHashKey(strings.TrimSpace(v), isV4)
+		if kerr != nil {
+			stats.IPsInvalid++
+			continue
+		}
+		if _, dup := seen[string(key)]; dup {
+			continue
+		}
+		seen[string(key)] = struct{}{}
+		want = append(want, key)
+	}
+
+	counted := make(map[string]struct{}, len(want)) // keys already counted as Added/Replaced
+	commits := 0
+	for first := true; ; first = false {
+		rconn, err := read()
+		if err != nil {
+			return done(err)
+		}
+		current, err := rconn.GetSetElements(set)
+		if err != nil {
+			return done(fmt.Errorf("upsert %s: read set: %w", set.Name, err))
+		}
+		add, replace, unchanged := planPermanentUpsert(current, want)
+		if first {
+			stats.TotalCurrent = len(current)
+			stats.IPsUnchanged = unchanged
+		}
+		if len(add)+len(replace) == 0 {
+			stats.Converged = true
+			return done(nil)
+		}
+		if commits == upsertMaxCommits {
+			return done(nil) // applied what the kernel acknowledged; not verified converged
+		}
+		conn, err := tx()
+		if err != nil {
+			return done(err)
+		}
+		commits++
+		if err := commitPermanentUpsert(conn, set, add, replace); err != nil {
+			if errors.Is(err, os.ErrNotExist) || errors.Is(err, os.ErrExist) {
+				continue // rejected as a whole: nothing applied, re-plan from a fresh read
 			}
-			chunk := list[start:end]
-			els := make([]nftables.SetElement, len(chunk))
-			for i, it := range chunk {
-				els[i] = nftables.SetElement{Key: it.key}
-			}
-			conn, err := m.txConn() // INV-NFT-TX-01: one private connection per transaction
-			if err != nil {
-				return err
-			}
-			if replace {
-				if err := conn.SetDeleteElements(set, els); err != nil {
-					return fmt.Errorf("failed to queue element replace: %w", err)
-				}
-			}
-			if err := conn.SetAddElements(set, els); err != nil {
-				return fmt.Errorf("failed to queue element add: %w", err)
-			}
-			err = conn.Flush()
-			switch {
-			case err == nil:
-				if replace {
-					res.Replaced += len(chunk)
-				} else {
-					res.Added += len(chunk)
-				}
-			case errors.Is(err, os.ErrNotExist) || errors.Is(err, os.ErrExist):
-				// Another writer changed one of these elements after the read: the whole
-				// transaction was rejected (nothing applied), redo this chunk per IP.
-				if perr := perIP(strs(chunk)); perr != nil {
-					return perr
-				}
-			default:
-				return fmt.Errorf("failed to apply permanent elements to %s: %w", set.Name, err)
+			return done(err)
+		}
+		for _, k := range add {
+			if _, c := counted[string(k)]; !c {
+				counted[string(k)] = struct{}{}
+				stats.IPsAdded++
 			}
 		}
-		return nil
+		for _, k := range replace {
+			if _, c := counted[string(k)]; !c {
+				counted[string(k)] = struct{}{}
+				stats.IPsReplaced++
+			}
+		}
 	}
-	if err := commit(toReplace, true); err != nil {
-		return res, err
-	}
-	if err := commit(toAdd, false); err != nil {
-		return res, err
-	}
-	return res, nil
 }
 
 // addIPWithTimeoutCLI adds a single IP to an interval set using nft CLI

@@ -113,43 +113,18 @@ func replaceSetElementsOnConn(conn nftConn, set *nftables.Set, elements []SetEle
 	if set == nil {
 		return fmt.Errorf("replace set: nil set")
 	}
-	if set.Interval {
-		return fmt.Errorf("replace set %s: interval set not supported by the atomic netlink replace primitive (owned by the FULL-sync path)", set.Name)
-	}
-
-	// Family is authoritative from the set key type — never from the name.
-	var isV4 bool
-	switch set.KeyType {
-	case nftables.TypeIPAddr:
-		isV4 = true
-	case nftables.TypeIP6Addr:
-		isV4 = false
-	default:
-		return fmt.Errorf("replace set %s: unsupported key type %v", set.Name, set.KeyType)
+	isV4, err := hashSetIsV4(set)
+	if err != nil {
+		return fmt.Errorf("replace set %s: %w", set.Name, err)
 	}
 
 	// Phase 1: validate + canonicalize EVERY element before touching the connection.
 	nlElems := make([]nftables.SetElement, 0, len(elements))
 	seen := make(map[string]struct{}, len(elements))
 	for _, e := range elements {
-		ip := net.ParseIP(e.Value)
-		if ip == nil {
-			return fmt.Errorf("replace set %s: invalid IP %q (CIDR/interval not accepted here)", set.Name, e.Value)
-		}
-		var key []byte
-		if isV4 {
-			key = ip.To4()
-			if key == nil {
-				return fmt.Errorf("replace set %s: %q is not IPv4 but the set is ipv4_addr", set.Name, e.Value)
-			}
-		} else {
-			if ip.To4() != nil {
-				return fmt.Errorf("replace set %s: %q is IPv4 but the set is ipv6_addr", set.Name, e.Value)
-			}
-			key = ip.To16()
-			if key == nil {
-				return fmt.Errorf("replace set %s: %q is not a valid IPv6 address", set.Name, e.Value)
-			}
+		key, kerr := canonicalHashKey(e.Value, isV4)
+		if kerr != nil {
+			return fmt.Errorf("replace set %s: %w", set.Name, kerr)
 		}
 		// Deterministic dedup by canonical key bytes (first occurrence wins).
 		if _, dup := seen[string(key)]; dup {
@@ -169,20 +144,73 @@ func replaceSetElementsOnConn(conn nftConn, set *nftables.Set, elements []SetEle
 	// SetAddElements cannot fail marshaling here; queuing the flush before the adds
 	// keeps flush-before-add ordering inside the one batch.
 	conn.FlushSet(set)
-	for start := 0; start < len(nlElems); start += replaceAddBatch {
-		end := start + replaceAddBatch
-		if end > len(nlElems) {
-			end = len(nlElems)
-		}
-		if err := conn.SetAddElements(set, nlElems[start:end]); err != nil {
-			// Do not commit: without a Flush() the queued flush is never applied,
-			// so the kernel set is unchanged (fail-CLOSED).
-			return fmt.Errorf("replace set %s: queue add batch [%d:%d]: %w", set.Name, start, end, err)
-		}
+	if start, end, err := queueInBatches(set, nlElems, conn.SetAddElements); err != nil {
+		// Do not commit: without a Flush() the queued flush is never applied,
+		// so the kernel set is unchanged (fail-CLOSED).
+		return fmt.Errorf("replace set %s: queue add batch [%d:%d]: %w", set.Name, start, end, err)
 	}
 	if err := conn.Flush(); err != nil {
 		// The whole batch (flush + adds) is rejected atomically → prior contents kept.
 		return fmt.Errorf("replace set %s: commit transaction: %w", set.Name, err)
 	}
 	return nil
+}
+
+// hashSetIsV4 is the single family rule for netlink hash-set element writes: interval sets are
+// refused (owned by the FULL-sync path), the family comes from set.KeyType, never the name.
+// Shared by ReplaceSetElements and UpsertPermanentElements.
+func hashSetIsV4(set *nftables.Set) (bool, error) {
+	if set.Interval {
+		return false, fmt.Errorf("interval set not supported by the atomic netlink replace primitive (owned by the FULL-sync path)")
+	}
+	switch set.KeyType {
+	case nftables.TypeIPAddr:
+		return true, nil
+	case nftables.TypeIP6Addr:
+		return false, nil
+	default:
+		return false, fmt.Errorf("unsupported key type %v", set.KeyType)
+	}
+}
+
+// canonicalHashKey validates one bare IP for a hash set of the given family and returns its
+// canonical key bytes (CIDR/interval values are refused). Shared by ReplaceSetElements and
+// UpsertPermanentElements so both apply the same rules.
+func canonicalHashKey(value string, isV4 bool) ([]byte, error) {
+	ip := net.ParseIP(value)
+	if ip == nil {
+		return nil, fmt.Errorf("invalid IP %q (CIDR/interval not accepted here)", value)
+	}
+	if isV4 {
+		key := ip.To4()
+		if key == nil {
+			return nil, fmt.Errorf("%q is not IPv4 but the set is ipv4_addr", value)
+		}
+		return key, nil
+	}
+	if ip.To4() != nil {
+		return nil, fmt.Errorf("%q is IPv4 but the set is ipv6_addr", value)
+	}
+	key := ip.To16()
+	if key == nil {
+		return nil, fmt.Errorf("%q is not a valid IPv6 address", value)
+	}
+	return key, nil
+}
+
+// queueInBatches queues els on ONE connection in batches of at most replaceAddBatch, WITHOUT
+// committing: every batch rides the caller's single Flush, so the transaction stays atomic and
+// complete (an oversized single message is applied only partially by the kernel). On a queue
+// error it returns the failing batch bounds; the caller must not commit.
+func queueInBatches(set *nftables.Set, els []nftables.SetElement, queue func(*nftables.Set, []nftables.SetElement) error) (int, int, error) {
+	for start := 0; start < len(els); start += replaceAddBatch {
+		end := start + replaceAddBatch
+		if end > len(els) {
+			end = len(els)
+		}
+		if err := queue(set, els[start:end]); err != nil {
+			return start, end, err
+		}
+	}
+	return 0, 0, nil
 }

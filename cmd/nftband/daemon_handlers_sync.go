@@ -222,9 +222,9 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 	// never be re-materialized into a drop set: absolute address-class reject, then the
 	// membership exemption (whitelist/system/live-SSH/host-owned).
 	//
-	// v1.236 safety lane stage 1: the surviving IPs are then applied in ONE batched call per
-	// family (AddPermanentIPsBatch: one read of the set, chunked transactions, the same
-	// per-element semantics as AddIPWithTimeout(ip, 0) incl. the H11 timed->permanent replace)
+	// v1.236 safety lane stage 1: the surviving IPs are then applied in ONE call per family
+	// (setsync.UpsertPermanentElements: additive, one read, one atomic transaction per plan, the
+	// same per-element semantics as AddIPWithTimeout(ip, 0) incl. the H11 timed->permanent replace)
 	// instead of 2-3 netlink transactions per IP, which made a ~3200-ban sync take 15-30 s.
 	bannable := func(family string, ips []string) []string {
 		out := make([]string, 0, len(ips))
@@ -245,15 +245,17 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 		if len(ips) == 0 {
 			return
 		}
-		res, err := nft.AddPermanentIPsBatch(set, ips)
-		log.Printf("[SYNC] blacklist.d %s -> manual set: %d added, %d timed->permanent, %d unchanged, %d per-IP, %d invalid",
-			family, res.Added, res.Replaced, res.Unchanged, res.PerIP, res.Invalid)
+		st, err := nft.UpsertPermanentElements(set, ips)
 		if err == nil {
+			log.Printf("[SYNC] blacklist.d %s -> manual set: %d added, %d timed->permanent, %d already permanent, %d invalid, converged=%t (%v)",
+				family, st.IPsAdded, st.IPsReplaced, st.IPsUnchanged, st.IPsInvalid, st.Converged, st.Duration)
 			return
 		}
-		// Batch failed: keep the previous behaviour (each IP tried, each failure logged) so one
-		// bad element never drops the rest of the durable blacklist.
-		log.Printf("[SYNC] Warning: blacklist.d %s batched apply failed (%v); applying per IP", family, err)
+		// Upsert failed (nothing beyond the acknowledged counts was applied): keep the previous
+		// behaviour, each IP tried with AddIPWithTimeout (its own H11 delete+add transaction), each
+		// failure logged, so one bad element never drops the rest. Effect of this path: not counted.
+		log.Printf("[SYNC] Warning: blacklist.d %s upsert failed after %d added / %d timed->permanent (%v); applying per IP, effect not counted",
+			family, st.IPsAdded, st.IPsReplaced, err)
 		for _, ip := range ips {
 			if err := nft.AddIPWithTimeout(set, ip, 0); err != nil {
 				log.Printf("[SYNC] Warning: blacklist.d %s %s -> manual hash set: %v", family, ip, err)
