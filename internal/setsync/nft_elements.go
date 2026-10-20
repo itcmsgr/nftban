@@ -241,6 +241,162 @@ func (m *NFTManager) AddIPWithTimeout(set *nftables.Set, ipStr string, timeout t
 	return nil
 }
 
+// PermanentAddResult reports the EFFECT of AddPermanentIPsBatch per element, not only that it
+// ran (v1.236 safety lane: one operation result = execution state + effect; counts follow the
+// effect).
+type PermanentAddResult struct {
+	Added     int // was absent, now a permanent element
+	Replaced  int // was present WITH a timeout; the timeout is dropped (audit H11)
+	Unchanged int // was already a permanent element
+	Invalid   int // not a single IP of the set's family (skipped, reported)
+	PerIP     int // applied through AddIPWithTimeout (interval set, or a chunk that hit a race)
+}
+
+// permanentAddChunk bounds one netlink transaction (each element is a few dozen bytes; a
+// replace is a delete + add pair).
+const permanentAddChunk = 512
+
+// AddPermanentIPsBatch makes every single IP in ips a PERMANENT element of set, with ONE read of
+// the set and a few chunked transactions, instead of AddIPWithTimeout's two or three
+// transactions per IP (v1.236 safety lane stage 1: with ~3200 blacklist.d bans the v1.235.1
+// daemon sync took 15-30 s against 0.5 s on v1.234.0, longer than the installer's 15 s wait).
+//
+// Semantics are those of AddIPWithTimeout(set, ip, 0), element by element:
+//   - absent                  -> added permanent;
+//   - present with a timeout  -> deleted and re-added permanent in the SAME transaction, so the
+//     IP is never absent (audit H11: a plain add keeps the old timeout);
+//   - present and permanent   -> left alone.
+//
+// Interval sets keep the per-IP path (netlink interval markers, see AddIPWithTimeout). If a
+// chunk fails because another writer changed the same elements between the read and the
+// commit (ENOENT on a replace, EEXIST on an add), that chunk is redone per IP with today's
+// semantics. Callers filter never-ban/non-bannable addresses BEFORE calling.
+func (m *NFTManager) AddPermanentIPsBatch(set *nftables.Set, ips []string) (PermanentAddResult, error) {
+	var res PermanentAddResult
+	perIP := func(list []string) error {
+		for _, ip := range list {
+			if err := m.AddIPWithTimeout(set, ip, 0); err != nil {
+				return err
+			}
+			res.PerIP++
+		}
+		return nil
+	}
+	if set.Interval {
+		return res, perIP(ips)
+	}
+
+	rconn, err := m.readConn()
+	if err != nil {
+		return res, err
+	}
+	current, err := rconn.GetSetElements(set)
+	if err != nil {
+		return res, fmt.Errorf("failed to read set %s: %w", set.Name, err)
+	}
+	timed := make(map[string]bool, len(current)) // element key -> carries a timeout
+	for _, e := range current {
+		if e.IntervalEnd {
+			continue
+		}
+		timed[string(e.Key)] = e.Timeout > 0 || e.Expires > 0
+	}
+
+	type item struct {
+		str string
+		key []byte
+	}
+	var toAdd, toReplace []item
+	seen := make(map[string]struct{}, len(ips))
+	for _, s := range ips {
+		ip := net.ParseIP(strings.TrimSpace(s))
+		var key []byte
+		switch {
+		case ip == nil:
+		case set.KeyType == nftables.TypeIPAddr:
+			key = ip.To4()
+		case ip.To4() == nil:
+			key = ip.To16()
+		}
+		if key == nil {
+			res.Invalid++
+			continue
+		}
+		k := string(key)
+		if _, dup := seen[k]; dup {
+			continue
+		}
+		seen[k] = struct{}{}
+		isTimed, present := timed[k]
+		switch {
+		case !present:
+			toAdd = append(toAdd, item{s, key})
+		case isTimed:
+			toReplace = append(toReplace, item{s, key})
+		default:
+			res.Unchanged++
+		}
+	}
+
+	strs := func(list []item) []string {
+		out := make([]string, len(list))
+		for i, it := range list {
+			out[i] = it.str
+		}
+		return out
+	}
+	commit := func(list []item, replace bool) error {
+		for start := 0; start < len(list); start += permanentAddChunk {
+			end := start + permanentAddChunk
+			if end > len(list) {
+				end = len(list)
+			}
+			chunk := list[start:end]
+			els := make([]nftables.SetElement, len(chunk))
+			for i, it := range chunk {
+				els[i] = nftables.SetElement{Key: it.key}
+			}
+			conn, err := m.txConn() // INV-NFT-TX-01: one private connection per transaction
+			if err != nil {
+				return err
+			}
+			if replace {
+				if err := conn.SetDeleteElements(set, els); err != nil {
+					return fmt.Errorf("failed to queue element replace: %w", err)
+				}
+			}
+			if err := conn.SetAddElements(set, els); err != nil {
+				return fmt.Errorf("failed to queue element add: %w", err)
+			}
+			err = conn.Flush()
+			switch {
+			case err == nil:
+				if replace {
+					res.Replaced += len(chunk)
+				} else {
+					res.Added += len(chunk)
+				}
+			case errors.Is(err, os.ErrNotExist) || errors.Is(err, os.ErrExist):
+				// Another writer changed one of these elements after the read: the whole
+				// transaction was rejected (nothing applied), redo this chunk per IP.
+				if perr := perIP(strs(chunk)); perr != nil {
+					return perr
+				}
+			default:
+				return fmt.Errorf("failed to apply permanent elements to %s: %w", set.Name, err)
+			}
+		}
+		return nil
+	}
+	if err := commit(toReplace, true); err != nil {
+		return res, err
+	}
+	if err := commit(toAdd, false); err != nil {
+		return res, err
+	}
+	return res, nil
+}
+
 // addIPWithTimeoutCLI adds a single IP to an interval set using nft CLI
 // This avoids the corrupted interval range bug in netlink library
 func (m *NFTManager) addIPWithTimeoutCLI(set *nftables.Set, ipStr string, timeout time.Duration) error {

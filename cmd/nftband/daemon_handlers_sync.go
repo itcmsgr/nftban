@@ -221,32 +221,47 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 	// non-public address (e.g. from an older release, or a hand-edited blacklist.d) can
 	// never be re-materialized into a drop set: absolute address-class reject, then the
 	// membership exemption (whitelist/system/live-SSH/host-owned).
-	for _, ip := range blacklistIPv4Single {
-		if reject, reason := netutil.EnforcementClassReject(ip); reject {
-			log.Printf("[SYNC] SKIP blacklist.d IPv4 %s -> manual set: non-bannable class (%s)", ip, reason)
-			continue
+	//
+	// v1.236 safety lane stage 1: the surviving IPs are then applied in ONE batched call per
+	// family (AddPermanentIPsBatch: one read of the set, chunked transactions, the same
+	// per-element semantics as AddIPWithTimeout(ip, 0) incl. the H11 timed->permanent replace)
+	// instead of 2-3 netlink transactions per IP, which made a ~3200-ban sync take 15-30 s.
+	bannable := func(family string, ips []string) []string {
+		out := make([]string, 0, len(ips))
+		for _, ip := range ips {
+			if reject, reason := netutil.EnforcementClassReject(ip); reject {
+				log.Printf("[SYNC] SKIP blacklist.d %s %s -> manual set: non-bannable class (%s)", family, ip, reason)
+				continue
+			}
+			if ok, reason := d.backend.IsExempt(ip); ok {
+				log.Printf("[SYNC] SKIP blacklist.d %s %s -> manual set: never-ban exempt (%s)", family, ip, reason)
+				continue
+			}
+			out = append(out, ip)
 		}
-		if ok, reason := d.backend.IsExempt(ip); ok {
-			log.Printf("[SYNC] SKIP blacklist.d IPv4 %s -> manual set: never-ban exempt (%s)", ip, reason)
-			continue
+		return out
+	}
+	applyPermanent := func(family string, set *nftables.Set, ips []string) {
+		if len(ips) == 0 {
+			return
 		}
-		if err := nft.AddIPWithTimeout(manualV4Set, ip, 0); err != nil {
-			log.Printf("[SYNC] Warning: blacklist.d IPv4 %s -> manual hash set: %v", ip, err)
+		res, err := nft.AddPermanentIPsBatch(set, ips)
+		log.Printf("[SYNC] blacklist.d %s -> manual set: %d added, %d timed->permanent, %d unchanged, %d per-IP, %d invalid",
+			family, res.Added, res.Replaced, res.Unchanged, res.PerIP, res.Invalid)
+		if err == nil {
+			return
+		}
+		// Batch failed: keep the previous behaviour (each IP tried, each failure logged) so one
+		// bad element never drops the rest of the durable blacklist.
+		log.Printf("[SYNC] Warning: blacklist.d %s batched apply failed (%v); applying per IP", family, err)
+		for _, ip := range ips {
+			if err := nft.AddIPWithTimeout(set, ip, 0); err != nil {
+				log.Printf("[SYNC] Warning: blacklist.d %s %s -> manual hash set: %v", family, ip, err)
+			}
 		}
 	}
-	for _, ip := range blacklistIPv6Single {
-		if reject, reason := netutil.EnforcementClassReject(ip); reject {
-			log.Printf("[SYNC] SKIP blacklist.d IPv6 %s -> manual set: non-bannable class (%s)", ip, reason)
-			continue
-		}
-		if ok, reason := d.backend.IsExempt(ip); ok {
-			log.Printf("[SYNC] SKIP blacklist.d IPv6 %s -> manual set: never-ban exempt (%s)", ip, reason)
-			continue
-		}
-		if err := nft.AddIPWithTimeout(manualV6Set, ip, 0); err != nil {
-			log.Printf("[SYNC] Warning: blacklist.d IPv6 %s -> manual hash set: %v", ip, err)
-		}
-	}
+	applyPermanent("IPv4", manualV4Set, bannable("IPv4", blacklistIPv4Single))
+	applyPermanent("IPv6", manualV6Set, bannable("IPv6", blacklistIPv6Single))
 	// INC3 (BLACKLIST_TOPOLOGY_CLEANUP, Option A): blacklist.d CIDRs are folded into the
 	// SAME canonical replace as feeds + geoban (below) so the flush-first replace OWNS
 	// them and they survive feed reload. The interval blacklist sets are therefore NOT
