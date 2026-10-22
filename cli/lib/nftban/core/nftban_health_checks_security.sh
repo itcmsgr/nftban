@@ -733,8 +733,19 @@ nftban_health_check_systemd_hardening() {
 # =============================================================================
 
 nftban_health_check_ssh_port() {
-    # Check and auto-update SSH port whitelist
-    # Returns: 0=OK, 1=Warning (auto-fixed), 2=Error (couldn't fix)
+    # Check and (auto_heal=1 only) auto-update SSH port whitelist
+    # Args: $1 = auto_heal (1 = may fix, anything else = report only)
+    # Returns: 0=OK, 1=Warning (mismatch reported or auto-fixed), 2=Error (couldn't fix)
+    #
+    # v1.236 BUG-STATUS-HEALTH-SSH-PORT-AUTOFIX-WRITES-WITHOUT-AUTHORITY (D3): this ran
+    # from every read (`nftban status --json`, health brief/summary/nagios/--quiet, all
+    # with auto_heal=0) and rewrote ports.d/00-ssh.conf, ran `nft add/delete element`
+    # on tcp_ports_in/ssh_ports and rewrote ssh_port_active.state, gated only by table
+    # readiness. A read now reports the mismatch and changes nothing. The fix runs with
+    # auto_heal=1 (`nftban health --fix`, the auto-heal health timer) and with firewall
+    # authority; the maintenance cycle (every 15 min, step 1) keeps its own SSH-port
+    # lockout prevention unchanged.
+    local auto_heal="${1:-0}"
 
     local status=$HEALTH_OK
     local ssh_issues=()
@@ -772,7 +783,26 @@ nftban_health_check_ssh_port() {
     fi
 
     # Compare and auto-update if needed
-    if [[ "$current_ssh_port" != "$config_ssh_port" ]]; then
+    # Authority for the write branch (fail closed when the decision cannot be loaded).
+    local _ssh_fix_authority="DENIED not-evaluated"
+    if [[ "$auto_heal" == "1" && "$current_ssh_port" != "$config_ssh_port" ]]; then
+        if declare -F nftban_firewall_authority >/dev/null 2>&1; then
+            _ssh_fix_authority="$(nftban_firewall_authority 2>/dev/null || true)"
+        else
+            _ssh_fix_authority="$( (source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/service_control.sh" >/dev/null 2>&1 && nftban_firewall_authority) 2>/dev/null || true)"
+        fi
+        [[ -n "$_ssh_fix_authority" ]] || _ssh_fix_authority="DENIED check-unavailable"
+    fi
+
+    if [[ "$current_ssh_port" != "$config_ssh_port" && "$auto_heal" != "1" ]]; then
+        ssh_issues+=("SSH port mismatch: sshd_config=$current_ssh_port, nftban=$config_ssh_port")
+        ssh_issues+=("NOT CHANGED (read-only check). Applied by the maintenance cycle (every 15 min), or now with: nftban health --fix (or: nftban health check --auto-heal)")
+        status=$HEALTH_WARNING
+    elif [[ "$current_ssh_port" != "$config_ssh_port" && "$_ssh_fix_authority" != GRANTED* ]]; then
+        ssh_issues+=("SSH port mismatch: sshd_config=$current_ssh_port, nftban=$config_ssh_port")
+        ssh_issues+=("NOT CHANGED: no firewall authority (${_ssh_fix_authority})")
+        status=$HEALTH_WARNING
+    elif [[ "$current_ssh_port" != "$config_ssh_port" ]]; then
         ssh_issues+=("SSH port mismatch: sshd_config=$current_ssh_port, nftban=$config_ssh_port")
 
         # Auto-fix: Update the SSH port config (format: PORT/PROTOCOL)
@@ -849,8 +879,10 @@ EOF
         fi
     fi
 
-    # Update the active SSH port state file (tracks what port is currently in use)
-    if mkdir -p "${NFTBAN_DATA_DIR}/state" 2>/dev/null; then
+    # Update the active SSH port state file (tracks what port is currently in use).
+    # v1.236 D3: only on the fix path; a read must not move the state maintenance
+    # uses to find the old port to clean up.
+    if [[ "$auto_heal" == "1" ]] && mkdir -p "${NFTBAN_DATA_DIR}/state" 2>/dev/null; then
         echo "$current_ssh_port" > "${ssh_port_active}.tmp" 2>/dev/null && mv -f "${ssh_port_active}.tmp" "$ssh_port_active" 2>/dev/null || true
     fi
 
