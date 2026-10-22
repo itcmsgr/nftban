@@ -379,7 +379,12 @@ func (d *Daemon) Run() error {
 		}
 
 		log.Println("[AUTO-SYNC] Running scheduled full sync (feeds + geoban)...")
-		resp := d.handleSyncRequest(map[string]any{"quick": false})
+		// v1.236: through the sync coordinator, so a full sync requested by a client in
+		// the meantime is joined instead of run twice. No deadline: this goroutine waits
+		// for its run (or for shutdown).
+		c := d.syncCoordinator()
+		s, gen := c.submit(true)
+		resp := c.await(s, true, gen, time.Time{})
 		if resp.Success {
 			if data, ok := resp.Data.(map[string]any); ok {
 				feedsV4 := data["feeds_ipv4_loaded"]

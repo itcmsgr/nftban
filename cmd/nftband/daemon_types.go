@@ -129,7 +129,9 @@ var profileEnabled = false
 var banMutex sync.Mutex
 
 // syncMutex protects concurrent sync operations to prevent
-// race conditions when multiple sync requests are issued simultaneously
+// race conditions when multiple sync requests are issued simultaneously.
+// v1.236: runSync holds it for the whole run; requests reach runSync only through
+// the sync coordinator (daemon_sync_coord.go), which runs one sync at a time.
 var syncMutex sync.Mutex
 
 // getDaemonPaths returns paths from central config
@@ -281,6 +283,10 @@ type Daemon struct {
 
 	// v1.41.0: Ban correlation ID tracking (IP → banID for BAN→UNBAN linking)
 	banIDMap sync.Map // key: string (IP), value: string (banID)
+
+	// v1.236: the one runner of full/quick syncs (daemon_sync_coord.go), created on first use.
+	syncCoordOnce sync.Once
+	syncCoord     *syncCoordinator
 }
 
 // SocketRequest is the format for CLI→daemon requests

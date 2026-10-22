@@ -31,6 +31,7 @@ package ipc
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -85,6 +86,17 @@ type Response struct {
 	Error   string `json:"error,omitempty"`
 }
 
+// ErrNotDelivered (v1.236) matches, via errors.Is, a Call error raised before the request
+// reached the daemon (connect or send failed): nothing ran, so a retry cannot duplicate
+// work. Any other Call error after sending means the outcome is unknown.
+var ErrNotDelivered = errors.New("request not delivered to the daemon")
+
+type notDelivered struct{ err error }
+
+func (e notDelivered) Error() string        { return e.err.Error() }
+func (e notDelivered) Unwrap() error        { return e.err }
+func (e notDelivered) Is(target error) bool { return target == ErrNotDelivered }
+
 // CallGate, when set, is asked before every request (v1.235, owner 2026-10-10: nftban-core sets
 // it to the shared firewall-authority decision). A refusal returns its error WITHOUT connecting:
 // a connection would socket-activate a daemon that is not allowed to run. Nil = no gate.
@@ -99,7 +111,7 @@ func (c *Client) Call(method string, params map[string]any) (*Response, error) {
 	}
 	conn, err := net.DialTimeout("unix", c.socketPath, c.timeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to daemon at %s: %w", c.socketPath, err)
+		return nil, notDelivered{fmt.Errorf("failed to connect to daemon at %s: %w", c.socketPath, err)}
 	}
 	defer conn.Close()
 
@@ -112,7 +124,7 @@ func (c *Client) Call(method string, params map[string]any) (*Response, error) {
 		Params: params,
 	}
 	if err := json.NewEncoder(conn).Encode(req); err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
+		return nil, notDelivered{fmt.Errorf("failed to send request: %w", err)}
 	}
 
 	// Read response
@@ -248,6 +260,23 @@ func (c *Client) Sync(quick bool) (*Response, error) {
 		return c.Call("sync", map[string]any{"quick": true})
 	}
 	return c.Call("sync", nil)
+}
+
+// SyncWithin submits a sync (join == "") or joins an earlier generation, and lets the
+// daemon wait up to `wait` for the covering run (v1.236). The connection deadline is
+// raised to cover the wait. Read the answer with ResultOf: ExecRunning carries the
+// generation to join next.
+func (c *Client) SyncWithin(quick bool, join string, wait time.Duration) (*Response, error) {
+	params := map[string]any{ParamWaitSeconds: wait.Seconds()}
+	if join != "" {
+		params[ParamJoin] = join
+	} else if quick {
+		params[ParamQuick] = true
+	}
+	if need := wait + 10*time.Second; c.timeout < need {
+		c.timeout = need
+	}
+	return c.Call("sync", params)
 }
 
 // LoadPorts calls the load_ports method.

@@ -39,22 +39,31 @@ import (
 	"github.com/itcmsgr/nftban/internal/runtime"
 	"github.com/itcmsgr/nftban/internal/safety"
 	nftsync "github.com/itcmsgr/nftban/internal/setsync"
+	"github.com/itcmsgr/nftban/pkg/ipc"
 )
 
-// handleSyncRequest performs a full differential sync of whitelists/blacklists
-// If params["quick"]=true, skips feeds and geoban loading (for fast postinst sync)
-func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
+// runSync performs a full differential sync of whitelists/blacklists.
+// quickMode skips feeds and geoban loading (for fast postinst sync).
+//
+// v1.236: called only by the sync coordinator (daemon_sync_coord.go), which owns
+// request joining and the two-part result. runSync reports the EFFECT in
+// respData["effect"]: "applied", "partial" (with "partial_reasons") or, when the
+// firewall authority refuses every write, "refused" with Success=false.
+func (d *Daemon) runSync(quickMode bool) SocketResponse {
 	// Prevent concurrent sync operations from racing
 	syncMutex.Lock()
 	defer syncMutex.Unlock()
 
-	// Check for quick mode (skips feeds/geoban for fast postinst sync)
-	quickMode := false
-	if params != nil {
-		if q, ok := params["quick"].(bool); ok && q {
-			quickMode = true
+	// No authority, no write: refused before any work (completed, no effect), instead
+	// of failing halfway at the first kernel write.
+	if nftsync.WriteGate != nil {
+		if err := nftsync.WriteGate(); err != nil {
+			return SocketResponse{Success: false, Error: err.Error(), Data: map[string]any{ipc.KeyEffect: string(ipc.EffectRefused)}}
 		}
 	}
+
+	// Components that did not commit what was requested (effect "partial").
+	var partialReasons []string
 
 	_, configDir, _, _ := getDaemonPaths()
 
@@ -241,16 +250,23 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 		}
 		return out
 	}
+	var manualAdded, manualReplaced int
 	applyPermanent := func(family string, set *nftables.Set, ips []string) {
 		if len(ips) == 0 {
 			return
 		}
 		st, err := nft.UpsertPermanentElements(set, ips)
+		manualAdded += st.IPsAdded
+		manualReplaced += st.IPsReplaced
 		if err == nil {
 			log.Printf("[SYNC] blacklist.d %s -> manual set: %d added, %d timed->permanent, %d already permanent, %d invalid, converged=%t (%v)",
 				family, st.IPsAdded, st.IPsReplaced, st.IPsUnchanged, st.IPsInvalid, st.Converged, st.Duration)
+			if !st.Converged {
+				partialReasons = append(partialReasons, "blacklist_manual_"+strings.ToLower(family)+"_not_verified_converged")
+			}
 			return
 		}
+		partialReasons = append(partialReasons, "blacklist_manual_"+strings.ToLower(family)+"_per_ip_fallback_uncounted")
 		// Upsert failed (nothing beyond the acknowledged counts was applied): keep the previous
 		// behaviour, each IP tried with AddIPWithTimeout (its own H11 delete+add transaction), each
 		// failure logged, so one bad element never drops the rest. Effect of this path: not counted.
@@ -511,9 +527,12 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 				exemptSubtractedV4, exemptSubtractedV6)
 		}
 
+		// v1.236: a failed replace was only logged while the sync still answered success;
+		// it is now part of the effect ("partial"), so callers can see it.
 		if len(unifiedBlacklistV4) > 0 {
 			if _, err := nft.AddCIDRElementsWithStats(blacklistIPv4Set, unifiedBlacklistV4); err != nil {
 				log.Printf("[SYNC] Warning: unified blacklist_ipv4 replace failed: %v", err)
+				partialReasons = append(partialReasons, "blacklist_ipv4_replace_failed")
 			} else {
 				log.Printf("[SYNC] Unified blacklist_ipv4 replace: %d input CIDRs (feeds+geoban+blacklist.d)", len(unifiedBlacklistV4))
 			}
@@ -521,6 +540,7 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 		if len(unifiedBlacklistV6) > 0 {
 			if _, err := nft.AddCIDRElementsWithStats(blacklistIPv6Set, unifiedBlacklistV6); err != nil {
 				log.Printf("[SYNC] Warning: unified blacklist_ipv6 replace failed: %v", err)
+				partialReasons = append(partialReasons, "blacklist_ipv6_replace_failed")
 			} else {
 				log.Printf("[SYNC] Unified blacklist_ipv6 replace: %d input CIDRs (feeds+geoban+blacklist.d)", len(unifiedBlacklistV6))
 			}
@@ -592,6 +612,21 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 		respData["exempt_split_limit_prefixes"] = exemptOmitted
 		respData["degraded"] = true
 		respData["degraded_reason"] = "exemption_split_limit"
+		partialReasons = append(partialReasons, "exemption_split_limit")
+	}
+	if feedsSkipped {
+		partialReasons = append(partialReasons, "feeds_skipped_memory")
+	}
+	if geobanSkipped {
+		partialReasons = append(partialReasons, "geoban_skipped_memory")
+	}
+	// v1.236: blacklist.d single IPs (acknowledged commits only; see UpsertPermanentElements).
+	respData["blacklist_manual_added"] = manualAdded
+	respData["blacklist_manual_replaced"] = manualReplaced
+	respData[ipc.KeyEffect] = string(ipc.EffectApplied)
+	if len(partialReasons) > 0 {
+		respData[ipc.KeyEffect] = string(ipc.EffectPartial)
+		respData["partial_reasons"] = partialReasons
 	}
 
 	// Add protection status to response for CLI visibility

@@ -469,11 +469,31 @@ nft_ipc_sync() {
     fi
 
     # FULL sync (quick=false). NEVER quick — quick skips feeds/geoban/whitelist.
-    local params='{"quick":false}'
-    local attempt=0 delay="${NFTBAN_SYNC_RETRY_DELAY}" response
+    #
+    # v1.236: the daemon answers within wait_seconds (kept inside the socat timeout).
+    # If the sync is still running it says so and names the generation; the next
+    # attempt JOINS that generation instead of submitting another full sync (each
+    # resubmission used to queue one more full sync behind the running one). A daemon
+    # that predates v1.236 ignores both keys and behaves as before.
+    local _wait=$(( ${NFTBAN_IPC_TIMEOUT:-30} - 3 ))
+    [[ "$_wait" -ge 1 ]] || _wait=1
+    local params="{\"quick\":false,\"wait_seconds\":${_wait}}"
+    local attempt=0 delay="${NFTBAN_SYNC_RETRY_DELAY}" response _gen=""
     while [[ "$attempt" -lt "${NFTBAN_SYNC_RETRIES}" ]]; do
         response="$(nft_ipc_request "sync" "$params")"
+        if [[ "$response" == *'"execution":"running"'* ]]; then
+            _gen="$(printf '%s' "$response" | jq -r '.data.generation // empty' 2>/dev/null)"
+            if [[ "$_gen" =~ ^[0-9a-z]+-[0-9]+-(full|quick)$ ]]; then
+                params="{\"join\":\"${_gen}\",\"wait_seconds\":${_wait}}"
+            fi
+        elif [[ "$response" == *'"execution":"unknown"'* ]]; then
+            # The joined generation is gone (daemon restarted): submit again.
+            params="{\"quick\":false,\"wait_seconds\":${_wait}}"
+        fi
         if nft_ipc_success "$response"; then
+            if [[ "$response" == *'"effect":"partial"'* ]]; then
+                echo "[NFTBan] WARNING: full sync PARTIAL: some requested state was NOT committed ($(printf '%s' "$response" | jq -r '(.data.partial_reasons // []) | join(",")' 2>/dev/null))"
+            fi
             date +%s > "$marker" 2>/dev/null || true
             rm -f "${marker}.pending" 2>/dev/null || true
             # v1.235 (owner 2026-10-08): a sync that committed everything EXCEPT inputs

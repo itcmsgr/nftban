@@ -240,7 +240,7 @@ func TestCleanStaleFiles_NothingStale(t *testing.T) {
 
 func TestSyncWhitelist(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	mock.RunResults["/usr/sbin/nftban:sync"] = executor.Result{ExitCode: 0}
+	mock.RunResults["/usr/sbin/nftban:sync:--wait:300"] = executor.Result{ExitCode: 0}
 
 	if err := SyncWhitelist(mock, newTestLogger()); err != nil {
 		t.Fatalf("SyncWhitelist: converged sync must return nil, got %v", err)
@@ -260,7 +260,7 @@ func TestSyncWhitelist(t *testing.T) {
 // WHITELIST_CONVERGENCE write + parse case).
 func TestSyncWhitelist_FailureIsReturnedNotSwallowed(t *testing.T) {
 	mock := executor.NewMockExecutor()
-	mock.RunResults["/usr/sbin/nftban:sync"] = executor.Result{ExitCode: 1, Stderr: "daemon not running"}
+	mock.RunResults["/usr/sbin/nftban:sync:--wait:300"] = executor.Result{ExitCode: 1, Stderr: "daemon not running"}
 
 	err := SyncWhitelist(mock, newTestLogger())
 	if err == nil {
