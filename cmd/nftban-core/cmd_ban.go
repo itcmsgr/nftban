@@ -429,16 +429,19 @@ func checkPersistentOffender(configDir, ip, filterName string) (bool, error) {
 	// Get filter-specific configuration (or global defaults)
 	filterCfg := cfg.GetFilterConfig(filterName)
 
-	// Log this temp ban for escalation tracking
-	if err := escalation.LogTempBan(cfg.BanLog, ip, filterName, fmt.Sprintf("temp ban from %s", filterName)); err != nil {
-		return false, fmt.Errorf("failed to log ban: %w", err)
-	}
-
-	// Count recent bans for this IP within the configured period
+	// Count recent bans for this IP within the configured period, plus THIS ban.
+	//
+	// v1.236 BUG-ESCALATION-TEMP-BAN-WRITES-TWO-BANNED-ROWS: this used to write an
+	// extra BANNED row here (escalation.LogTempBan) before the daemon's ban handler
+	// wrote the real one, so every temp ban counted twice and the threshold was
+	// effectively halved (measured on lab2: escalation after 5 genuine bans at
+	// threshold 10). The daemon writes the ONE row for this ban; it is not in the
+	// log yet, so it is added to the count here.
 	banCount, err := escalation.CountRecentBans(cfg.BanLog, ip, filterCfg.Period)
 	if err != nil {
 		return false, fmt.Errorf("failed to count bans: %w", err)
 	}
+	banCount++
 
 	// Check if threshold exceeded
 	if banCount >= filterCfg.Threshold {

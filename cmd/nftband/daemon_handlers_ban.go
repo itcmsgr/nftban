@@ -38,6 +38,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/persistence"
 	"github.com/itcmsgr/nftban/internal/safety"
 	"github.com/itcmsgr/nftban/internal/whitelist"
+	"github.com/itcmsgr/nftban/pkg/ipc"
 )
 
 // isWhitelisted checks if an IP is in the whitelist.
@@ -94,13 +95,12 @@ func (d *Daemon) checkAndEscalate(ip, source, country string) {
 
 	filterCfg := cfg.GetFilterConfig(filterName)
 
-	// Log this temp ban for escalation tracking
-	if err := escalation.LogTempBan(cfg.BanLog, ip, filterName, fmt.Sprintf("temp ban from %s", filterName)); err != nil {
-		log.Printf("[ESCALATE] Failed to log temp ban for %s: %v", ip, err)
-		return
-	}
+	// v1.236 BUG-ESCALATION-TEMP-BAN-WRITES-TWO-BANNED-ROWS: the EventBan handler
+	// (daemon_init.go) already wrote this ban's BANNED row before calling here. A
+	// second row (escalation.LogTempBan) made every module temp ban count twice, so
+	// the threshold was effectively halved (lab2: 5 genuine bans escalated at 10).
 
-	// Count recent bans within the configured period
+	// Count recent bans within the configured period (this ban's row included)
 	banCount, err := escalation.CountRecentBans(cfg.BanLog, ip, filterCfg.Period)
 	if err != nil {
 		log.Printf("[ESCALATE] Failed to count bans for %s: %v", ip, err)
@@ -227,6 +227,24 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 		return SocketResponse{
 			Success: false,
 			Error:   err.Error(),
+		}
+	}
+
+	// v1.236 BUG-REFUSED-EXEMPT-BAN-REPORTED-AS-BANNED: the never-ban guard refused the
+	// ban (backend.Ban: Success with Exempt). Nothing was written to a drop set, so it is
+	// not counted, not logged as BANNED and not reported as banned: completed, effect
+	// "exempt" (pkg/ipc/operation.go). Same shape as the whitelist refusal above.
+	if result != nil && result.Exempt {
+		log.Printf("[BAN] Exempt (not banned) %s (source=%s): %s", ip, source, result.Message)
+		return SocketResponse{
+			Success: false,
+			Error:   "refused: never-ban exempt: " + result.Message,
+			Data: map[string]any{
+				"ip":             ip,
+				"status":         "exempt",
+				ipc.KeyExecution: string(ipc.ExecCompleted),
+				ipc.KeyEffect:    string(ipc.EffectExempt),
+			},
 		}
 	}
 
