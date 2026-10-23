@@ -231,7 +231,9 @@ echo
 # --- host isolation guard (TEST-HARNESS-MUTATES-LIVE-HOST-STATE-WHEN-RUN-AS-ROOT) ---
 if [[ "$(_hg_state "${_HG_PATHS[@]}")" == "$_HG_BEFORE" ]]; then ok "HOST-GUARD host config paths unchanged (${_HG_PATHS[*]})"
 else bad "HOST-GUARD host config CHANGED by this test: $(_hg_state "${_HG_PATHS[@]}" | tr '\n' ';')"; fi
-if [[ -e "$_HI/data/state/ssh_port_active.state" ]]; then ok "HOST-GUARD ssh_port_active.state landed in the sandbox"
-else bad "HOST-GUARD ssh_port_active.state not in the sandbox: redirection lost?"; fi
+# v1.236 D3 (fcad43d7): health/status reads no longer write ssh_port_active.state at all, so
+# the file must be absent from the sandbox too (the host side is covered by the guard above).
+if [[ ! -e "$_HI/data/state/ssh_port_active.state" ]]; then ok "HOST-GUARD reads wrote no ssh_port_active.state (D3 read-only)"
+else bad "HOST-GUARD a read wrote ssh_port_active.state (D3 regression)"; fi
 echo "=== cli_semantic_verdict_matrix_v1228_9: PASS=$PASS FAIL=$FAIL ==="
 [[ $FAIL -eq 0 ]]

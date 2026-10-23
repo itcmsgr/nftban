@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-23"
-# meta:description="v1.236 (design V1236_STAGE2_DESIGN_DRAFT.md §3.3). Every nft write made outside nftband must hold /run/nftban/nft_writers.lock EXCLUSIVE, so it can never land between a firewall replacement's kernel read and its commit. A write is covered when it goes through nftban_nft_write, when it sits in a function named *_held (run whole via nftban_writers_run), or when it runs inside a section opened with nftban_writers_acquire and its line (or the line before) carries the marker 'nftban:held'. B-1 rejects any raw nft write in the CONVERTED files. B-2 is a RATCHET over the rest of the product shell: the count of raw writes is recorded in a baseline and may never increase. B-3 proves the helper still holds the lock. Static analysis only - reads files, invokes nothing."
+# meta:description="v1.236 (design V1236_STAGE2_DESIGN_DRAFT.md §3.3). Every nft write made outside nftband must hold /run/nftban/nft_writers.lock EXCLUSIVE, so it can never land between a firewall replacement's kernel read and its commit. A write is covered when it goes through nftban_nft_write, when it sits in a function named *_held (run whole via nftban_writers_run), when it runs inside a section opened with nftban_writers_acquire and its line (or the line before) carries the marker 'nftban:held', or when the line itself takes the lock inline (`flock -w N .../nft_writers.lock nft ...`, scripts that run without the library). A write to a table that is never part of a replacement (a foreign table such as inet filter or the ip/ip6 raw table) is outside the boundary and must say so with the marker 'nftban:outside-boundary' on the line before. B-1 rejects any raw nft write in the CONVERTED files. B-2 is a RATCHET over the rest of the product shell: the count of raw writes is recorded in a baseline and may never increase. B-3 proves the helper still holds the lock. Static analysis only - reads files, invokes nothing."
 # meta:input="cli/lib/nftban/**, cli/sbin/*, install/**, packaging/deb/*, packaging/build_nftban.sh, scripts/ci/nft-write-boundary-baseline.txt"
 # meta:output="PASS/FAIL per rule; exit 0 on all-pass, 1 on any violation"
 # meta:depends="bash,git,grep"
@@ -90,6 +90,8 @@ raw_writes(){
         cur ~ /^[[:space:]]*(echo|printf|log|log_[a-z]+|_[a-z_]*log)[[:space:]]/ { prev = cur; next }
         cur ~ /^[[:space:]]*[A-Za-z_]+\+=\(/                     { prev = cur; next }
         cur ~ /nftban:held/ || prev ~ /nftban:held/              { prev = cur; next }
+        cur ~ /flock[[:space:]]+-w[[:space:]]+[0-9]+[[:space:]]+[^[:space:]]*nft_writers\.lock[[:space:]]+nft[[:space:]]/ { prev = cur; next }
+        prev ~ /nftban:outside-boundary/                         { prev = cur; next }
         { printf "%s:%d: %s\n", f, NR, cur; prev = cur }
     ' "$1"
 }

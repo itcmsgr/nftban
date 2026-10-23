@@ -4,4 +4,4 @@
 # INCREASES, so no new raw nft write can be added while the remaining ones (nft_fragment.sh,
 # cmd_firewall.sh lanes, boot helpers, package scriptlets) are moved onto the boundary.
 # When you convert sites, LOWER this number in the same change.
-RAW_NFT_WRITE_COUNT=18
+RAW_NFT_WRITE_COUNT=0

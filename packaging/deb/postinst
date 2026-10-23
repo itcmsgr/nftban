@@ -682,6 +682,7 @@ _nftban_classify_inet_filter() {
         | grep -vE '^[[:space:]]*(table|chain|type |policy|[}]|#)' \
         | grep -cE '[^[:space:]]' || true)
     if [ "${_rules:-0}" -eq 0 ]; then
+        # nftban:outside-boundary — a foreign table, never part of an NFTBan replacement.
         nft delete table inet filter 2>/dev/null || true
         echo REMOVED; return 0
     fi
@@ -692,6 +693,7 @@ _nftban_classify_inet_filter() {
     # non-interactively (apt/dnf -y, cloud-init, panels); a prompt would hang or
     # be auto-answered unsafely. The override is deterministic + logged.
     if [ "${NFTBAN_ALLOW_REMOVE_INET_FILTER:-0}" = "1" ]; then
+        # nftban:outside-boundary — a foreign table, never part of an NFTBan replacement.
         nft delete table inet filter 2>/dev/null || true
         echo REMOVED_OVERRIDE; return 0
     fi

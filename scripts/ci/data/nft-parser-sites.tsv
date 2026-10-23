@@ -85,5 +85,6 @@ internal/metrics/rule_counters.go	3
 internal/nftbackend/backend.go	2
 internal/rulefp/baseline.go	2
 internal/ruleset/kernel.go	1
+internal/ruleset/modules.go	1
 internal/validator/module_health.go	2
 internal/validator/nftjson.go	1

@@ -41,6 +41,8 @@ done
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 FK="$TMP/fk"; mkdir -p "$FK/bin" "$FK/state" "$TMP/etc" "$TMP/log" "$TMP/rules.d"
+# v1.236: product nft writes take the write-boundary lock under NFTBAN_RUN_DIR; keep it in the sandbox.
+export NFTBAN_RUN_DIR="$TMP/run"
 export FAKE_NFT_ROOT="$FK"
 ST="$FK/state"
 
