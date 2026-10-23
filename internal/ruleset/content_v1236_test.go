@@ -90,8 +90,24 @@ func fixture(t *testing.T) Options {
 	// (EnforcementClassReject) and filtered as bogons by MergeCIDRsSafe.
 	write(t, filepath.Join(cfg, "blacklist.d", "99-manual.conf"), "23.129.97.10\n23.129.97.11\n185.220.100.0/24\n")
 	write(t, filepath.Join(data, "feeds", "f.txt"), "45.155.205.0/24\n")
+	// v1.236 feed authority: the feed is enforced because the master switch and its own
+	// switch are on (not merely because its file exists).
+	write(t, filepath.Join(cfg, "conf.d", "feeds.conf"), "FEED_F_ENABLED=\"true\"\n")
 	write(t, filepath.Join(data, "trust", "crawler.txt"), "66.249.64.0/19\n")
-	return Options{ConfigDir: cfg, DataDir: data, CommitMargin: 5 * time.Second}
+	return Options{ConfigDir: cfg, DataDir: data, CommitMargin: 5 * time.Second, FeedsMaster: true}
+}
+
+// v1.236 (design §7): a feed file whose feed is not enabled is not rendered.
+func TestRenderFeedAuthorityExcludesDisabledFeed(t *testing.T) {
+	opts := fixture(t)
+	write(t, filepath.Join(opts.ConfigDir, "conf.d", "feeds.conf"), "FEED_F_ENABLED=\"false\"\n")
+	res, err := Render(opts, reader(nil), fakeExempt{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(res.Script, "45.155.205.0/24") {
+		t.Fatalf("a disabled feed's file must not be rendered:\n%s", res.Script)
+	}
 }
 
 func reader(sets map[string][]Element) SetReader {

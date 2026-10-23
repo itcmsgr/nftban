@@ -87,6 +87,9 @@ type Options struct {
 	CommitMargin time.Duration
 	// MaxElements refuses the render (ErrOversized) above this many elements; 0 = no limit.
 	MaxElements int
+	// FeedsMaster is NFTBAN_FEEDS_ENABLED; with the feed switches and the recorded state it
+	// decides which feed files are rendered (feeds.Evaluate, design §7).
+	FeedsMaster bool
 }
 
 // ErrOversized is returned before anything is rendered when the replacement would exceed
@@ -305,8 +308,10 @@ func Render(opts Options, read SetReader, ex Exemption) (*Result, error) {
 }
 
 // durableUnion is the feeds + geoban + blacklist.d CIDR union the daemon's full sync
-// loads into blacklist_ipv4/_ipv6 (cmd/nftband/daemon_handlers_sync.go): every feed file
-// in <data>/feeds, every geoban.d ban file, every blacklist.d CIDR.
+// loads into blacklist_ipv4/_ipv6 (cmd/nftband/daemon_handlers_sync.go): the feed files the
+// feed authority enforces (feeds.Evaluate), every geoban.d ban file, every blacklist.d CIDR.
+// An undecidable feed authority (unreadable state or feed file) is an error: the render is
+// refused rather than dropping or guessing the feed protection.
 func durableUnion(opts Options, bl4, bl6 []string) (v4, v6 []string, err error) {
 	_, cidr4 := splitCIDRs(bl4)
 	_, cidr6 := splitCIDRs(bl6)
@@ -314,8 +319,12 @@ func durableUnion(opts Options, bl4, bl6 []string) (v4, v6 []string, err error) 
 	v6 = append(v6, cidr6...)
 
 	feedsDir := filepath.Join(opts.DataDir, "feeds")
-	if entries, rerr := os.ReadDir(feedsDir); rerr == nil && len(entries) > 0 {
-		ip4, ip6, cidrs4, cidrs6, _, ferr := feeds.LoadAllFeeds(feedsDir)
+	fd, derr := feeds.Evaluate(opts.ConfigDir, opts.DataDir, opts.FeedsMaster)
+	if derr != nil {
+		return nil, nil, fmt.Errorf("feed authority: %w", derr)
+	}
+	if len(fd.Enforced) > 0 {
+		ip4, ip6, cidrs4, cidrs6, ferr := feeds.LoadEnforcedFeeds(feedsDir, fd.Enforced)
 		if ferr != nil {
 			return nil, nil, fmt.Errorf("load feeds: %w", ferr)
 		}

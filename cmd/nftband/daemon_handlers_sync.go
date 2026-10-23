@@ -34,6 +34,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/metrics"
 	"github.com/itcmsgr/nftban/internal/netutil"
 	"github.com/itcmsgr/nftban/internal/nftbackend"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
 	"github.com/itcmsgr/nftban/internal/opqueue"
 	"github.com/itcmsgr/nftban/internal/ports"
 	"github.com/itcmsgr/nftban/internal/runtime"
@@ -329,6 +330,7 @@ func (d *Daemon) runSync(quickMode bool) SocketResponse {
 	// ==========================================================================
 	var feedsIPv4Loaded, feedsIPv6Loaded int
 	var feedsSkipped, geobanSkipped bool
+	var feedDecision feeds.Decision
 	var feedsCIDRCount, geobanCIDRCount int
 	var feedsMemNeeded, geobanMemNeeded int64
 	if !quickMode {
@@ -337,13 +339,36 @@ func (d *Daemon) runSync(quickMode bool) SocketResponse {
 			log.Printf("[SYNC] Memory pressure %s: skipping feeds", safety.GetMemoryPressureLevel())
 			feedsSkipped = true
 		} else {
-			_, _, dataDir, _ := getDaemonPaths()
-			feedsDir := dataDir + "/feeds"
+			fcfg := nftbanconf.MustLoad()
+			feedsDir := fcfg.DataDir + "/feeds"
 
-			// Check if feeds directory exists and has .txt files
-			if entries, err := os.ReadDir(feedsDir); err == nil && len(entries) > 0 {
-				// Load all feeds
-				ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet, _, feedErr := feeds.LoadAllFeeds(feedsDir)
+			// v1.236 (design §7): ONE feed authority decides which feed files are enforced
+			// (until v1.236 every .txt was, whatever NFTBAN_FEEDS_ENABLED said). If it cannot
+			// be decided, or an enforced file cannot be read, the sync is REFUSED before the
+			// unified replace: the replace would otherwise drop the live feed protection.
+			fd, ferr := feeds.Evaluate(fcfg.ConfigDir, fcfg.DataDir, fcfg.FeedsEnabled)
+			if ferr != nil {
+				return SocketResponse{Success: false, Error: "feed authority undecidable, sync refused (existing feed protection kept): " + ferr.Error(),
+					Data: map[string]any{ipc.KeyEffect: string(ipc.EffectRefused)}}
+			}
+			feedDecision = fd
+			if fd.NeedsRecord {
+				reason := ""
+				if len(fd.Reasons) > 0 {
+					reason = fd.Reasons[0]
+				}
+				if werr := feeds.WriteState(fcfg.DataDir, fd.State, reason, time.Now()); werr != nil {
+					log.Printf("[SYNC] feed authority: could not record state %s: %v", fd.State, werr)
+				} else {
+					log.Printf("[SYNC] feed authority: recorded %s (enforced feeds: %v)", fd.State, fd.Enforced)
+				}
+			}
+			if len(fd.Enforced) > 0 {
+				ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet, feedErr := feeds.LoadEnforcedFeeds(feedsDir, fd.Enforced)
+				if feedErr != nil {
+					return SocketResponse{Success: false, Error: "enforced feed unreadable, sync refused (existing feed protection kept): " + feedErr.Error(),
+						Data: map[string]any{ipc.KeyEffect: string(ipc.EffectRefused)}}
+				}
 				if feedErr == nil {
 					// Pre-allocate slices with exact capacity to avoid reallocation overhead
 					// With 15,000+ CIDRs, this prevents ~14 slice doublings
@@ -619,6 +644,15 @@ func (d *Daemon) runSync(quickMode bool) SocketResponse {
 	}
 	if geobanSkipped {
 		partialReasons = append(partialReasons, "geoban_skipped_memory")
+	}
+	// v1.236 (design §7): the feed authority in force for this sync (one key per reason).
+	if feedDecision.State != "" {
+		respData["feed_authority"] = feedDecision.State
+		respData["feeds_enforced"] = feedDecision.Enforced
+		if len(feedDecision.Reasons) > 0 {
+			respData["feed_authority_reasons"] = feedDecision.Reasons
+			respData["feed_authority_texts"] = feedDecision.Texts
+		}
 	}
 	// v1.236: blacklist.d single IPs (acknowledged commits only; see UpsertPermanentElements).
 	respData["blacklist_manual_added"] = manualAdded

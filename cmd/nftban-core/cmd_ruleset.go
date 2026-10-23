@@ -74,6 +74,7 @@ func cmdRuleset(cfg *nftbanconf.Config) error {
 		DataDir:      cfg.DataDir,
 		CommitMargin: 5 * time.Second,
 		MaxElements:  rulesetDefaultMaxElements,
+		FeedsMaster:  cfg.FeedsEnabled,
 	}
 	if v := os.Getenv("NFTBAN_RULESET_MAX_ELEMENTS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {

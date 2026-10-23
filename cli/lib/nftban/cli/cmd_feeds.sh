@@ -582,6 +582,15 @@ nftban_feeds_status() {
     stats=$(nftban_feeds_get_stats)
     echo "Status: $stats"
 
+    # v1.236 (design §7): the feed authority — which feed files the firewall enforces and why.
+    local _fa _fa_core="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
+    if _fa=$("$_fa_core" feeds effective 2>/dev/null) && [[ -n "$_fa" ]]; then
+        echo "Feed authority: $(jq -r '.state' <<<"$_fa" 2>/dev/null) (master switch $(jq -r 'if .master then "on" else "off" end' <<<"$_fa" 2>/dev/null)); enforced: $(jq -r '(.enforced // []) | if length == 0 then "none" else join(", ") end' <<<"$_fa" 2>/dev/null)"
+        jq -r '(.reasons // []) as $r | (.texts // []) as $t | range(0; $r | length) | "  [\($r[.])] \($t[.])"' <<<"$_fa" 2>/dev/null || true
+    else
+        echo "Feed authority: UNKNOWN (could not be decided — see: nftban-core feeds effective)"
+    fi
+
     # v1.141 PR-C (D-feed-count): pre-v1.141 'Status:' line conflated three
     # distinct numbers — number of enabled feed files vs sum of IPs across
     # those files vs the cached aggregate (which may include deduplicated
@@ -675,6 +684,38 @@ nftban_feeds_status() {
 # MAIN COMMAND HANDLER
 # =============================================================================
 
+# _nftban_feeds_master_resolve <true|false> — v1.236 (design §7). `nftban feeds enable|disable`
+# without a feed name sets the master switch NFTBAN_FEEDS_ENABLED, records the operator's
+# decision (RESOLVED_ENABLED / RESOLVED_DISABLED: a CONFLICT_KEPT host is resolved, and a
+# disable is never re-kept), then runs ONE full sync so the kernel follows. A sync that does
+# not complete is reported as such, never as applied.
+_nftban_feeds_master_resolve() {
+    local val="$1" state core="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core" rc=0
+    [[ "$val" == "true" ]] && state=enabled || state=disabled
+    if ! declare -F nftban_config_set_global >/dev/null 2>&1; then
+        # shellcheck source=/usr/lib/nftban/core/nftban_config.sh
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_config.sh" || return 1
+    fi
+    nftban_config_set_global NFTBAN_FEEDS_ENABLED "$val" || {
+        echo "ERROR: could not set NFTBAN_FEEDS_ENABLED=$val — nothing changed" >&2; return 1; }
+    if ! "$core" feeds resolve "$state"; then
+        echo "ERROR: NFTBAN_FEEDS_ENABLED=$val is set, but the feed-authority decision was not recorded" >&2
+        return 1
+    fi
+    echo "Feeds master switch: $state (recorded RESOLVED_${state^^})"
+    if declare -F nft_ipc_sync >/dev/null 2>&1 \
+       || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_ipc.sh" 2>/dev/null; then
+        nft_ipc_sync 1 >/dev/null 2>&1 || rc=$?
+    else
+        rc=1
+    fi
+    if [[ $rc -eq 0 ]]; then
+        echo "✓ Firewall feed sets follow the decision (full sync completed)"
+    else
+        echo "WARNING: full sync did not complete (rc=$rc) — the firewall follows at the next sync; check: nftban feeds status" >&2
+        return 1
+    fi
+}
 
 nftban_cmd_feeds() {
     local action="${1:-list}"
@@ -704,12 +745,9 @@ nftban_cmd_feeds() {
                 nftban_require_net_admin_or_exit
             fi
             if [[ $# -lt 1 ]] || [[ "${1}" == "--json" ]]; then
-                if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
-                    json_output "false" '{}' "Usage: nftban feeds enable <feed_name>"
-                else
-                    echo "ERROR: Usage: nftban feeds enable <feed_name>" >&2
-                fi
-                return 1
+                # v1.236 (design §7): no feed name = the master switch; records RESOLVED_ENABLED.
+                _nftban_feeds_master_resolve true
+                return
             fi
             nftban_feeds_enable_json "$1" "$json_mode"
             ;;
@@ -730,12 +768,9 @@ nftban_cmd_feeds() {
                 shift
             done
             if [[ -z "$feed_name" ]]; then
-                if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
-                    json_output "false" '{}' "Usage: nftban feeds disable <feed_name>"
-                else
-                    echo "ERROR: Usage: nftban feeds disable <feed_name>" >&2
-                fi
-                return 1
+                # v1.236 (design §7): no feed name = the master switch; records RESOLVED_DISABLED.
+                _nftban_feeds_master_resolve false
+                return
             fi
             # v1.18.1: nftban_feeds_disable now handles cache cleanup + IPC flush automatically
             nftban_feeds_disable_json "$feed_name" "$json_mode"
