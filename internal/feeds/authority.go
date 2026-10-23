@@ -175,6 +175,21 @@ func WriteState(dataDir, state, reason string, now time.Time) error {
 	return safety.SafeWriteFile(path, []byte(line+"\n"), 0640)
 }
 
+// RecordFreshInstall records CONSISTENT on a fresh install when no state exists yet, so a
+// fresh host can never meet the migration condition — not even with feed files left behind
+// by an earlier removal. Called by the installer for --mode=install only; an upgrade leaves
+// the state absent so the first evaluation applies the migration rule. Returns whether it wrote.
+func RecordFreshInstall(dataDir string, now time.Time) (bool, error) {
+	recorded, err := ReadState(dataDir)
+	if err != nil {
+		return false, err
+	}
+	if recorded != "" {
+		return false, nil
+	}
+	return true, WriteState(dataDir, StateConsistent, "fresh_install", now)
+}
+
 // Decide is the feed authority (pure). files = feed names with entries; perFeed keyed by the
 // upper-case name; recorded = the state on disk ("" = none).
 //

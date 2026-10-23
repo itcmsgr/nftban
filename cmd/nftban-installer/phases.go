@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/configloader"
+	"github.com/itcmsgr/nftban/internal/feeds"
 	"github.com/itcmsgr/nftban/internal/healthresource"
 	"github.com/itcmsgr/nftban/internal/installer/authority"
 	"github.com/itcmsgr/nftban/internal/installer/deps"
@@ -44,6 +45,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/switchop"
 	"github.com/itcmsgr/nftban/internal/installer/users"
 	"github.com/itcmsgr/nftban/internal/installer/validate"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
@@ -724,6 +726,16 @@ func phaseSwitch(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	log.Info("effective convergence generation before rebuild: %d (-1 = not observable)", generationBefore)
 	// v1.236 upgrade handover: a pre-upgrade daemon cannot take the write boundary.
 	services.QuiesceReplacedDaemon(exec, log)
+	// v1.236 feed authority (design §7): a fresh install records CONSISTENT before the first
+	// rebuild renders feed content, so leftover feed files never enable feeds on a new host.
+	// An upgrade leaves the state absent: the migration rule applies at the first evaluation.
+	if sf.Mode == "install" {
+		if wrote, ferr := feeds.RecordFreshInstall(nftbanconf.MustLoad().DataDir, time.Now()); ferr != nil {
+			log.Warn("feed authority: fresh-install state not recorded: %v", ferr)
+		} else if wrote {
+			log.Info("feed authority: fresh install recorded CONSISTENT")
+		}
+	}
 	rebuildStart := time.Now()
 	// v1.230.0 Gate 6R: ctx is passed so a REFUSED rebuild can be RETRIED inside the
 	// installer's EXISTING deadline. ⛔ It does NOT bound the rebuild's execution —

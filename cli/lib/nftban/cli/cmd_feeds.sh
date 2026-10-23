@@ -463,8 +463,11 @@ nftban_feeds_list() {
 
     echo "Commands:"
     echo "  nftban feeds select             Interactive selection menu"
-    echo "  nftban feeds enable <feed>      Enable specific feed"
-    echo "  nftban feeds disable <feed>     Disable specific feed"
+    echo "  nftban feeds enable             Turn ALL feeds on (master switch NFTBAN_FEEDS_ENABLED)"
+    echo "  nftban feeds disable            Turn ALL feeds off (master switch; removes feed-derived"
+    echo "                                  protection only — geoban and manual bans stay)"
+    echo "  nftban feeds enable <feed>      Enable one feed (per-feed switch)"
+    echo "  nftban feeds disable <feed>     Disable one feed (per-feed switch)"
     echo "  nftban feeds update              Update all enabled feeds"
     echo "  nftban feeds status              Detailed status"
     echo ""
@@ -691,18 +694,27 @@ nftban_feeds_status() {
 # not complete is reported as such, never as applied.
 _nftban_feeds_master_resolve() {
     local val="$1" state core="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core" rc=0
+    local jm="${json_mode:-false}" conv
     [[ "$val" == "true" ]] && state=enabled || state=disabled
+    _fmr_out() { # $1=success $2=enforcement $3=message
+        if [[ "$jm" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
+            json_output "$1" "$(json_build_object "scope" "master" "master" "$state" "recorded" "RESOLVED_${state^^}" "enforcement" "$2")" "$3"
+        elif [[ "$1" == "true" ]]; then
+            echo "$3"
+        else
+            echo "$3" >&2
+        fi
+    }
     if ! declare -F nftban_config_set_global >/dev/null 2>&1; then
         # shellcheck source=/usr/lib/nftban/core/nftban_config.sh
         source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_config.sh" || return 1
     fi
     nftban_config_set_global NFTBAN_FEEDS_ENABLED "$val" || {
-        echo "ERROR: could not set NFTBAN_FEEDS_ENABLED=$val — nothing changed" >&2; return 1; }
+        _fmr_out false not_changed "ERROR: could not set NFTBAN_FEEDS_ENABLED=$val — nothing changed"; return 1; }
     if ! "$core" feeds resolve "$state"; then
-        echo "ERROR: NFTBAN_FEEDS_ENABLED=$val is set, but the feed-authority decision was not recorded" >&2
+        _fmr_out false not_converged "ERROR: configuration saved (NFTBAN_FEEDS_ENABLED=$val), but the feed-authority decision was not recorded; enforcement not converged"
         return 1
     fi
-    echo "Feeds master switch: $state (recorded RESOLVED_${state^^})"
     if declare -F nft_ipc_sync >/dev/null 2>&1 \
        || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_ipc.sh" 2>/dev/null; then
         nft_ipc_sync 1 >/dev/null 2>&1 || rc=$?
@@ -710,9 +722,10 @@ _nftban_feeds_master_resolve() {
         rc=1
     fi
     if [[ $rc -eq 0 ]]; then
-        echo "✓ Firewall feed sets follow the decision (full sync completed)"
+        conv="All feeds (master switch) $state; recorded RESOLVED_${state^^}; enforcement converged (full sync completed)"
+        _fmr_out true converged "$conv"
     else
-        echo "WARNING: full sync did not complete (rc=$rc) — the firewall follows at the next sync; check: nftban feeds status" >&2
+        _fmr_out false not_converged "WARNING: configuration saved (all feeds $state, RESOLVED_${state^^}); enforcement NOT converged — the full sync did not complete (rc=$rc). Check: nftban feeds status"
         return 1
     fi
 }
@@ -1082,7 +1095,7 @@ nftban_feeds_enable_json() {
             [[ -f "$feed_file" ]] && count=$(wc -l < "$feed_file" 2>/dev/null || echo "0")
 
             local data
-            data=$(json_build_object "feed" "$feed" "enabled" "true" "ip_count" "$count")
+            data=$(json_build_object "scope" "feed" "feed" "$feed" "enabled" "true" "ip_count" "$count")
             json_output "true" "$data"
             return 0
         else
@@ -1105,7 +1118,7 @@ nftban_feeds_disable_json() {
         # Call the real disable function
         if nftban_feeds_disable "$feed" 2>/dev/null; then
             local data
-            data=$(json_build_object "feed" "$feed" "enabled" "false")
+            data=$(json_build_object "scope" "feed" "feed" "$feed" "enabled" "false")
             json_output "true" "$data"
             return 0
         else
