@@ -103,7 +103,7 @@ fresh(){
 cc(){  # snippet with the REAL engine loaded
     local rc=0
     env -i PATH="$STUB:/usr/bin:/bin" SBX="$SB" HOME="$SB" \
-        NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_LIB_DIR="$LIBDIR" \
+        NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_RUN_DIR="$SB/run" NFTBAN_LIB_DIR="$LIBDIR" \
         bash -c 'set -Eeuo pipefail; source "$1"; shift
             # The publication authority (cmd_firewall.sh _firewall_publish_conf) is loaded wherever
             # the engine runs in the product; here it is a recording stand-in (audit K1, D31).
@@ -320,7 +320,7 @@ fresh; stage_pending 120; ID=$(get apply_id); echo 1 > "$SB/nft_f_rc"
 cc "cc_rollback $ID --auto" >/dev/null 2>&1 || true
 : > "$SB/calls.log"; cp -p "$REC" "$SB/rec.before"; rc=0
 env -i PATH="$STUB:/usr/bin:/bin" SBX="$SB" HOME="$SB" \
-    NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_LIB_DIR="$LIBDIR" \
+    NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_RUN_DIR="$SB/run" NFTBAN_LIB_DIR="$LIBDIR" \
     bash -c 'source "$1/cli/cmd_firewall.sh" >/dev/null 2>&1; nftban_cmd_firewall rollback --boot' _ "$LIBDIR" > "$SB/cc.out" 2>&1 || rc=$?
 if grep -qxF 'ExecStart=/usr/sbin/nftban firewall rollback --boot' "$UNIT" \
    && [[ -e "$SB/data/state/commit-confirm.rollback-failed" && "$(get status)" == "rollback-failed" ]] \
@@ -374,7 +374,7 @@ else ko "D32 projection republish failure (rc=$rc status=$(get status) marker=$(
 fwbase(){  # loaded_file
     local rc=0
     env -i PATH="$STUB:/usr/bin:/bin" SBX="$SB" HOME="$SB" \
-        NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_LIB_DIR="$LIBDIR" \
+        NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_RUN_DIR="$SB/run" NFTBAN_LIB_DIR="$LIBDIR" \
         bash -c 'source "$1/cli/cmd_firewall.sh" >/dev/null 2>&1; _firewall_rebuild_record_baseline "$2"' _ "$LIBDIR" "$1" > "$SB/fw.out" 2>&1 || rc=$?
     return "$rc"
 }

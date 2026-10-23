@@ -16,6 +16,10 @@ set -Eeuo pipefail
 [[ -n "${_NFTBAN_NFT_IPC_LOADED:-}" ]] && return 0 2>/dev/null || true
 readonly _NFTBAN_NFT_IPC_LOADED=1
 
+# v1.236: emergency direct writes go through the write boundary (nftban_nft_write).
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+source "${BASH_SOURCE[0]%/*}/nft_writers.sh"
+
 # Socket path for daemon communication
 NFTBAN_DAEMON_SOCKET="${NFTBAN_DAEMON_SOCKET:-/run/nftban/nftband.sock}"
 
@@ -494,7 +498,7 @@ nft_ipc_sync() {
     # that predates v1.236 ignores both keys and behaves as before.
     local _wait=$(( ${NFTBAN_IPC_TIMEOUT:-30} - 3 ))
     [[ "$_wait" -ge 1 ]] || _wait=1
-    local params="{\"quick\":false,\"wait_seconds\":${_wait}}"
+    local params='{"quick":false,"wait_seconds":'"${_wait}"'}'
     local attempt=0 delay="${NFTBAN_SYNC_RETRY_DELAY}" response _gen=""
     while [[ "$attempt" -lt "${NFTBAN_SYNC_RETRIES}" ]]; do
         response="$(nft_ipc_request "sync" "$params")"
@@ -685,7 +689,7 @@ nft_emergency_ban() {
     # C7 fix: $table contains space (e.g. "ip nftban"), must not be quoted as single arg
     # $table must word-split into "ip nftban" for nft syntax
     # shellcheck disable=SC2086
-    nft add element $table "$set" "$element"
+    nftban_nft_write add element $table "$set" "$element"
 }
 
 # Emergency unban - direct nft call
@@ -711,10 +715,10 @@ nft_emergency_unban() {
     # v2.1: All bans are in unified blacklist set (no separate auto/manual sets)
     if [[ "$ip" == *:* ]]; then
         # IPv6 - unified blacklist
-        nft delete element ip6 nftban blacklist_ipv6 "{ $ip }" 2>/dev/null && ((removed++)) || true
+        nftban_nft_write delete element ip6 nftban blacklist_ipv6 "{ $ip }" 2>/dev/null && ((removed++)) || true
     else
         # IPv4 - unified blacklist
-        nft delete element ip nftban blacklist_ipv4 "{ $ip }" 2>/dev/null && ((removed++)) || true
+        nftban_nft_write delete element ip nftban blacklist_ipv4 "{ $ip }" 2>/dev/null && ((removed++)) || true
     fi
 
     [[ $removed -gt 0 ]] && return 0 || return 1

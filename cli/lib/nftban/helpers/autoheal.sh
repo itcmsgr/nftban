@@ -25,6 +25,10 @@ IFS=$'\n\t'
 # shellcheck source=/etc/nftban/nftban.conf
 source "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
 
+# v1.236: direct nft writes go through the write boundary.
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+source "${BASH_SOURCE[0]%/*}/../lib/nft_writers.sh"
+
 # CRITICAL: Load FHS spec - single source of truth for directory structure
 # shellcheck source=/usr/lib/nftban/core/nftban_fhs_spec.sh
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_fhs_spec.sh" ]]; then
@@ -513,7 +517,7 @@ while IFS= read -r table_line; do
             case "$_cclass" in
                 "$TC_CONTENT_EMPTY")
                     log_warn "Detected external-authority ghost table: $table_line"
-                    if nft delete table "$TABLE_SPEC" 2>/dev/null; then
+                    if nftban_nft_write delete table "$TABLE_SPEC" 2>/dev/null; then
                         log_info "✅ Deleted external-authority ghost table: $TABLE_SPEC (empty skeleton)"
                         GHOST_COUNT=$((GHOST_COUNT + 1))
                     else

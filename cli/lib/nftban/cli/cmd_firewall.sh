@@ -28,6 +28,11 @@
 
 set -Eeuo pipefail
 
+# v1.236: the write boundary (_fw_atomic_load and every direct nft write here). Loaded here as
+# well as by env.sh, because this file is also sourced directly (commit-confirm boot path).
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+source "${BASH_SOURCE[0]%/*}/../lib/nft_writers.sh"
+
 
 # =============================================================================
 # CONFIGURATION
@@ -2799,13 +2804,14 @@ FIREWALL_RELOAD_HELP
             # v1.192.1 inc4: complete service-port sets (fail-closed — no skeletal apply).
             if ! _firewall_complete_service_ports "$_tmp_conf"; then
                 echo "Warning: effective service-port render failed — NOT applying skeletal reload. Try: nftban firewall rebuild" >&2
-            elif ! nft -f "$_tmp_conf" 2>&1; then
+            elif ! _fw_atomic_load "$_tmp_conf" "$quiet"; then
+                # v1.236: one transaction with the set contents, as the template branch above.
                 echo "Warning: Failed to re-apply NFTBan schema" >&2
                 echo "Try: nftban firewall rebuild" >&2
             fi
             rm -f "$_tmp_conf"
         else
-            if ! nft -f "$nftban_conf" 2>&1; then
+            if ! _fw_atomic_load "$nftban_conf" "$quiet"; then
                 echo "Warning: Failed to re-apply NFTBan schema" >&2
                 echo "Try: nftban firewall rebuild" >&2
             fi
@@ -3157,19 +3163,13 @@ _fw_atomic_load() {
         echo "ERROR: could not compose the atomic load — nothing applied" >&2
         return 3
     fi
-    # Snapshot/commit boundary (design §9.1a): from the kernel read below until the marker
-    # readback, no daemon write may land. Publish the intent (new daemon writes wait), then
-    # take nft_writers.lock EXCLUSIVE — granted only once every in-flight daemon write has
-    # finished (drain). Nothing here calls the daemon. A crash releases the flock; a stale
-    # intent (dead pid) is ignored by the daemon.
-    # shellcheck disable=SC2034  # used inside the eval'd exec below
-    local bpath="${NFTBAN_RUN_DIR:-/run/nftban}/nft_writers.lock"
-    local ipath="${NFTBAN_RUN_DIR:-/run/nftban}/nft_writers.intent"
-    local bfd=""
-    printf 'pid=%s boot=%s\n' "$$" "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)" > "$ipath" 2>/dev/null || true
-    if ! eval 'exec {bfd}>>"$bpath"' 2>/dev/null || ! flock -w "${NFTBAN_BOUNDARY_WAIT:-60}" "$bfd"; then
-        [[ -n "$bfd" ]] && eval "exec ${bfd}>&-"
-        rm -f "$ipath" "$out"
+    # Snapshot/commit boundary (design §3): from the kernel read below until the marker
+    # readback, no other nft write may land. nftban_writers_acquire publishes the intent and
+    # takes nft_writers.lock EXCLUSIVE — granted only once every in-flight daemon write has
+    # finished (drain). Nothing here calls the daemon. If this shell dies, its nft child keeps
+    # the lock until it exits; a stale intent (dead pid) is ignored by the daemon.
+    if ! nftban_writers_acquire; then
+        rm -f "$out"
         echo "ERROR: daemon writes did not drain within ${NFTBAN_BOUNDARY_WAIT:-60}s — NOTHING applied, the existing ruleset is untouched" >&2
         return 3
     fi
@@ -3181,20 +3181,20 @@ _fw_atomic_load() {
         echo "nftban-core not found at $core" > "$out.err"
     fi
     if [[ $crc -ne 0 ]]; then
-        eval "exec ${bfd}>&-"; rm -f "$ipath"
+        nftban_writers_release
         echo "ERROR: ruleset content not rendered (rc=$crc): $(tail -1 "$out.err" 2>/dev/null) — NOTHING applied, the existing ruleset is untouched" >&2
         rm -f "$out" "$out.err"
         return 3
     fi
     [[ "$quiet" == "false" ]] && echo "    $(grep -m1 '^RULESET_CONTENT' "$out.err" 2>/dev/null)"
 
-    nft -f "$out" 2>&1 || rc=$?
+    nft -f "$out" 2>&1 || rc=$? # nftban:held
     rm -f "$out" "$out.err"
 
     readable=0
     marker="$(nft -j list table ip nftban 2>/dev/null | jq -r '.nftables[] | .table? | select(.) | .comment // ""' 2>/dev/null)" && readable=1
     # Boundary ends here: queued daemon writes now apply onto the new ruleset.
-    eval "exec ${bfd}>&-"; rm -f "$ipath"
+    nftban_writers_release
     if [[ "$marker" == "nftban-gen=$nonce" ]]; then
         [[ $rc -ne 0 ]] && echo "WARNING: nft exited $rc but the new generation is in the kernel (APPLIED)" >&2
         return 0
@@ -3274,12 +3274,12 @@ _fw_restore_timed_set() {
         # one batched add; on failure fall back per-element so a single bad element
         # cannot drop the whole set
         # shellcheck disable=SC2086  # table_family is intentionally two words
-        if ! nft add element $table_family "$set_name" "{ $joined }" 2>/dev/null; then
+        if ! nftban_nft_write add element $table_family "$set_name" "{ $joined }" 2>/dev/null; then
             restored=0
             local e
             for e in "${re_add[@]}"; do
                 # shellcheck disable=SC2086
-                if nft add element $table_family "$set_name" "{ $e }" 2>/dev/null; then
+                if nftban_nft_write add element $table_family "$set_name" "{ $e }" 2>/dev/null; then
                     restored=$((restored + 1))
                 else
                     skipped=$((skipped + 1))
@@ -3438,7 +3438,7 @@ delete table %s nftban
     fi
 
     # --- commit as ONE transaction --------------------------------------------
-    if nft -f "$candidate" 2>&1; then
+    if nftban_nft_write -f "$candidate" 2>&1; then
         echo "Rollback successful from: $snapshot_dir (families: ${_fams[*]})"
         rm -f "$candidate"
         return 0
@@ -4581,7 +4581,7 @@ _firewall_rebuild_core() {
                 fi
                 case "$_cclass" in
                     "$TC_CONTENT_EMPTY")
-                        if nft delete table "$TABLE_SPEC" 2>/dev/null; then
+                        if nftban_nft_write delete table "$TABLE_SPEC" 2>/dev/null; then
                             [[ "$quiet" == "false" ]] && echo "    Deleted external-authority ghost table: $TABLE_SPEC (empty skeleton)" || true
                         fi
                         ;;
@@ -4719,7 +4719,7 @@ _firewall_rebuild_core() {
     # would RESURRECT an IP unbanned during the rebuild, so step 7 no longer restores: it
     # counts the same sets in the kernel after the load (the L2c detector below).
     [[ "$quiet" == "false" ]] && echo "  [7/12] Checking blacklist + manual bans after the atomic load..."
-    local _rs_total=0 _bl_before=0 _n
+    local _rs_total=0 _bl_before=0 _n _rs_unread=0
     local _set _fam _dump
     for _set in blacklist_ipv4 blacklist_ipv6 blacklist_manual_ipv4 blacklist_manual_ipv6; do
         case "$_set" in
@@ -4729,19 +4729,26 @@ _firewall_rebuild_core() {
         _dump="$snapshot_dir/sets/${_set}.nft"
         # L2c: pre-rebuild element count (from the snapshot) = "had bans before"
         _bl_before=$((_bl_before + $(_fw_count_dump_elems "$_dump")))
+        # A failed read is UNKNOWN, never "0 elements" (it must not raise the empty alarm).
         # shellcheck disable=SC2086  # $_fam is "<family> <table>"
-        nft list set $_fam "$_set" > "$snapshot_dir/sets/${_set}.after.nft" 2>/dev/null || true
-        _n=$(_fw_count_dump_elems "$snapshot_dir/sets/${_set}.after.nft")
-        _rs_total=$((_rs_total + _n))
+        if nft list set $_fam "$_set" > "$snapshot_dir/sets/${_set}.after.nft" 2>/dev/null; then
+            _n=$(_fw_count_dump_elems "$snapshot_dir/sets/${_set}.after.nft")
+            _rs_total=$((_rs_total + _n))
+        else
+            _rs_unread=$((_rs_unread + 1))
+        fi
     done
-    [[ "$quiet" == "false" ]] && echo "    Blacklist after load: $_rs_total elements (had $_bl_before before)"
+    if [[ "$_rs_unread" -gt 0 ]]; then
+        echo "    WARNING: $_rs_unread blacklist set(s) could not be read after the load — count UNKNOWN" >&2
+    fi
+    [[ "$quiet" == "false" ]] && echo "    Blacklist after load: $_rs_total elements in readable sets (had $_bl_before before)"
 
     # L2c (TRANSITION-FAIL-OPEN-UNOBSERVED): if the blacklist held bans before the
     # rebuild but is completely empty after restore, a fail-open window persisted —
     # record it as a harm-keyed CRITICAL in the transition-health counter (the
     # function self-guards before>0). With L2a working this should never fire; it is
     # a regression detector for any future break of the snapshot-restore path.
-    if [[ "$_bl_before" -gt 0 && "$_rs_total" -eq 0 ]]; then
+    if [[ "$_rs_unread" -eq 0 && "$_bl_before" -gt 0 && "$_rs_total" -eq 0 ]]; then
         local _fth_helper="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_firewall_transition_health.sh"
         if [[ -f "$_fth_helper" ]]; then
             # shellcheck source=/dev/null
@@ -5361,7 +5368,7 @@ firewall_reset() {
 
     # Step 4: Load the clean NFTBan schema (one transaction)
     [[ "$quiet" == "false" ]] && echo "  [4/11] Loading clean NFTBan schema..."
-    if ! nft -f "$nftban_conf" 2>&1; then
+    if ! nftban_nft_write -f "$nftban_conf" 2>&1; then
         echo "ERROR: firewall reset: the NFTBan schema failed to load. The transaction was not committed:" >&2
         echo "  the previous NFTBan tables are unchanged and no table was deleted." >&2
         local _rs_tables
@@ -5683,7 +5690,7 @@ _restore_from_file() {
     systemctl stop nftband 2>/dev/null || true
 
     local _rc=0
-    if ! nft -f "$_txn" 2>&1; then
+    if ! nftban_nft_write -f "$_txn" 2>&1; then
         # One atomic transaction: on failure the kernel keeps the pre-restore ruleset.
         echo "ERROR: restore transaction failed to load — the previous ruleset is still active" >&2
         _rc=1

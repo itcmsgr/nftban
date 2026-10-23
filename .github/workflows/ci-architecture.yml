@@ -598,6 +598,20 @@ jobs:
             exit "$rc"
           fi
 
+      # v1.236: every nft write outside nftband holds the write boundary (nft_writers.lock
+      # EXCLUSIVE). B-1 converted files carry no raw write; B-2 ratchets the rest.
+      - name: Check nft write boundary B-1/B-2/B-3 (v1.236, BLOCKING)
+        run: |
+          set +e
+          output="$(./scripts/ci/check-nft-write-boundary.sh 2>&1)"
+          rc=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::nft write boundary guard failed (rc=$rc) — use nftban_nft_write; see scripts/ci/nft-write-boundary-baseline.txt"
+            exit "$rc"
+          fi
+
       - name: Check nft consumer execution authority (v1.228.4 PR-1, BLOCKING)
         run: |
           set +e

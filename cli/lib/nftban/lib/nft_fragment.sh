@@ -23,6 +23,11 @@ fi
 [[ -n "${_NFTBAN_NFT_FRAGMENT_LOADED:-}" ]] && return 0
 declare -g _NFTBAN_NFT_FRAGMENT_LOADED=1
 
+# v1.236: direct nft writes go through the write boundary. Functions that read a rule handle
+# and then write at it run whole inside one section (nftban_writers_run, *_held bodies).
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+source "${BASH_SOURCE[0]%/*}/nft_writers.sh"
+
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -158,7 +163,8 @@ EOF
 # Render portscan classic jump rules fragment
 # These are kept separate because they need idempotent handling
 # v1.19.20 FIX: Implements PORTSCAN_NFT_JUMP_POSITION for correct rule ordering
-nft_fragment_render_portscan_classic_jump() {
+nft_fragment_render_portscan_classic_jump() { nftban_writers_run _nft_fragment_render_portscan_classic_jump_held; }
+_nft_fragment_render_portscan_classic_jump_held() {
     local chain="${PORTSCAN_NFT_CHAIN:-portscan_detection}"
 
     # v1.60.6: Rewritten — direct nft insert (mirrors DDoS classic pattern).
@@ -269,7 +275,8 @@ nft_fragment_has_jump() {
 # v1.65.0: Remove jump rule(s) from input chain for a module
 # Usage: nft_fragment_remove_jump <chain_name>
 # Removes jump from both ip and ip6 tables. Idempotent — no error if jump absent.
-nft_fragment_remove_jump() {
+nft_fragment_remove_jump() { nftban_writers_run _nft_fragment_remove_jump_held "$@"; }
+_nft_fragment_remove_jump_held() {
     local chain_name="$1"
     local table_fam handle
 
@@ -307,7 +314,8 @@ nft_fragment_remove_jump() {
 # Best-effort per object: a host that never ran the other mode has nothing to
 # remove. The CALLER is responsible for verifying absence afterwards, because a
 # tolerated failure here must never be mistaken for a removal that happened.
-nft_fragment_delete_object() {
+nft_fragment_delete_object() { nftban_writers_run _nft_fragment_delete_object_held "$@"; }
+_nft_fragment_delete_object_held() {
     local family="$1" kind="$2" name="$3"
 
     case "$kind" in
@@ -701,7 +709,8 @@ EOF
 # Render DDoS sanity jump rules fragment
 # v1.61.0: Insert BEFORE @whitelist_ip (not append) so sanity sees all traffic
 # including service-port xmas/null/frag packets that were previously missed.
-nft_fragment_render_ddos_sanity_jump() {
+nft_fragment_render_ddos_sanity_jump() { nftban_writers_run _nft_fragment_render_ddos_sanity_jump_held; }
+_nft_fragment_render_ddos_sanity_jump_held() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${DDOS_SANITY_CHAIN:-ddos_sanity}"
@@ -945,7 +954,8 @@ EOF
 }
 
 # Render SYNPROXY jump rules fragment
-nft_fragment_render_synproxy_jump() {
+nft_fragment_render_synproxy_jump() { nftban_writers_run _nft_fragment_render_synproxy_jump_held; }
+_nft_fragment_render_synproxy_jump_held() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${DDOS_SYNPROXY_CHAIN:-ddos_synproxy}"
@@ -991,7 +1001,8 @@ nft_fragment_render_synproxy_jump() {
 # Remove only nftban-managed rules from raw prerouting chains
 # Uses comment-based matching to avoid destroying Docker/K8s rules
 # Usage: _nft_cleanup_synproxy_raw
-_nft_cleanup_synproxy_raw() {
+_nft_cleanup_synproxy_raw() { nftban_writers_run _nft_cleanup_synproxy_raw_held; }
+_nft_cleanup_synproxy_raw_held() {
     local family
     for family in ip ip6; do
         nft -a list chain "$family" raw prerouting 2>/dev/null | \
@@ -1177,7 +1188,8 @@ EOF
 # Render DDoS prefix aggregation jump rules fragment
 # v1.61.0: Insert BEFORE @tcp_ports_in (not append) so prefix sees service-port floods.
 # Same proven anchor as DDoS classic (lines 1030-1032).
-nft_fragment_render_ddos_prefix_jump() {
+nft_fragment_render_ddos_prefix_jump() { nftban_writers_run _nft_fragment_render_ddos_prefix_jump_held; }
+_nft_fragment_render_ddos_prefix_jump_held() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${DDOS_PREFIX_CHAIN:-ddos_prefix}"
@@ -1405,7 +1417,8 @@ EOF
 # Render DDoS classic jump rules fragment
 # v1.46.0 FIX-A: Insert BEFORE service port accept rules (was append → bypassed)
 # Uses same position-aware strategy as SYNPROXY jump (line 642)
-nft_fragment_render_ddos_classic_jump() {
+nft_fragment_render_ddos_classic_jump() { nftban_writers_run _nft_fragment_render_ddos_classic_jump_held; }
+_nft_fragment_render_ddos_classic_jump_held() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${DDOS_NFT_CHAIN:-ddos_protection}"
@@ -1612,7 +1625,8 @@ EOF
 # Render DDoS ban jump rules fragment
 # v1.61.0: Insert BEFORE @blacklist_manual (not append) so DDoS-banned IPs get
 # DDoS-specific attribution. After whitelist so admin trust overrides automated ban.
-nft_fragment_render_ddos_ban_jump() {
+nft_fragment_render_ddos_ban_jump() { nftban_writers_run _nft_fragment_render_ddos_ban_jump_held; }
+_nft_fragment_render_ddos_ban_jump_held() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="ddos_ban_enforce"
@@ -1845,7 +1859,8 @@ EOF
 # Render penalty ladder jump rules
 # v1.61.0: Insert BEFORE established,related (not append) so penalized IPs cannot
 # benefit from stateful bypass. After port_allow so admin per-IP grants override penalty.
-nft_fragment_render_ddos_penalty_jump() {
+nft_fragment_render_ddos_penalty_jump() { nftban_writers_run _nft_fragment_render_ddos_penalty_jump_held; }
+_nft_fragment_render_ddos_penalty_jump_held() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${DDOS_PENALTY_CHAIN:-ddos_penalty}"
@@ -2189,7 +2204,8 @@ EOF
 # Render HTTP Bot Guard jump rules fragment
 # v1.61.0: Insert BEFORE @tcp_ports_in (not append) so botguard classifies HTTP
 # traffic before service accept. Port-scoped to 80/443 only.
-nft_fragment_render_http_botguard_jump() {
+nft_fragment_render_http_botguard_jump() { nftban_writers_run _nft_fragment_render_http_botguard_jump_held; }
+_nft_fragment_render_http_botguard_jump_held() {
     local table_ipv4="${BOTGUARD_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${BOTGUARD_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${BOTGUARD_NFT_CHAIN:-http_bot_guard}"
@@ -2394,14 +2410,14 @@ nft_fragment_enable_module() {
             local bg_table_v4="${BOTGUARD_NFT_TABLE_IPV4:-ip nftban}"
             local bg_table_v6="${BOTGUARD_NFT_TABLE_IPV6:-ip6 nftban}"
             local bg_chain="${BOTGUARD_NFT_CHAIN:-http_bot_guard}"
-            nft flush chain $bg_table_v4 "$bg_chain" 2>/dev/null || true
-            nft delete set $bg_table_v4 http_bot_grey_meter 2>/dev/null || true
-            nft delete set $bg_table_v4 http_bot_pending_meter 2>/dev/null || true
-            nft delete set $bg_table_v4 http_bot_meter 2>/dev/null || true
-            nft flush chain $bg_table_v6 "$bg_chain" 2>/dev/null || true
-            nft delete set $bg_table_v6 http_bot_grey_meter6 2>/dev/null || true
-            nft delete set $bg_table_v6 http_bot_pending_meter6 2>/dev/null || true
-            nft delete set $bg_table_v6 http_bot_meter6 2>/dev/null || true
+            nftban_nft_write flush chain $bg_table_v4 "$bg_chain" 2>/dev/null || true
+            nftban_nft_write delete set $bg_table_v4 http_bot_grey_meter 2>/dev/null || true
+            nftban_nft_write delete set $bg_table_v4 http_bot_pending_meter 2>/dev/null || true
+            nftban_nft_write delete set $bg_table_v4 http_bot_meter 2>/dev/null || true
+            nftban_nft_write flush chain $bg_table_v6 "$bg_chain" 2>/dev/null || true
+            nftban_nft_write delete set $bg_table_v6 http_bot_grey_meter6 2>/dev/null || true
+            nftban_nft_write delete set $bg_table_v6 http_bot_pending_meter6 2>/dev/null || true
+            nftban_nft_write delete set $bg_table_v6 http_bot_meter6 2>/dev/null || true
 
             # Then create enforcement chain + rules
             fragment_path=$(nft_fragment_render_http_botguard) || return 1
@@ -2494,7 +2510,7 @@ nft_fragment_disable_module() {
         local _del_fam
         for _del_fam in "ip nftban" "ip6 nftban"; do
             if nft list chain ${_del_fam} "$chain_name" >/dev/null 2>&1; then
-                nft delete chain ${_del_fam} "$chain_name" 2>/dev/null || true
+                nftban_nft_write delete chain ${_del_fam} "$chain_name" 2>/dev/null || true
             fi
         done
     fi

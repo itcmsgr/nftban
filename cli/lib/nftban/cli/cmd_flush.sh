@@ -38,6 +38,10 @@
 
 set -Eeuo pipefail
 
+# v1.236: emergency direct nft writes go through the write boundary.
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+source "${BASH_SOURCE[0]%/*}/../lib/nft_writers.sh"
+
 # Load common CLI helpers (provides cmd_init, cmd_error, cmd_is_json_mode, etc.)
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/cmd_common.sh" || return 1
@@ -251,7 +255,7 @@ _restore_system_whitelist() {
             # Fallback for emergency - direct nft (should rarely be used)
             # v1.19.27 SECURITY: Validate IPs contain only safe characters
             if [[ "$ips_v4" =~ ^[0-9.,/[:space:]]+$ ]]; then
-                nft add element "${NFTBAN_TABLE_IPV4}" whitelist_ipv4 "{ $ips_v4 }" 2>/dev/null || true
+                nftban_nft_write add element "${NFTBAN_TABLE_IPV4}" whitelist_ipv4 "{ $ips_v4 }" 2>/dev/null || true
             fi
         fi
         echo "  Restored $count_v4 IPv4 system IPs"
@@ -274,7 +278,7 @@ _restore_system_whitelist() {
             # Fallback for emergency - direct nft (should rarely be used)
             # v1.19.27 SECURITY: Validate IPs contain only safe characters
             if [[ "$ips_v6" =~ ^[0-9a-fA-F:,/[:space:]]+$ ]]; then
-                nft add element "${NFTBAN_TABLE_IPV6}" whitelist_ipv6 "{ $ips_v6 }" 2>/dev/null || true
+                nftban_nft_write add element "${NFTBAN_TABLE_IPV6}" whitelist_ipv6 "{ $ips_v6 }" 2>/dev/null || true
             fi
         fi
         echo "  Restored $count_v6 IPv6 system IPs"
@@ -336,7 +340,7 @@ _flush_set_via_ipc() {
         nft_ipc_flush_set "$table" "$set_name" 2>/dev/null
     else
         # Emergency direct nft access
-        nft flush set $table "$set_name" 2>/dev/null
+        nftban_nft_write flush set $table "$set_name" 2>/dev/null
     fi
 }
 
@@ -349,7 +353,7 @@ _apply_file_via_ipc() {
         nft_ipc_apply_ruleset "$file_path" 2>/dev/null
     else
         # Emergency direct nft access
-        nft -f "$file_path" 2>/dev/null
+        nftban_nft_write -f "$file_path" 2>/dev/null
     fi
 }
 

@@ -12,7 +12,7 @@ cli/lib/nftban/cli/cmd_blacklist.sh	6
 cli/lib/nftban/cli/cmd_botguard.sh	7
 cli/lib/nftban/cli/cmd_ddos.sh	1
 cli/lib/nftban/cli/cmd_egress.sh	12
-cli/lib/nftban/cli/cmd_firewall.sh	21
+cli/lib/nftban/cli/cmd_firewall.sh	23
 cli/lib/nftban/cli/cmd_flush.sh	9
 cli/lib/nftban/cli/cmd_health_analysis.sh	3
 cli/lib/nftban/cli/cmd_health_core.sh	1
@@ -84,5 +84,6 @@ internal/metrics/evidence_sets.go	2
 internal/metrics/rule_counters.go	3
 internal/nftbackend/backend.go	2
 internal/rulefp/baseline.go	2
+internal/ruleset/kernel.go	1
 internal/validator/module_health.go	2
 internal/validator/nftjson.go	1

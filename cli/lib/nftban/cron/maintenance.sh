@@ -458,6 +458,12 @@ EOF
             local table_fam="${family} nftban"
             # Check if SYNPROXY jump exists in the chain
             local synproxy_handle established_handle
+            # v1.236: the handle reads and the move run in ONE write-boundary section, so a
+            # replacement cannot renumber the handles in between.
+            if ! nftban_writers_acquire; then
+                log "WARN" "SYNPROXY order check skipped in ${family}: nft writes busy"
+                continue
+            fi
             synproxy_handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
                 | grep 'jump ddos_synproxy' | grep -oP 'handle \K\d+' | head -1 || true)
             established_handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
@@ -469,8 +475,8 @@ EOF
                     log "WARN" "SYNPROXY jump is AFTER established rule in ${family} — SSH lockout risk!"
                     log "INFO" "Auto-fixing: moving SYNPROXY jump before established rule..."
                     # Remove the misplaced jump
-                    nft delete rule ${table_fam} input handle "$synproxy_handle" 2>/dev/null || true
-                    # Re-insert before established,related
+                    nft delete rule ${table_fam} input handle "$synproxy_handle" 2>/dev/null || true # nftban:held
+                    # Re-insert before established,related  (nftban:held)
                     nft insert rule ${table_fam} input position "$established_handle" \
                         jump ddos_synproxy comment "\"SYNPROXY protection\"" 2>/dev/null || {
                         log "WARN" "Failed to reposition SYNPROXY jump in ${family}"
@@ -478,6 +484,7 @@ EOF
                     log "INFO" "SYNPROXY jump repositioned in ${family} input chain"
                 fi
             fi
+            nftban_writers_release
         done
     fi
 
@@ -496,6 +503,11 @@ EOF
         for family in ip ip6; do
             # Check if raw prerouting has a notrack rule that includes the SSH port
             local raw_rule
+            # v1.236: read, delete and re-add in ONE write-boundary section (handles).
+            if ! nftban_writers_acquire; then
+                log "WARN" "SYNPROXY/SSH correlation check skipped in ${family}: nft writes busy"
+                continue
+            fi
             raw_rule=$(nft -a list chain ${family} raw prerouting 2>/dev/null \
                 | grep -i 'SYNPROXY.*notrack' || true)
 
@@ -510,6 +522,7 @@ EOF
                     local raw_handle
                     raw_handle=$(echo "$raw_rule" | grep -oP 'handle \K\d+' | head -1 || true)
                     if [[ -n "$raw_handle" ]]; then
+                        # (nftban:held)
                         nft delete rule ${family} raw prerouting handle "$raw_handle" 2>/dev/null && {
                             log "INFO" "Removed SYNPROXY notrack rule (handle ${raw_handle}) from ${family} raw"
 
@@ -521,6 +534,7 @@ EOF
                             new_ports=$(echo "$old_ports" | tr ',' '\n' | grep -vxF "$SSH_PORT" | tr '\n' ',' | sed 's/,$//')
 
                             if [[ -n "$new_ports" ]]; then
+                                # (nftban:held)
                                 nft add rule ${family} raw prerouting \
                                     tcp dport "{ ${new_ports} }" tcp flags syn / "syn,ack,fin,rst" \
                                     notrack comment "\"SYNPROXY: notrack SYN\"" 2>/dev/null && {
@@ -537,6 +551,7 @@ EOF
                     fi
                 fi
             fi
+            nftban_writers_release
         done
     fi
 

@@ -67,6 +67,8 @@ SHIM
 chmod +x "$WORK/bin/nft"
 export PATH="$WORK/bin:$PATH"
 export NFT_STATE="$WORK/state"; mkdir -p "$NFT_STATE"
+# v1.236: product nft writes take the write-boundary lock under NFTBAN_RUN_DIR; keep it in the sandbox.
+export NFTBAN_RUN_DIR="$WORK/run"
 
 mkpop(){ printf 'table %s %s {\n\tchain c {\n\t\ttype filter hook input priority 0; policy accept;\n\t\tip saddr 198.51.100.1 counter accept comment "FOREIGN-OWNED"\n\t}\n}\n' "$1" "$2" > "$NFT_STATE/$1__$2.tbl"; }
 mkempty(){ printf 'table %s %s {\n}\n' "$1" "$2" > "$NFT_STATE/$1__$2.tbl"; }

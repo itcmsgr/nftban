@@ -1,0 +1,7 @@
+# NFTBan — raw nft write debt outside the write boundary (v1.236)
+#
+# A RATCHET, not a target. scripts/ci/check-nft-write-boundary.sh fails if this count
+# INCREASES, so no new raw nft write can be added while the remaining ones (nft_fragment.sh,
+# cmd_firewall.sh lanes, boot helpers, package scriptlets) are moved onto the boundary.
+# When you convert sites, LOWER this number in the same change.
+RAW_NFT_WRITE_COUNT=18

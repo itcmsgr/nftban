@@ -31,6 +31,10 @@
 
 [[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
 
+# v1.236: emergency direct nft writes go through the write boundary.
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+source "${BASH_SOURCE[0]%/*}/../lib/nft_writers.sh"
+
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
@@ -262,7 +266,7 @@ nftban_whitelist_add_ip() {
         fi
     else
         # Emergency direct nft access
-        if nft add element ${table} ${set_name} "{ $ip }" 2>/dev/null \
+        if nftban_nft_write add element ${table} ${set_name} "{ $ip }" 2>/dev/null \
            && nft get element ${table} ${set_name} "{ $ip }" &>/dev/null; then _wl_state="confirmed"; fi
     fi
     if [[ "$_wl_state" == "failed" ]]; then
@@ -348,7 +352,7 @@ nftban_whitelist_remove_ip() {
         fi
     else
         # Emergency direct nft access
-        if nft delete element ${table} ${set_name} "{ $ip }" 2>/dev/null; then
+        if nftban_nft_write delete element ${table} ${set_name} "{ $ip }" 2>/dev/null; then
             echo "Removed $ip from $family whitelist (emergency direct access)"
             return 0
         else

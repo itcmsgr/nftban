@@ -28,6 +28,10 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
+# v1.236: the fallback reload goes through the write boundary.
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+source "${BASH_SOURCE[0]%/*}/../lib/nft_writers.sh"
+
 # Prevent double-loading
 [[ -n "${NFTBAN_CLI_FWLOGS_LOADED:-}" ]] && return 0
 readonly NFTBAN_CLI_FWLOGS_LOADED=1
@@ -202,7 +206,7 @@ _fwlog_reload_nftables() {
         source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" 2>/dev/null || true
         nft_conf=$(nftban_distro_get_path "nftables_conf" 2>/dev/null)
         [[ -z "$nft_conf" ]] && nft_conf="/etc/nftables.conf"
-        nft -f "$nft_conf" 2>/dev/null || true
+        nftban_nft_write -f "$nft_conf" 2>/dev/null || true
     fi
 }
 

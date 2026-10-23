@@ -19,6 +19,10 @@
 [[ -n "${_NFTBAN_COMMIT_CONFIRM_LOADED:-}" ]] && return 0 2>/dev/null || true
 _NFTBAN_COMMIT_CONFIRM_LOADED=1
 
+# v1.236: the rollback transaction goes through the write boundary.
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+source "${BASH_SOURCE[0]%/*}/nft_writers.sh"
+
 CC_STATE_DIR="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state"
 CC_RECORD="${CC_STATE_DIR}/commit-confirm.state"
 CC_FAILED_MARK="${CC_STATE_DIR}/commit-confirm.rollback-failed"
@@ -366,7 +370,7 @@ cc_rollback() {
         tx=$(mktemp) || { cc_unlock; return 1; }
         { printf 'add table ip nftban\ndelete table ip nftban\nadd table ip6 nftban\ndelete table ip6 nftban\n'
           cat "$CC_WORK/kernel-before.nft"; } > "$tx"
-        if ! err=$(nft -f "$tx" 2>&1); then
+        if ! err=$(nftban_nft_write -f "$tx" 2>&1); then
             rm -f "$tx"
             # Owner D10: KEEP the current kernel state + ALARM. Never auto-delete protection.
             cc_set status rollback-failed

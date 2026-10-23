@@ -32,6 +32,10 @@ set -Eeuo pipefail
 [[ -n "${_NFTBAN_HEALTH_CHECKS_SECURITY_LOADED:-}" ]] && return 0
 _NFTBAN_HEALTH_CHECKS_SECURITY_LOADED=1
 
+# v1.236: direct nft writes (fix paths) go through the write boundary.
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+source "${BASH_SOURCE[0]%/*}/../lib/nft_writers.sh"
+
 # =============================================================================
 # LOAD SHARED LIBRARIES (with graceful fallbacks)
 # =============================================================================
@@ -830,8 +834,8 @@ EOF
             if [[ "$_hstate" == "ready" ]]; then
                 for _sp in "${ssh_ports_union[@]}"; do
                     for _set in tcp_ports_in ssh_ports; do
-                        nft add element ${NFTBAN_TABLE_IPV4} "$_set" "{ $_sp }" 2>/dev/null || true
-                        nft add element ${NFTBAN_TABLE_IPV6} "$_set" "{ $_sp }" 2>/dev/null || true
+                        nftban_nft_write add element ${NFTBAN_TABLE_IPV4} "$_set" "{ $_sp }" 2>/dev/null || true
+                        nftban_nft_write add element ${NFTBAN_TABLE_IPV6} "$_set" "{ $_sp }" 2>/dev/null || true
                     done
                 done
 
@@ -854,10 +858,10 @@ EOF
                     if [[ "$_old_listener" -eq 0 && "$old_ssh_port" != "${_active_ssh_port:-}" ]]; then
                         local _del_ok=false _dset
                         for _dset in tcp_ports_in ssh_ports; do
-                            if nft delete element ${NFTBAN_TABLE_IPV4} "$_dset" "{ $old_ssh_port }" 2>/dev/null; then
+                            if nftban_nft_write delete element ${NFTBAN_TABLE_IPV4} "$_dset" "{ $old_ssh_port }" 2>/dev/null; then
                                 _del_ok=true
                             fi
-                            nft delete element ${NFTBAN_TABLE_IPV6} "$_dset" "{ $old_ssh_port }" 2>/dev/null || true
+                            nftban_nft_write delete element ${NFTBAN_TABLE_IPV6} "$_dset" "{ $old_ssh_port }" 2>/dev/null || true
                         done
                         if [[ "$_del_ok" == "true" ]]; then
                             ssh_issues+=("AUTO-FIXED: Stale old port $old_ssh_port removed from tcp_ports_in + ssh_ports")
