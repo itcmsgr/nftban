@@ -117,17 +117,20 @@ func TestEvaluateFromDiskAndStateRoundTrip(t *testing.T) {
 // A fresh install with feed files left behind never meets the migration condition.
 func TestFreshInstallNeverMigrates(t *testing.T) {
 	data := t.TempDir()
-	if wrote, err := RecordFreshInstall(data, time.Unix(0, 0)); err != nil || !wrote {
-		t.Fatalf("fresh install must record: %v %v", wrote, err)
+	if err := os.MkdirAll(filepath.Join(data, "state"), 0o750); err != nil {
+		t.Fatal(err)
 	}
-	rec, _ := ReadState(data)
+	// The installer writes exactly this line on --mode=install.
+	if err := os.WriteFile(StatePath(data), StateLine(StateConsistent, ReasonFreshInstall, time.Unix(0, 0)), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := ReadState(data)
+	if err != nil || rec != StateConsistent {
+		t.Fatalf("fresh-install line must parse: %q %v", rec, err)
+	}
 	d := Decide(false, map[string]bool{"TOR_EXITS": true}, []string{"tor_exits"}, rec)
 	if d.State != StateConsistent || len(d.Enforced) != 0 {
 		t.Fatalf("leftover files must not enable feeds on a fresh install: %+v", d)
-	}
-	// A second install run (or an upgrade with state present) does not overwrite.
-	if wrote, err := RecordFreshInstall(data, time.Unix(1, 0)); err != nil || wrote {
-		t.Fatalf("existing state must be kept: %v %v", wrote, err)
 	}
 }
 

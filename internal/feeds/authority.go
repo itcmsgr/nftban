@@ -168,27 +168,23 @@ func WriteState(dataDir, state, reason string, now time.Time) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil { // #nosec G301
 		return err
 	}
+	return safety.SafeWriteFile(path, StateLine(state, reason, now), 0640)
+}
+
+// StateLine is the content of the state file — one format for every writer (the daemon,
+// nftban-core and the installer, which writes it through its executor).
+func StateLine(state, reason string, now time.Time) []byte {
 	line := fmt.Sprintf("STATE=%s SINCE=%s", state, now.UTC().Format(time.RFC3339))
 	if reason != "" {
 		line += " REASON=" + reason
 	}
-	return safety.SafeWriteFile(path, []byte(line+"\n"), 0640)
+	return []byte(line + "\n")
 }
 
-// RecordFreshInstall records CONSISTENT on a fresh install when no state exists yet, so a
-// fresh host can never meet the migration condition — not even with feed files left behind
-// by an earlier removal. Called by the installer for --mode=install only; an upgrade leaves
-// the state absent so the first evaluation applies the migration rule. Returns whether it wrote.
-func RecordFreshInstall(dataDir string, now time.Time) (bool, error) {
-	recorded, err := ReadState(dataDir)
-	if err != nil {
-		return false, err
-	}
-	if recorded != "" {
-		return false, nil
-	}
-	return true, WriteState(dataDir, StateConsistent, "fresh_install", now)
-}
+// ReasonFreshInstall is recorded by the installer on --mode=install when no state exists:
+// a fresh host can never meet the migration condition, not even with feed files left behind
+// by an earlier removal. An upgrade leaves the state absent so the first evaluation applies it.
+const ReasonFreshInstall = "fresh_install"
 
 // Decide is the feed authority (pure). files = feed names with entries; perFeed keyed by the
 // upper-case name; recorded = the state on disk ("" = none).

@@ -45,7 +45,6 @@ import (
 	"github.com/itcmsgr/nftban/internal/installer/switchop"
 	"github.com/itcmsgr/nftban/internal/installer/users"
 	"github.com/itcmsgr/nftban/internal/installer/validate"
-	"github.com/itcmsgr/nftban/internal/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
@@ -729,11 +728,17 @@ func phaseSwitch(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	// v1.236 feed authority (design §7): a fresh install records CONSISTENT before the first
 	// rebuild renders feed content, so leftover feed files never enable feeds on a new host.
 	// An upgrade leaves the state absent: the migration rule applies at the first evaluation.
+	// Written through the executor (never the host directly), so tests and dry runs cannot
+	// touch the live state.
 	if sf.Mode == "install" {
-		if wrote, ferr := feeds.RecordFreshInstall(nftbanconf.MustLoad().DataDir, time.Now()); ferr != nil {
-			log.Warn("feed authority: fresh-install state not recorded: %v", ferr)
-		} else if wrote {
-			log.Info("feed authority: fresh install recorded CONSISTENT")
+		if p := feeds.StatePath(fhs.DataDir); !exec.FileExists(p) {
+			if ferr := exec.MkdirAll(filepath.Dir(p), 0750); ferr != nil {
+				log.Warn("feed authority: fresh-install state not recorded: %v", ferr)
+			} else if ferr := exec.WriteFileAtomic(p, feeds.StateLine(feeds.StateConsistent, feeds.ReasonFreshInstall, time.Now()), 0640); ferr != nil {
+				log.Warn("feed authority: fresh-install state not recorded: %v", ferr)
+			} else {
+				log.Info("feed authority: fresh install recorded CONSISTENT")
+			}
 		}
 	}
 	rebuildStart := time.Now()
