@@ -195,12 +195,23 @@ nft_ipc_request() {
     # though the daemon had done the work (lab2: a ban that waited 2 s was applied but
     # reported failed; a 16 s full sync was always reported failed and retried). -t gives
     # the answer the same budget as the overall timeout.
-    response=$(echo "$request" | timeout "$NFTBAN_IPC_TIMEOUT" socat -t "$NFTBAN_IPC_TIMEOUT" - "UNIX-CONNECT:$NFTBAN_DAEMON_SOCKET" 2>/dev/null)
+    local serr
+    serr="$(mktemp 2>/dev/null || echo /dev/null)"
+    response=$(echo "$request" | timeout "$NFTBAN_IPC_TIMEOUT" socat -t "$NFTBAN_IPC_TIMEOUT" - "UNIX-CONNECT:$NFTBAN_DAEMON_SOCKET" 2>"$serr")
 
     if [[ -z "$response" ]]; then
-        _nft_ipc_json_error "daemon not responding"
+        # v1.236: only a refused connection proves the request never reached the daemon.
+        # Once connected, an empty answer says nothing about the effect: a mutation may have
+        # been applied. Report it as unknown, never as "not applied".
+        if grep -q 'connect(' "$serr" 2>/dev/null; then
+            _nft_ipc_json_error "daemon not reachable — request not delivered, nothing applied"
+        else
+            _nft_ipc_json_error "no answer from daemon — outcome unknown (the request may have been applied; check before retrying)"
+        fi
+        [[ "$serr" != /dev/null ]] && rm -f "$serr"
         return 1
     fi
+    [[ "$serr" != /dev/null ]] && rm -f "$serr"
 
     echo "$response"
 }
