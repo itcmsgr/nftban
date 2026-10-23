@@ -68,6 +68,23 @@ func newExemptResolver(configDir, scannerFile string) *exemptResolver {
 	}
 }
 
+// Exemption is the never-ban authority (the same resolver Ban() consults) for code that
+// has no Backend: v1.236 `nftban-core ruleset content`, which renders the set contents of
+// a reload/rebuild without the daemon.
+type Exemption interface {
+	IsExempt(ip string) (bool, string)
+	SubtractExempt(cidrs []string) (kept []string, removed int, omitted []string)
+}
+
+// NewExemption returns a loaded never-ban authority for configDir. Unlike the daemon's
+// resolver it is refreshed once, up front (a one-shot command has no startup path to
+// protect), and publishes no scanner file.
+func NewExemption(configDir string) Exemption {
+	r := newExemptResolver(configDir, "")
+	r.Refresh()
+	return r
+}
+
 // canonPrefix returns p in the SAME canonical identity form the exact keys use.
 // An IPv4-mapped IPv6 prefix ("::ffff:203.0.113.0/120") is rewritten to its IPv4
 // equivalent ("203.0.113.0/24") so that a canonicalized (unmapped) lookup address

@@ -2705,10 +2705,12 @@ Usage:
     nftban firewall reload --help         Show this help text
 
 What it does:
-  * Reloads /etc/nftables.conf via systemd or nft -f (per distro).
-  * Re-applies the NFTBan schema (whitelist, blacklist, etc.) after the kernel
-    ruleset is replaced.
-  * Atomic: kernel never sees an empty/partial ruleset.
+  * Re-renders the NFTBan schema and loads it TOGETHER with the set contents
+    (whitelist.d, blacklist.d, feeds, geoban, and the live timed bans with
+    their remaining time) in one nft transaction, so the ban sets are never
+    empty. Tables other than ip/ip6 nftban are not touched (/etc/nftables.conf
+    is no longer re-loaded).
+  * Re-applies the enabled protection modules afterwards.
 
 Exit codes:
     0    Reload committed
@@ -2744,26 +2746,13 @@ FIREWALL_RELOAD_HELP
         nftban_plan_txn_begin ddos portscan || return 7
     fi
 
-    # Step 1: Reload system nftables config
-    local nft_conf
-    # shellcheck source=/dev/null
-    source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" 2>/dev/null || true
-    nft_conf=$(nftban_distro_get_path "nftables_conf" 2>/dev/null)
-    [[ -z "$nft_conf" ]] && nft_conf="/etc/nftables.conf"
+    # Step 1 (`nft -f /etc/nftables.conf`) is REMOVED in v1.236 (plan §11.2; writer map
+    # "provably redundant"): it re-loaded the boot projection, which replaced the NFTBan
+    # tables with EMPTY sets one transaction BEFORE step 2 replaced them again, and that
+    # gap admitted banned sources (lab2 2026-10-19: 50 connections on v1.235.1).
 
-    if [[ ! -f "$nft_conf" ]]; then
-        echo "ERROR: nftables config not found: $nft_conf" >&2
-        echo "Check distro config in /etc/nftban/distros/" >&2
-        return 1
-    fi
-
-    [[ "$quiet" == "false" ]] && echo "Reloading nftables configuration..."
-    if ! nft -f "$nft_conf" 2>&1; then
-        echo "ERROR: Failed to reload nftables" >&2
-        return 1
-    fi
-
-    # Step 2: Re-apply NFTBan schema
+    # Step 2: Re-apply NFTBan schema — v1.236: schema + set contents in ONE transaction
+    # (_fw_atomic_load), so no set is ever empty in the kernel during a reload.
     # v1.50.0: Render from template if available, otherwise use live config
     local nftban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftables.conf"
     local _template="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/templates/nftables.conf.tpl"
@@ -2786,14 +2775,17 @@ FIREWALL_RELOAD_HELP
                 rm -f "$_tmp_conf" 2>/dev/null || true
                 return 1
             fi
-            if ! nft -f "$nftban_conf" 2>&1; then
-                echo "Warning: Failed to re-apply NFTBan schema" >&2
+            local _al_rc=0
+            _fw_atomic_load "$nftban_conf" "$quiet" || _al_rc=$?
+            if [[ $_al_rc -ne 0 ]]; then
+                echo "Warning: Failed to re-apply NFTBan schema (atomic load rc=$_al_rc: 1=rejected/unchanged 2=unknown 3=refused before change)" >&2
                 echo "Try: nftban firewall rebuild" >&2
+                [[ $_al_rc -ne 2 ]] || return 1
             fi
         else
             echo "Warning: Template validation failed, loading live config" >&2
             rm -f "$_tmp_conf"
-            if [[ -f "$nftban_conf" ]] && ! nft -f "$nftban_conf" 2>&1; then
+            if [[ -f "$nftban_conf" ]] && ! _fw_atomic_load "$nftban_conf" "$quiet"; then
                 echo "Try: nftban firewall rebuild" >&2
             fi
         fi
@@ -3135,6 +3127,70 @@ _rebuild_snapshot_full() {
     done
 
     echo "$snapshot_dir"
+}
+
+# _fw_atomic_load <schema-file> [quiet]
+# v1.236 safety lane Stage 2, step A (design V1236_STAGE2_DESIGN_DRAFT.md §9.6/§9.7).
+# The rendered schema starts with `delete table ip/ip6 nftban` and declares every set
+# EMPTY; loading it alone emptied every ban and feed set until later steps refilled
+# them (lab2 2026-10-22: banned sources admitted during update, reload and rebuild).
+# This loads ONE file = the schema + a generation marker + the set contents rendered by
+# `nftban-core ruleset content` (durable sources, plus the live timed / kernel-only
+# elements with their remaining TTL), so the kernel goes from the old complete state to
+# the new complete state in one commit. The schema file itself is not changed (it stays
+# the published, boot-safe /etc/nftban/nftables.conf).
+# Returns: 0 APPLIED (marker read back) | 1 REJECTED (nft refused; marker unchanged =
+# kernel positively unchanged) | 2 UNKNOWN (no positive readback either way) |
+# 3 REFUSED before mutation (content not rendered: oversized, memory, error).
+# NFTBAN_ATOMIC_LOAD=legacy is the explicit operator escape to the old schema-only load.
+_fw_atomic_load() {
+    local schema="$1" quiet="${2:-true}"
+    local core="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
+    local out nonce crc=0 rc=0 marker readable
+
+    if [[ "${NFTBAN_ATOMIC_LOAD:-}" == "legacy" ]]; then
+        echo "WARNING: NFTBAN_ATOMIC_LOAD=legacy — loading the schema alone; ban and feed sets are EMPTY until refilled" >&2
+        nft -f "$schema" 2>&1 && return 0
+        return 1
+    fi
+
+    out="$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/atomic-load.XXXXXX")" || return 3
+    nonce="$(date +%s%N)-$$"
+    # The marker goes into the full table bodies (`table ip nftban {` alone on its
+    # line), not into the `table ip nftban { }` idempotent-create line before the delete.
+    if ! awk -v n="$nonce" '{ print } /^table ip6? nftban \{[[:space:]]*$/ { print "    comment \"nftban-gen=" n "\"" }' "$schema" > "$out"; then
+        rm -f "$out"
+        echo "ERROR: could not compose the atomic load — nothing applied" >&2
+        return 3
+    fi
+    if [[ -x "$core" ]]; then
+        "$core" ruleset content >> "$out" 2> "$out.err" || crc=$?
+    else
+        crc=1
+        echo "nftban-core not found at $core" > "$out.err"
+    fi
+    if [[ $crc -ne 0 ]]; then
+        echo "ERROR: ruleset content not rendered (rc=$crc): $(tail -1 "$out.err" 2>/dev/null) — NOTHING applied, the existing ruleset is untouched" >&2
+        rm -f "$out" "$out.err"
+        return 3
+    fi
+    [[ "$quiet" == "false" ]] && echo "    $(grep -m1 '^RULESET_CONTENT' "$out.err" 2>/dev/null)"
+
+    nft -f "$out" 2>&1 || rc=$?
+    rm -f "$out" "$out.err"
+
+    readable=0
+    marker="$(nft -j list table ip nftban 2>/dev/null | jq -r '.nftables[] | .table? | select(.) | .comment // ""' 2>/dev/null)" && readable=1
+    if [[ "$marker" == "nftban-gen=$nonce" ]]; then
+        [[ $rc -ne 0 ]] && echo "WARNING: nft exited $rc but the new generation is in the kernel (APPLIED)" >&2
+        return 0
+    fi
+    if [[ $rc -ne 0 && $readable -eq 1 ]]; then
+        echo "ERROR: nft REJECTED the replacement (rc=$rc); generation marker unchanged — the previous ruleset is still loaded" >&2
+        return 1
+    fi
+    echo "ERROR: outcome UNKNOWN (nft rc=$rc, generation readback: '${marker:-unreadable}') — not claiming applied or unchanged" >&2
+    return 2
 }
 
 # _fw_restore_timed_set — restore a blacklist set from a `nft list set` dump,
@@ -4566,8 +4622,21 @@ _firewall_rebuild_core() {
         fi
         cc_apply_begin "$_cc_grace" || return 1
     fi
-    if ! nft -f "$load_conf" 2>&1; then
-        echo "ERROR: Failed to load NFTBan schema from $load_conf" >&2
+    # v1.236 Stage 2 step A: the schema AND the set contents in ONE transaction
+    # (_fw_atomic_load) — the schema alone loaded every ban/feed set empty and the
+    # restore steps below refilled them seconds later (lab2 2026-10-22: banned sources
+    # admitted during rebuild). Steps 6-12 stay; they are now idempotent top-ups.
+    local _al_rc=0
+    _fw_atomic_load "$load_conf" "$quiet" || _al_rc=$?
+    if [[ $_al_rc -eq 3 ]]; then
+        # Refused before any change (oversized / memory / content error): same class as
+        # a pre-validation failure — nothing mutated, no recovery marker.
+        echo "ERROR: rebuild refused before any change — existing firewall preserved" >&2
+        [[ "$_cc_mode" == "true" ]] && cc_apply_abort
+        return 1
+    fi
+    if [[ $_al_rc -ne 0 ]]; then
+        echo "ERROR: Failed to load NFTBan schema from $load_conf (atomic load rc=$_al_rc: 1=rejected, kernel unchanged; 2=outcome unknown)" >&2
         [[ "$_cc_mode" == "true" ]] && cc_apply_abort
         echo "Try: nftban firewall reset --force" >&2
         # v1.96: APPLY_FAILED — validated config failed to load (may be transient)

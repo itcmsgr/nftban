@@ -681,6 +681,31 @@ func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string)
 		return nil, fmt.Errorf("unsupported table family: %v", set.Table.Family)
 	}
 
+	canonicalCIDRs, stats, err := CanonicalCIDRElements(cidrs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Atomically replace the set contents: flush + add in ONE `nft -f`
+	// transaction (V-NFT-SET-REFRESH-ATOMICITY). Previously this flushed via a
+	// standalone `nft flush set` and repopulated in a SEPARATE `nft -f`, leaving
+	// the shared blacklist_* set transiently EMPTY between transactions — the
+	// F-FEED / F-GEO fail-open window where banned IPs were admitted during the
+	// daily feed / weekly geoban refresh. The single-transaction replace closes
+	// it; on nft failure the transaction rolls back and the prior (blocked)
+	// contents are retained (fail-CLOSED).
+	if err := replaceSetElementsViaFile(family, set.Table.Name, set.Name, canonicalCIDRs); err != nil {
+		return nil, err
+	}
+
+	return stats, nil
+}
+
+// CanonicalCIDRElements validates, deduplicates and merges CIDRs into the element
+// list an interval blacklist set receives (MergeCIDRsSafe also filters bogon and
+// oversized ranges). v1.236: shared by the daemon's set replace above and the
+// ruleset content renderer (internal/ruleset), so both load the same elements.
+func CanonicalCIDRElements(cidrs []string) ([]string, *MergeStats, error) {
 	// Step 1: Validate and deduplicate CIDRs
 	inputCount := len(cidrs)
 	seen := make(map[string]bool, len(cidrs))
@@ -707,7 +732,7 @@ func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string)
 	// MergeCIDRsSafe automatically filters problematic CIDRs (bogon ranges, oversized)
 	canonicalCIDRs, stats, filterStats, err := MergeCIDRsSafe(validCIDRs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to merge CIDRs: %w", err)
+		return nil, nil, fmt.Errorf("failed to merge CIDRs: %w", err)
 	}
 
 	// Log if any CIDRs were filtered (important for troubleshooting feed issues)
@@ -728,19 +753,7 @@ func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string)
 		stats.ReductionPct = float64(stats.OverlapsMerged) / float64(inputCount) * 100.0
 	}
 
-	// Atomically replace the set contents: flush + add in ONE `nft -f`
-	// transaction (V-NFT-SET-REFRESH-ATOMICITY). Previously this flushed via a
-	// standalone `nft flush set` and repopulated in a SEPARATE `nft -f`, leaving
-	// the shared blacklist_* set transiently EMPTY between transactions — the
-	// F-FEED / F-GEO fail-open window where banned IPs were admitted during the
-	// daily feed / weekly geoban refresh. The single-transaction replace closes
-	// it; on nft failure the transaction rolls back and the prior (blocked)
-	// contents are retained (fail-CLOSED).
-	if err := replaceSetElementsViaFile(family, set.Table.Name, set.Name, canonicalCIDRs); err != nil {
-		return nil, err
-	}
-
-	return stats, nil
+	return canonicalCIDRs, stats, nil
 }
 
 // =============================================================================
