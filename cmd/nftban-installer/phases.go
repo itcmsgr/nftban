@@ -722,6 +722,8 @@ func phaseSwitch(ctx context.Context, exec executor.Executor, sf *state.StateFil
 
 	generationBefore := switchop.ReadConvergenceGeneration(exec)
 	log.Info("effective convergence generation before rebuild: %d (-1 = not observable)", generationBefore)
+	// v1.236 upgrade handover: a pre-upgrade daemon cannot take the write boundary.
+	services.QuiesceReplacedDaemon(exec, log)
 	rebuildStart := time.Now()
 	// v1.230.0 Gate 6R: ctx is passed so a REFUSED rebuild can be RETRIED inside the
 	// installer's EXISTING deadline. ⛔ It does NOT bound the rebuild's execution —

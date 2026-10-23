@@ -19,6 +19,7 @@
 package services
 
 import (
+	"strings"
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
@@ -29,6 +30,39 @@ const (
 	daemonRetries  = 3
 	daemonRetrySec = 1
 )
+
+// QuiesceReplacedDaemon (v1.236, design V1236_STAGE2_DESIGN_DRAFT.md §2.3 upgrade handover)
+// stops nftband BEFORE the installer's rebuild replaces the ruleset when the running daemon
+// executes a binary the package has already replaced (/proc/<pid>/exe "(deleted)"): that is
+// the pre-upgrade daemon, which does not take the write boundary, so its writes could land
+// between the rebuild's kernel read and its commit (a ban lost, an unban undone). The socket
+// is stopped first so no request re-activates the old binary; stopping the service flushes
+// its op queue. The rebuild starts the NEW daemon itself when it re-applies modules (step 8),
+// and phaseConfigure's StartDaemon ensures it. A daemon running the current binary
+// participates in the boundary and is left running. Returns whether it stopped one.
+func QuiesceReplacedDaemon(exec executor.Executor, log *logging.Logger) bool {
+	if !exec.ServiceActive("nftband.service") {
+		return false
+	}
+	pid := strings.TrimSpace(exec.Run("systemctl", "show", "-p", "MainPID", "--value", "nftband.service").Stdout)
+	if pid == "" || pid == "0" {
+		return false
+	}
+	target := strings.TrimSpace(exec.Run("readlink", "/proc/"+pid+"/exe").Stdout)
+	if !strings.HasSuffix(target, " (deleted)") {
+		log.Info("upgrade handover: running nftband (pid %s) is the installed binary; it takes the write boundary — left running", pid)
+		return false
+	}
+	log.Info("upgrade handover: running nftband (pid %s, %s) predates this package and does not take the write boundary — stopping it before the rebuild", pid, target)
+	if err := exec.ServiceStop("nftband.socket"); err != nil {
+		log.Warn("upgrade handover: stop nftband.socket: %v", err)
+	}
+	if err := exec.ServiceStop("nftband.service"); err != nil {
+		log.Warn("upgrade handover: stop nftband.service: %v — the old daemon may still write during the rebuild", err)
+		return false
+	}
+	return true
+}
 
 // StartDaemon enables nftband.socket and nftband.service.
 // Retries up to 3 times with 1s delay. Non-fatal — logs warnings.
