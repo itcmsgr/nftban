@@ -464,13 +464,17 @@ fi
 unset FAKE_NFT_READ_FAIL
 
 # --- A6 UNINSTALL-STILL-REMOVES: packaging removal statements, executed --------
+# v1.236: the statements may take the write boundary inline (`flock -w N <lock> nft ...`); the
+# prefix is stripped, the statement executed is the same direct table deletion.
+_RM_RE='^[[:space:]]*(flock -w [0-9]+ [^[:space:]]+ )?nft (flush|delete) table '
+_RM_SED='s/^[[:space:]]*//; s/^flock -w [0-9]+ [^[:space:]]+ //; s/[[:space:]]*2>.*$//'
 extract_removals(){ # <postrm> -> DEB remove) arm nft table statements
     awk '/^    remove\)/{i=1;next} i&&/^        ;;/{exit} i{print}' "$1" \
-        | grep -E '^[[:space:]]*nft (flush|delete) table ' | sed -E 's/^[[:space:]]*//; s/[[:space:]]*2>.*$//' || true
+        | grep -E "$_RM_RE" | sed -E "$_RM_SED" || true
 }
 extract_rpm_removals(){
     awk '/^%postun/{i=1;next} i&&/^%[a-z]/{exit} i{print}' "$ROOT/packaging/build_nftban.sh" \
-        | grep -E '^[[:space:]]*nft (flush|delete) table ' | sed -E 's/^[[:space:]]*//; s/[[:space:]]*2>.*$//' || true
+        | grep -E "$_RM_RE" | sed -E "$_RM_SED" || true
 }
 for pkg in DEB RPM; do
     reset_converged; listener_closed
