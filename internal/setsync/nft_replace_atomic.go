@@ -97,6 +97,11 @@ func (m *NFTManager) FindSetInTable(table *nftables.Table, name string) (*nftabl
 //     not an accidental empty-set fail-open.
 //   - Interval sets are rejected: they are owned by the atomic FULL-sync path.
 func (m *NFTManager) ReplaceSetElements(set *nftables.Set, elements []SetElementInput) error {
+	release, errW := BeginWrite()
+	if errW != nil {
+		return errW
+	}
+	defer release()
 	// INV-NFT-TX-01: the atomic replacement owns a PRIVATE connection. This is
 	// what makes its documented atomicity true by construction — no other writer
 	// can append into, or prematurely flush, this batch.

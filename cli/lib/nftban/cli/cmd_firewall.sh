@@ -3163,6 +3163,23 @@ _fw_atomic_load() {
         echo "ERROR: could not compose the atomic load — nothing applied" >&2
         return 3
     fi
+    # Snapshot/commit boundary (design §9.1a): from the kernel read below until the marker
+    # readback, no daemon write may land. Publish the intent (new daemon writes wait), then
+    # take nft_writers.lock EXCLUSIVE — granted only once every in-flight daemon write has
+    # finished (drain). Nothing here calls the daemon. A crash releases the flock; a stale
+    # intent (dead pid) is ignored by the daemon.
+    # shellcheck disable=SC2034  # used inside the eval'd exec below
+    local bpath="${NFTBAN_RUN_DIR:-/run/nftban}/nft_writers.lock"
+    local ipath="${NFTBAN_RUN_DIR:-/run/nftban}/nft_writers.intent"
+    local bfd=""
+    printf 'pid=%s boot=%s\n' "$$" "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)" > "$ipath" 2>/dev/null || true
+    if ! eval 'exec {bfd}>>"$bpath"' 2>/dev/null || ! flock -w "${NFTBAN_BOUNDARY_WAIT:-60}" "$bfd"; then
+        [[ -n "$bfd" ]] && eval "exec ${bfd}>&-"
+        rm -f "$ipath" "$out"
+        echo "ERROR: daemon writes did not drain within ${NFTBAN_BOUNDARY_WAIT:-60}s — NOTHING applied, the existing ruleset is untouched" >&2
+        return 3
+    fi
+
     if [[ -x "$core" ]]; then
         "$core" ruleset content >> "$out" 2> "$out.err" || crc=$?
     else
@@ -3170,6 +3187,7 @@ _fw_atomic_load() {
         echo "nftban-core not found at $core" > "$out.err"
     fi
     if [[ $crc -ne 0 ]]; then
+        eval "exec ${bfd}>&-"; rm -f "$ipath"
         echo "ERROR: ruleset content not rendered (rc=$crc): $(tail -1 "$out.err" 2>/dev/null) — NOTHING applied, the existing ruleset is untouched" >&2
         rm -f "$out" "$out.err"
         return 3
@@ -3181,6 +3199,8 @@ _fw_atomic_load() {
 
     readable=0
     marker="$(nft -j list table ip nftban 2>/dev/null | jq -r '.nftables[] | .table? | select(.) | .comment // ""' 2>/dev/null)" && readable=1
+    # Boundary ends here: queued daemon writes now apply onto the new ruleset.
+    eval "exec ${bfd}>&-"; rm -f "$ipath"
     if [[ "$marker" == "nftban-gen=$nonce" ]]; then
         [[ $rc -ne 0 ]] && echo "WARNING: nft exited $rc but the new generation is in the kernel (APPLIED)" >&2
         return 0

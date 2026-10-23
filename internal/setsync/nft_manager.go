@@ -112,6 +112,22 @@ func (m *NFTManager) txConn() (*nftables.Conn, error) {
 // (tests, other binaries) = no gate.
 var WriteGate func() error
 
+// WriteSection (v1.236, design V1236_STAGE2_DESIGN_DRAFT.md §9.1a) opens a section of
+// the inner write boundary (nftlock.Boundary): a firewall replacement holding it
+// exclusively is waited for (bounded) instead of overlapped, so it can read the kernel
+// and commit without a daemon write landing in between. nftband sets it; nil (tests,
+// other binaries) = no boundary.
+var WriteSection func() (func(), error)
+
+// BeginWrite opens a write-boundary section around one kernel transaction (no-op
+// without WriteSection). Every NFTManager method that changes the kernel calls it first.
+func BeginWrite() (func(), error) {
+	if WriteSection == nil {
+		return func() {}, nil
+	}
+	return WriteSection()
+}
+
 // readConn is txConn without the write gate, for the read-only methods (list/get/count):
 // a daemon that may not write still reports what is in the kernel.
 func (m *NFTManager) readConn() (*nftables.Conn, error) {
@@ -157,6 +173,12 @@ func (m *NFTManager) GetOrCreateTable(family nftables.TableFamily) (*nftables.Ta
 	if cached, ok := m.getCachedTable(family); ok {
 		return cached, nil
 	}
+
+	release, err := BeginWrite()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, err := m.txConn()

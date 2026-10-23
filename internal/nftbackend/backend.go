@@ -922,6 +922,12 @@ func (b *Backend) ApplyRuleset(ctx context.Context, req ApplyRulesetRequest) err
 				return err
 			}
 		}
+		// v1.236 §9.1a: the load is a daemon write — inside the write boundary.
+		release, err := nftsync.BeginWrite()
+		if err != nil {
+			return err
+		}
+		defer release()
 		cmd = procenv.CommandContext(ctx, "nft", "-f", req.FilePath)
 	}
 

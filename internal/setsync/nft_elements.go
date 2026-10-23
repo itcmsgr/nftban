@@ -35,6 +35,12 @@ import (
 
 // addSetElementsBatch adds a single batch of IPs or CIDRs
 func (m *NFTManager) addSetElementsBatch(set *nftables.Set, ips []string) error {
+	release, err := BeginWrite()
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {
@@ -146,6 +152,12 @@ func (m *NFTManager) addSetElementsBatch(set *nftables.Set, ips []string) error 
 // The netlink library doesn't properly handle interval markers for single IPs,
 // which can cause corrupted ranges like "1.2.3.4-255.255.255.255".
 func (m *NFTManager) AddIPWithTimeout(set *nftables.Set, ipStr string, timeout time.Duration) error {
+	release, err := BeginWrite()
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {
@@ -325,6 +337,11 @@ func commitPermanentUpsert(conn upsertConn, set *nftables.Set, add, replace [][]
 // changing them). NOT solved here (stage 2 snapshot boundary): a concurrent unban of a key that
 // is still in blacklist.d is re-added by this sync, exactly as the per-IP loop did.
 func (m *NFTManager) UpsertPermanentElements(set *nftables.Set, values []string) (*SyncStats, error) {
+	release, err := BeginWrite()
+	if err != nil {
+		return &SyncStats{SetName: set.Name, TotalDesired: len(values), Error: err}, err
+	}
+	defer release()
 	return upsertPermanentElements(set, values,
 		func() (setReader, error) { return m.readConn() },
 		func() (upsertConn, error) { return m.txConn() })
@@ -461,6 +478,12 @@ func (m *NFTManager) addIPWithTimeoutCLI(set *nftables.Set, ipStr string, timeou
 
 // DeleteSetElements removes IPs from a set (batch operation)
 func (m *NFTManager) DeleteSetElements(set *nftables.Set, ips []string) error {
+	release, err := BeginWrite()
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {
@@ -549,6 +572,12 @@ func (m *NFTManager) GetPortSet(table *nftables.Table, setName string) (*nftable
 // GetOrCreatePortSet creates or gets an existing port set for TCP or UDP
 // Port sets use TypeInetService (uint16) for port numbers
 func (m *NFTManager) GetOrCreatePortSet(table *nftables.Table, setName string) (*nftables.Set, error) {
+	release, err := BeginWrite()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {
@@ -586,6 +615,12 @@ func (m *NFTManager) GetOrCreatePortSet(table *nftables.Table, setName string) (
 
 // AddPortElements adds port numbers to a port set
 func (m *NFTManager) AddPortElements(set *nftables.Set, ports []int) error {
+	release, err := BeginWrite()
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {
@@ -623,6 +658,12 @@ func (m *NFTManager) AddPortElements(set *nftables.Set, ports []int) error {
 // DeletePortElements removes port numbers from a port set
 // Returns nil for "no such file" errors (idempotent - element already doesn't exist)
 func (m *NFTManager) DeletePortElements(set *nftables.Set, ports []int) error {
+	release, err := BeginWrite()
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {
@@ -763,6 +804,12 @@ func CanonicalCIDRElements(cidrs []string) ([]string, *MergeStats, error) {
 // GetOrCreateConcatSet creates or retrieves a concat set (IP . port) for per-IP port access.
 // The set type is ipv4_addr . inet_service (or ipv6_addr) with timeout flag.
 func (m *NFTManager) GetOrCreateConcatSet(table *nftables.Table, setName string, ipv4 bool) (*nftables.Set, error) {
+	release, err := BeginWrite()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {
@@ -807,6 +854,12 @@ func (m *NFTManager) GetOrCreateConcatSet(table *nftables.Table, setName string,
 // AddConcatIPPort adds an IP+port element to a concat set.
 // The key is concatenated as [IP bytes][port bytes (big-endian)].
 func (m *NFTManager) AddConcatIPPort(set *nftables.Set, ipStr string, port int, timeout time.Duration) error {
+	release, err := BeginWrite()
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {
@@ -857,6 +910,12 @@ func (m *NFTManager) AddConcatIPPort(set *nftables.Set, ipStr string, port int, 
 
 // DeleteConcatIPPort removes an IP+port element from a concat set.
 func (m *NFTManager) DeleteConcatIPPort(set *nftables.Set, ipStr string, port int) error {
+	release, err := BeginWrite()
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {

@@ -22,8 +22,8 @@ import (
 
 	"github.com/itcmsgr/nftban/internal/constants"
 	"github.com/itcmsgr/nftban/internal/metrics"
-	"github.com/itcmsgr/nftban/internal/nftlock"
 	"github.com/itcmsgr/nftban/internal/safeconv"
+	nftsync "github.com/itcmsgr/nftban/internal/setsync"
 )
 
 // FastOp represents a high-priority operation (ban, unban, flush_source, flush_set)
@@ -941,22 +941,24 @@ func (q *OpQueue) flushSetWithReenqueue(setName string) {
 		return
 	}
 
+	// v1.236 (design V1236_STAGE2_DESIGN_DRAFT.md §9.1a/§9.2): the whole flush runs in ONE
+	// write-boundary section. This replaces the v1.32.0 exclusive nft_operations.lock with
+	// its 30 s "proceeding without lock" fail-open: a firewall replacement is now waited
+	// for (bounded) instead of written through. If it is still running when the wait ends,
+	// the flush is DEFERRED with the buffer untouched (buf.flush clears the buffer before it
+	// applies, so a refused write inside it would drop ops); the next tick retries.
+	release, werr := nftsync.BeginWrite()
+	if werr != nil {
+		log.Printf("[opqueue] %s: flush deferred, ops stay queued: %v", setName, werr)
+		return
+	}
+
 	// Get count before flush for counter adjustment
 	countBefore := buf.count()
 
-	// v1.32.0: Acquire exclusive nft lock before kernel operations
-	nftLock, lockErr := nftlock.AcquireExclusive(30 * time.Second)
-	if lockErr != nil {
-		log.Printf("[opqueue] nft lock failed for %s: %v (proceeding without lock)", setName, lockErr)
-	}
-
 	// Flush returns post-barrier ops to re-enqueue
 	result := buf.flush(q.backend, q.config.MaxBatchSize, q.getSourceIndexer())
-
-	// Release lock after kernel operations
-	if nftLock != nil {
-		nftLock.Release()
-	}
+	release()
 
 	// Update counters
 	q.pendingCount.Add(-int64(countBefore))

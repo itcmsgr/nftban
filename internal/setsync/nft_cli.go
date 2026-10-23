@@ -96,6 +96,11 @@ func runNftFile(path string) ([]byte, error) {
 			return nil, err
 		}
 	}
+	release, err := BeginWrite()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	return runNft("-f", path)
 }
 
@@ -119,6 +124,11 @@ func runNftIgnoring(ignorePatterns []string, args ...string) error {
 			return err
 		}
 	}
+	release, err := BeginWrite()
+	if err != nil {
+		return err
+	}
+	defer release()
 	output, err := runNft(args...)
 	if err != nil {
 		if isIgnorableNftError(string(output), ignorePatterns...) {
