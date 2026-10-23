@@ -3142,17 +3142,11 @@ _rebuild_snapshot_full() {
 # Returns: 0 APPLIED (marker read back) | 1 REJECTED (nft refused; marker unchanged =
 # kernel positively unchanged) | 2 UNKNOWN (no positive readback either way) |
 # 3 REFUSED before mutation (content not rendered: oversized, memory, error).
-# NFTBAN_ATOMIC_LOAD=legacy is the explicit operator escape to the old schema-only load.
+# There is no schema-only fallback: a refusal leaves the existing ruleset in place.
 _fw_atomic_load() {
     local schema="$1" quiet="${2:-true}"
     local core="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
     local out nonce crc=0 rc=0 marker readable
-
-    if [[ "${NFTBAN_ATOMIC_LOAD:-}" == "legacy" ]]; then
-        echo "WARNING: NFTBAN_ATOMIC_LOAD=legacy — loading the schema alone; ban and feed sets are EMPTY until refilled" >&2
-        nft -f "$schema" 2>&1 && return 0
-        return 1
-    fi
 
     out="$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/atomic-load.XXXXXX")" || return 3
     nonce="$(date +%s%N)-$$"
@@ -4717,39 +4711,30 @@ _firewall_rebuild_core() {
         echo "    WARNING: port-allow replay library missing; per-IP port grants NOT re-applied" >&2
     fi
 
-    # Step 7 (L2a): Restore blacklist + blacklist_manual from the pre-rebuild snapshot,
-    # preserving remaining TTL. blacklist_manual_* holds detector TTL bans
-    # (LoginMon/Portscan/DDoS/Suricata + manual) — it was previously never backed up or
-    # restored, so every rebuild silently dropped active timed bans. We consume the
-    # per-set snapshot that _rebuild_snapshot_full already wrote (no second backup
-    # mechanism) and re-apply with the REMAINING ttl (expires), fixing the old parser's
-    # per-line/wrapped-output and timeout/expires-rejection defects at the same time.
-    [[ "$quiet" == "false" ]] && echo "  [7/12] Restoring blacklist + manual bans from snapshot (TTL-preserving)..."
-    local _rs_total=0 _rs_skip=0 _rs_exp=0 _bl_before=0
-    local _set _fam _dump _counts _r _s _e _rs_sets="blacklist_ipv4 blacklist_ipv6 blacklist_manual_ipv4 blacklist_manual_ipv6"
+    # Step 7 (L2a, v1.236): blacklist + blacklist_manual hold detector TTL bans
+    # (LoginMon/Portscan/DDoS/Suricata + manual). Until v1.235 this step restored them from
+    # the pre-rebuild snapshot after a schema-only load; the atomic load now carries them.
     # v1.236 (design §9.1a): the atomic load in step 5 already carried every live timed and
     # kernel-only ban, read under the write boundary. Re-adding from the step-0 snapshot here
-    # would RESURRECT an IP unbanned during the rebuild, so this restore runs only for the
-    # explicit legacy load.
-    if [[ "${NFTBAN_ATOMIC_LOAD:-}" != "legacy" ]]; then
-        _rs_sets=""
-        [[ "$quiet" == "false" ]] && echo "    Skipped: the atomic load carried the live bans (no restore from the step-0 snapshot)" || true
-    fi
-    for _set in $_rs_sets; do
+    # would RESURRECT an IP unbanned during the rebuild, so step 7 no longer restores: it
+    # counts the same sets in the kernel after the load (the L2c detector below).
+    [[ "$quiet" == "false" ]] && echo "  [7/12] Checking blacklist + manual bans after the atomic load..."
+    local _rs_total=0 _bl_before=0 _n
+    local _set _fam _dump
+    for _set in blacklist_ipv4 blacklist_ipv6 blacklist_manual_ipv4 blacklist_manual_ipv6; do
         case "$_set" in
             *_ipv4) _fam="ip nftban" ;;
             *_ipv6) _fam="ip6 nftban" ;;
-            *) continue ;;
         esac
         _dump="$snapshot_dir/sets/${_set}.nft"
         # L2c: pre-rebuild element count (from the snapshot) = "had bans before"
         _bl_before=$((_bl_before + $(_fw_count_dump_elems "$_dump")))
-        _counts=$(_fw_restore_timed_set "$_dump" "$_fam" "$_set" "$quiet")
-        IFS=' ' read -r _r _s _e <<<"$_counts"
-        _rs_total=$((_rs_total + _r)); _rs_skip=$((_rs_skip + _s)); _rs_exp=$((_rs_exp + _e))
-        [[ "$quiet" == "false" && "$_r" -gt 0 ]] && echo "    Restored $_r into $_set (skipped=$_s expired=$_e)"
+        # shellcheck disable=SC2086  # $_fam is "<family> <table>"
+        nft list set $_fam "$_set" > "$snapshot_dir/sets/${_set}.after.nft" 2>/dev/null || true
+        _n=$(_fw_count_dump_elems "$snapshot_dir/sets/${_set}.after.nft")
+        _rs_total=$((_rs_total + _n))
     done
-    [[ "$quiet" == "false" ]] && echo "    Blacklist restore: $_rs_total restored, $_rs_skip skipped, $_rs_exp expired"
+    [[ "$quiet" == "false" ]] && echo "    Blacklist after load: $_rs_total elements (had $_bl_before before)"
 
     # L2c (TRANSITION-FAIL-OPEN-UNOBSERVED): if the blacklist held bans before the
     # rebuild but is completely empty after restore, a fail-open window persisted —
