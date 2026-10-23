@@ -4726,8 +4726,16 @@ _firewall_rebuild_core() {
     # per-line/wrapped-output and timeout/expires-rejection defects at the same time.
     [[ "$quiet" == "false" ]] && echo "  [7/12] Restoring blacklist + manual bans from snapshot (TTL-preserving)..."
     local _rs_total=0 _rs_skip=0 _rs_exp=0 _bl_before=0
-    local _set _fam _dump _counts _r _s _e
-    for _set in blacklist_ipv4 blacklist_ipv6 blacklist_manual_ipv4 blacklist_manual_ipv6; do
+    local _set _fam _dump _counts _r _s _e _rs_sets="blacklist_ipv4 blacklist_ipv6 blacklist_manual_ipv4 blacklist_manual_ipv6"
+    # v1.236 (design §9.1a): the atomic load in step 5 already carried every live timed and
+    # kernel-only ban, read under the write boundary. Re-adding from the step-0 snapshot here
+    # would RESURRECT an IP unbanned during the rebuild, so this restore runs only for the
+    # explicit legacy load.
+    if [[ "${NFTBAN_ATOMIC_LOAD:-}" != "legacy" ]]; then
+        _rs_sets=""
+        [[ "$quiet" == "false" ]] && echo "    Skipped: the atomic load carried the live bans (no restore from the step-0 snapshot)" || true
+    fi
+    for _set in $_rs_sets; do
         case "$_set" in
             *_ipv4) _fam="ip nftban" ;;
             *_ipv6) _fam="ip6 nftban" ;;
