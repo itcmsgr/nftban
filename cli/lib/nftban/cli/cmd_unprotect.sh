@@ -93,7 +93,7 @@ EOF
         return 1
     fi
 
-    response=$(echo "$request" | socat - UNIX-CONNECT:"$socket_path" 2>/dev/null)
+    response=$(echo "$request" | timeout "${NFTBAN_IPC_TIMEOUT:-30}" socat -t "${NFTBAN_IPC_TIMEOUT:-30}" - UNIX-CONNECT:"$socket_path" 2>/dev/null)
     exit_code=$?
 
     if [[ $exit_code -ne 0 ]] || [[ -z "$response" ]]; then

@@ -1285,7 +1285,8 @@ _collect_daemon_status() {
         echo "=== Daemon Connectivity Test ==="
         if [[ -S "${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock" ]]; then
             if command -v socat &>/dev/null; then
-                echo '{"action":"ping"}' | timeout 5 socat - "UNIX-CONNECT:${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock" 2>&1 || echo "ping failed"
+                # v1.236: the request key is "method" ({"action":...} was answered "unknown method"); -t keeps the answer.
+                echo '{"method":"ping"}' | timeout 5 socat -t 5 - "UNIX-CONNECT:${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock" 2>&1 || echo "ping failed"
             else
                 echo "socat not available for connectivity test"
             fi

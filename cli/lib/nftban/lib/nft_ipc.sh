@@ -189,7 +189,13 @@ nft_ipc_request() {
     fi
 
     local response
-    response=$(echo "$request" | timeout "$NFTBAN_IPC_TIMEOUT" socat - "UNIX-CONNECT:$NFTBAN_DAEMON_SOCKET" 2>/dev/null)
+    # v1.236 BUG-SHELL-IPC-CLIENT-DROPS-ANSWERS-SLOWER-THAN-HALF-SECOND: socat's default
+    # half-close timeout (-t 0.5) ended the read 0.5 s after the request was written, so
+    # every daemon answer slower than that came back EMPTY ("daemon not responding") even
+    # though the daemon had done the work (lab2: a ban that waited 2 s was applied but
+    # reported failed; a 16 s full sync was always reported failed and retried). -t gives
+    # the answer the same budget as the overall timeout.
+    response=$(echo "$request" | timeout "$NFTBAN_IPC_TIMEOUT" socat -t "$NFTBAN_IPC_TIMEOUT" - "UNIX-CONNECT:$NFTBAN_DAEMON_SOCKET" 2>/dev/null)
 
     if [[ -z "$response" ]]; then
         _nft_ipc_json_error "daemon not responding"

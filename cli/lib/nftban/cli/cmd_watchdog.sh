@@ -658,7 +658,7 @@ _watchdog_ipc_call() {
 
     # Send JSON request, receive JSON response
     echo "{\"method\":\"$method\",\"params\":$params}" | \
-        timeout 30 socat - "UNIX-CONNECT:$socket_path" 2>/dev/null
+        timeout 30 socat -t 30 - "UNIX-CONNECT:$socket_path" 2>/dev/null
 }
 
 nftban_watchdog_cmd_stats() {

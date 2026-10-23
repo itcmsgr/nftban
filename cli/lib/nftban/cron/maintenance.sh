@@ -179,7 +179,7 @@ trap release_lock EXIT
 _maint_portscan_daemon_plane() {
     local sock="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock" resp="" rm=""
     if [[ -S "$sock" ]] && command -v socat >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 \
-       && resp="$(echo '{"method":"modules","params":{}}' | timeout 5 socat - "UNIX-CONNECT:${sock}" 2>/dev/null)" \
+       && resp="$(echo '{"method":"modules","params":{}}' | timeout 5 socat -t 5 - "UNIX-CONNECT:${sock}" 2>/dev/null)" \
        && rm="$(jq -r '[.data[]? | select(.name == "portscan") | "\(.running) \(.extra.mode // "")"][0] // "absent"' <<<"$resp" 2>/dev/null)" \
        && [[ -n "$rm" ]]; then
         case "$rm" in

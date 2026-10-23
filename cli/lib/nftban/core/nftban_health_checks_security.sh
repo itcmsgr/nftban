@@ -348,7 +348,7 @@ nftban_health_check_memory_protection() {
 
     if [[ -S "$socket_path" ]] && command -v socat >/dev/null 2>&1; then
         local response
-        response=$(echo '{"method":"stats","params":{}}' | timeout "${NFTBAN_TIMEOUT_FAST:-5}" socat - "UNIX-CONNECT:$socket_path" 2>/dev/null) || response=""
+        response=$(echo '{"method":"stats","params":{}}' | timeout "${NFTBAN_TIMEOUT_FAST:-5}" socat -t "${NFTBAN_TIMEOUT_FAST:-5}" - "UNIX-CONNECT:$socket_path" 2>/dev/null) || response=""
 
         if [[ -n "$response" ]] && command -v jq >/dev/null 2>&1; then
             local success
@@ -428,7 +428,7 @@ nftban_health_check_memory_protection() {
     # Try IPC first (more accurate, includes runtime state)
     if [[ -S "$socket_path" ]] && command -v socat >/dev/null 2>&1; then
         local ban_response
-        ban_response=$(echo '{"method":"permanent_ban_stats","params":{}}' | timeout "${NFTBAN_TIMEOUT_FAST:-5}" socat - "UNIX-CONNECT:$socket_path" 2>/dev/null) || ban_response=""
+        ban_response=$(echo '{"method":"permanent_ban_stats","params":{}}' | timeout "${NFTBAN_TIMEOUT_FAST:-5}" socat -t "${NFTBAN_TIMEOUT_FAST:-5}" - "UNIX-CONNECT:$socket_path" 2>/dev/null) || ban_response=""
 
         if [[ -n "$ban_response" ]] && command -v jq >/dev/null 2>&1; then
             local ban_success
