@@ -90,6 +90,9 @@ type Options struct {
 	// FeedsMaster is NFTBAN_FEEDS_ENABLED; with the feed switches and the recorded state it
 	// decides which feed files are rendered (feeds.Evaluate, design §7).
 	FeedsMaster bool
+	// ModuleSets are carried module sets per family ("ip"/"ip6"), from ExtractModules: their
+	// elements are carried like the runtime sets (remaining TTL, never-ban on every element).
+	ModuleSets map[string][]string
 }
 
 // ErrOversized is returned before anything is rendered when the replacement would exceed
@@ -286,6 +289,26 @@ func Render(opts Options, read SetReader, ex Exemption) (*Result, error) {
 						res.Exempt++
 						continue
 					}
+				}
+				if v, ok := carry(e, opts.CommitMargin, res); ok {
+					keyed[e.Key] = v
+				}
+			}
+			add(f, set, values(keyed))
+		}
+
+		// v1.236 step B: carried module sets (ddos ban/limit sets, ...): every element passes
+		// the never-ban authority; expired or nearly expired elements are dropped.
+		for _, set := range opts.ModuleSets[f.name] {
+			kernel, err := read(f.name, set)
+			if err != nil {
+				return nil, fmt.Errorf("read %s %s: %w", f.name, set, err)
+			}
+			keyed = map[string]string{}
+			for _, e := range kernel {
+				if ok, _ := ex.IsExempt(e.Key); ok {
+					res.Exempt++
+					continue
 				}
 				if v, ok := carry(e, opts.CommitMargin, res); ok {
 					keyed[e.Key] = v

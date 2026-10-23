@@ -3156,13 +3156,25 @@ _fw_atomic_load() {
 
     out="$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/atomic-load.XXXXXX")" || return 3
     nonce="$(date +%s%N)-$$"
-    # The marker goes into the full table bodies (`table ip nftban {` alone on its
-    # line), not into the `table ip nftban { }` idempotent-create line before the delete.
-    if ! awk -v n="$nonce" '{ print } /^table ip6? nftban \{[[:space:]]*$/ { print "    comment \"nftban-gen=" n "\"" }' "$schema" > "$out"; then
+    # Step B (design §2.1): the live objects of the ENABLED modules are carried into the load.
+    # Enablement comes from the module authority, decided here, before the boundary (config
+    # reads only). Undecidable = refused: carrying or dropping a module blindly is not safe.
+    local _mods="" _m _var
+    if ! declare -F nftban_module_effective_enabled >/dev/null 2>&1; then
+        # shellcheck source=/usr/lib/nftban/lib/module_authority.sh
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" 2>/dev/null || true
+    fi
+    if ! declare -F nftban_module_effective_enabled >/dev/null 2>&1; then
         rm -f "$out"
-        echo "ERROR: could not compose the atomic load — nothing applied" >&2
+        echo "ERROR: module authority unavailable — cannot decide which module objects to keep; NOTHING applied" >&2
         return 3
     fi
+    for _m in ddos:DDOS_ENABLED portscan:PORTSCAN_ENABLED; do
+        _var="${_m#*:}"; _m="${_m%%:*}"
+        nftban_module_effective_enabled "$_m" "$_var" && _mods="${_mods:+$_mods,}$_m"
+    done
+    declare -F _firewall_botguard_is_enabled >/dev/null 2>&1 && _firewall_botguard_is_enabled \
+        && _mods="${_mods:+$_mods,}botguard"
     # Snapshot/commit boundary (design §3): from the kernel read below until the marker
     # readback, no other nft write may land. nftban_writers_acquire publishes the intent and
     # takes nft_writers.lock EXCLUSIVE — granted only once every in-flight daemon write has
@@ -3175,7 +3187,9 @@ _fw_atomic_load() {
     fi
 
     if [[ -x "$core" ]]; then
-        "$core" ruleset content >> "$out" 2> "$out.err" || crc=$?
+        # One render: schema + marker + carried module objects (+ jumps at their anchors) +
+        # set contents, read from the kernel under the boundary.
+        "$core" ruleset content --schema "$schema" --nonce "$nonce" --modules "$_mods" > "$out" 2> "$out.err" || crc=$?
     else
         crc=1
         echo "nftban-core not found at $core" > "$out.err"
@@ -3186,7 +3200,7 @@ _fw_atomic_load() {
         rm -f "$out" "$out.err"
         return 3
     fi
-    [[ "$quiet" == "false" ]] && echo "    $(grep -m1 '^RULESET_CONTENT' "$out.err" 2>/dev/null)"
+    [[ "$quiet" == "false" ]] && echo "    $(grep -m1 '^RULESET_CONTENT' "$out.err" 2>/dev/null)" && grep '^RULESET_MODULES' "$out.err" 2>/dev/null | sed 's/^/    /'
 
     nft -f "$out" 2>&1 || rc=$? # nftban:held
     rm -f "$out" "$out.err"

@@ -81,8 +81,24 @@ func cmdRuleset(cfg *nftbanconf.Config) error {
 			opts.MaxElements = n
 		}
 	}
+	// v1.236 step B: with --schema the output is the COMPLETE load file (schema + generation
+	// marker + the live objects of the --modules that are enabled + set contents).
+	var schemaPath, nonce, modulesArg string
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
+		case "--schema", "--nonce", "--modules":
+			if i+1 >= len(args) {
+				return fmt.Errorf("%s requires a value", args[i])
+			}
+			switch args[i] {
+			case "--schema":
+				schemaPath = args[i+1]
+			case "--nonce":
+				nonce = args[i+1]
+			default:
+				modulesArg = args[i+1]
+			}
+			i++
 		case "--max-elements", "--commit-margin":
 			if i+1 >= len(args) {
 				return fmt.Errorf("%s requires a value", args[i])
@@ -102,6 +118,38 @@ func cmdRuleset(cfg *nftbanconf.Config) error {
 		}
 	}
 
+	var schemaText string
+	var mods []*ruleset.ModuleObjects
+	if schemaPath != "" {
+		if nonce == "" {
+			return fmt.Errorf("--schema requires --nonce")
+		}
+		data, rerr := os.ReadFile(schemaPath) // #nosec G304 -- schema path from the firewall lane
+		if rerr != nil {
+			return &rulesetExit{rulesetExitRefused, "refused before any change: read schema: " + rerr.Error()}
+		}
+		schemaText = string(data)
+		enabled := map[string]bool{}
+		for _, m := range strings.Split(modulesArg, ",") {
+			if m = strings.TrimSpace(m); m != "" {
+				enabled[m] = true
+			}
+		}
+		opts.ModuleSets = map[string][]string{}
+		for _, fam := range []string{"ip", "ip6"} {
+			live, lerr := ruleset.NftTableText(fam)
+			if lerr != nil {
+				return &rulesetExit{rulesetExitRefused, "refused before any change: live module objects unreadable: " + lerr.Error()}
+			}
+			mo, merr := ruleset.ExtractModules(fam, live, schemaText, enabled)
+			if merr != nil {
+				return &rulesetExit{rulesetExitRefused, "refused before any change: " + merr.Error()}
+			}
+			mods = append(mods, mo)
+			opts.ModuleSets[fam] = mo.Sets
+		}
+	}
+
 	res, err := ruleset.Render(opts, ruleset.NftSetReader, nftbackend.NewExemption(cfg.ConfigDir))
 	if errors.Is(err, ruleset.ErrOversized) {
 		return &rulesetExit{rulesetExitRefused, "refused before any change: " + err.Error() + " (existing ruleset untouched; see NFTBAN_RULESET_MAX_ELEMENTS)"}
@@ -116,8 +164,20 @@ func cmdRuleset(cfg *nftbanconf.Config) error {
 		}
 	}
 
+	script := res.Script
+	if schemaPath != "" {
+		composed, cerr := ruleset.Compose(schemaText, nonce, mods, res.Script)
+		if cerr != nil {
+			return &rulesetExit{rulesetExitRefused, "refused before any change: " + cerr.Error()}
+		}
+		script = composed
+		for _, mo := range mods {
+			fmt.Fprintf(os.Stderr, "RULESET_MODULES family=%s objects=%d sets=%d jumps=%d not_carried=[%s]\n",
+				mo.Family, len(mo.Blocks), len(mo.Sets), len(mo.Jumps), strings.Join(mo.SortedSkipped(), ","))
+		}
+	}
 	w := bufio.NewWriter(os.Stdout)
-	if _, err := w.WriteString(res.Script); err != nil {
+	if _, err := w.WriteString(script); err != nil {
 		return err
 	}
 	if err := w.Flush(); err != nil {
