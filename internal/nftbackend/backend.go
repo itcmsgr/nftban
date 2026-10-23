@@ -929,6 +929,7 @@ func (b *Backend) ApplyRuleset(ctx context.Context, req ApplyRulesetRequest) err
 		}
 		defer release()
 		cmd = procenv.CommandContext(ctx, "nft", "-f", req.FilePath)
+		defer nftsync.AttachSectionLock(cmd)()
 	}
 
 	output, err := cmd.CombinedOutput()

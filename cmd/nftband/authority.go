@@ -71,5 +71,7 @@ func installWriteGate(in state.AuthorityInputs) {
 	if v, err := strconv.Atoi(os.Getenv("NFTBAN_NFT_WRITE_WAIT")); err == nil && v > 0 {
 		wait = time.Duration(v) * time.Second
 	}
-	nftsync.WriteSection = nftlock.NewBoundary(wait).Begin
+	boundary := nftlock.NewBoundary(wait)
+	nftsync.WriteSection = boundary.Begin
+	nftsync.SectionLock = boundary.ChildLock
 }

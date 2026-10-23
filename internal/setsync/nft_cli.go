@@ -77,6 +77,7 @@ func runNftWithTimeout(timeout time.Duration, args ...string) ([]byte, error) {
 	defer cancel()
 
 	cmd := procenv.CommandContext(ctx, "nft", args...)
+	defer AttachSectionLock(cmd)()
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {

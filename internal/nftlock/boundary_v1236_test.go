@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"syscall"
 	"testing"
@@ -131,5 +132,68 @@ func TestBoundaryNestedEntryJoinsWithoutWaiting(t *testing.T) {
 	outer()
 	if !tryExclusive(b.LockPath) {
 		t.Fatal("lock not released after the outer section closed")
+	}
+}
+
+// startLockChild runs `sleep` with the section's lock as ExtraFiles (what an nft child gets).
+func startLockChild(t *testing.T, b *Boundary, d string) *exec.Cmd {
+	t.Helper()
+	f := b.ChildLock()
+	if f == nil {
+		t.Fatal("ChildLock returned nil inside an open section")
+	}
+	cmd := exec.Command("sleep", d)
+	cmd.ExtraFiles = []*os.File{f}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+	return cmd
+}
+
+func TestBoundaryChildLockNilOutsideSection(t *testing.T) {
+	b := testBoundary(t, time.Second)
+	if f := b.ChildLock(); f != nil {
+		t.Fatal("ChildLock must be nil when no section is open")
+	}
+}
+
+func TestBoundaryReleaseEndsSectionWhileChildRuns(t *testing.T) {
+	b := testBoundary(t, time.Second)
+	rel, err := b.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := startLockChild(t, b, "3")
+	defer func() { _ = child.Process.Kill(); _ = child.Wait() }()
+	rel()
+	if !tryExclusive(b.LockPath) {
+		t.Fatal("a normal release (LOCK_UN) must end the section even while an nft child holds a copy")
+	}
+}
+
+// Daemon death mid-transaction: the process's descriptor is closed WITHOUT LOCK_UN (what exit
+// does). The orphaned nft child still holds the SH lock, so a replacement cannot take LOCK_EX
+// (and read the kernel) until the child has exited.
+func TestBoundaryParentDeathChildKeepsLock(t *testing.T) {
+	b := testBoundary(t, time.Second)
+	if _, err := b.Begin(); err != nil {
+		t.Fatal(err)
+	}
+	child := startLockChild(t, b, "1")
+	b.mu.Lock()
+	_ = b.file.Close() // exit closes the fd; no LOCK_UN
+	b.file, b.ref = nil, 0
+	b.mu.Unlock()
+	if tryExclusive(b.LockPath) {
+		_ = child.Process.Kill()
+		_ = child.Wait()
+		t.Fatal("LOCK_EX granted while the orphaned nft child still runs")
+	}
+	if err := child.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if !tryExclusive(b.LockPath) {
+		t.Fatal("LOCK_EX not granted after the orphaned child exited")
 	}
 }

@@ -24,6 +24,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"os"
+	"os/exec"
 	"sync"
 
 	"github.com/google/nftables"
@@ -118,6 +120,25 @@ var WriteGate func() error
 // and commit without a daemon write landing in between. nftband sets it; nil (tests,
 // other binaries) = no boundary.
 var WriteSection func() (func(), error)
+
+// SectionLock returns a descriptor sharing the open write section's lock (nil when no
+// section is open); nftband sets it to nftlock.Boundary.ChildLock. See AttachSectionLock.
+var SectionLock func() *os.File
+
+// AttachSectionLock hands an nft child the open section's lock (ExtraFiles), so a daemon
+// crash mid-transaction cannot release the boundary before the child's batch lands. Call
+// before Start; the returned func closes the parent's copy and runs after the child exits.
+func AttachSectionLock(cmd *exec.Cmd) func() {
+	if SectionLock == nil {
+		return func() {}
+	}
+	f := SectionLock()
+	if f == nil {
+		return func() {}
+	}
+	cmd.ExtraFiles = append(cmd.ExtraFiles, f)
+	return func() { _ = f.Close() } // #nosec G104
+}
 
 // BeginWrite opens a write-boundary section around one kernel transaction (no-op
 // without WriteSection). Every NFTManager method that changes the kernel calls it first.

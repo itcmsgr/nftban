@@ -125,6 +125,26 @@ func (b *Boundary) release() {
 	}
 }
 
+// ChildLock returns a duplicate descriptor of the open section's lock, or nil when no
+// section is open. An nft child given it in ExtraFiles shares the lock's open file
+// description: the daemon's release (LOCK_UN) still ends the section for both, but if
+// the daemon dies while that child runs, the SH lock stays held until the child exits,
+// so a replacement cannot read the kernel before the orphan's batch lands (crash
+// recovery covers the nft child). The caller closes it once the child has exited.
+func (b *Boundary) ChildLock() *os.File {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.ref == 0 || b.file == nil {
+		return nil
+	}
+	fd, err := syscall.Dup(int(b.file.Fd()))
+	if err != nil {
+		return nil
+	}
+	syscall.CloseOnExec(fd)
+	return os.NewFile(uintptr(fd), b.LockPath)
+}
+
 func (b *Boundary) tryShared() (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(b.LockPath), 0750); err != nil { // #nosec G301
 		return nil, fmt.Errorf("mkdir %s: %w", filepath.Dir(b.LockPath), err)
