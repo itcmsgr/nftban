@@ -22,6 +22,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -51,6 +52,11 @@ import (
 	"github.com/itcmsgr/nftban/internal/watchdog"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
+
+// detectorBanBusyRetries bounds the retries of a module ban refused busy by the write
+// boundary (each attempt waits up to NFTBAN_NFT_WRITE_WAIT): 3 retries = about 2 minutes
+// at the default. After that the ban is reported NOT applied (never dropped silently).
+const detectorBanBusyRetries = 3
 
 // Run starts the daemon and blocks until shutdown
 func (d *Daemon) Run() error {
@@ -175,7 +181,7 @@ func (d *Daemon) Run() error {
 		}
 
 		// Execute the ban via nftables backend
-		result, err := d.backend.Ban(d.ctx, nftbackend.BanRequest{
+		banReq := nftbackend.BanRequest{
 			IP:      e.IP,
 			Timeout: timeout,
 			Reason:  reason,
@@ -184,60 +190,82 @@ func (d *Daemon) Run() error {
 			// DETECTOR MODULE, so the producer context is known here and must not be
 			// re-derived downstream from the label. e.Source stays as provenance.
 			Origin: bansource.OriginDetector,
-		})
-		switch {
-		case err != nil:
-			log.Printf("[BAN] Failed to ban %s: %v", e.IP, err)
-			metrics.RecordBanError(e.Source, "nft_error")
-		case result != nil && result.Exempt:
-			// v1.209.x F2: the never-ban guard refused this ban (admin/management/
-			// whitelist/system/live-SSH IP). Not an error, not a ban — log honestly.
-			log.Printf("[BAN] Exempt (not banned) %s (source=%s): %s", e.IP, e.Source, result.Message)
-		default:
-			log.Printf("[BAN] Successfully banned %s (timeout=%ds, source=%s)", e.IP, timeout, e.Source)
-			// Record in stats collector
-			d.stats.RecordBan()
-			// Record Prometheus metric
-			family := "ipv4"
-			if strings.Contains(e.IP, ":") {
-				family = "ipv6"
-			}
-			metrics.RecordBanWithIP(e.Source, family, e.IP)
-			// Log to bans.log with GeoIP country lookup
-			banSource := banlog.SourceManual
+		}
+		// finish records the outcome of this module ban.
+		finish := func(result *nftbackend.BanResult, err error) {
 			switch {
-			case strings.Contains(e.Source, "portscan"):
-				banSource = banlog.SourcePortscan
-			case strings.Contains(e.Source, "login"):
-				banSource = banlog.SourceLogin
-			case strings.Contains(e.Source, "ddos"):
-				banSource = banlog.SourceDDoS
-			case strings.Contains(e.Source, "feed"):
-				banSource = banlog.SourceFeeds
-			case strings.Contains(e.Source, "suricata"):
-				banSource = banlog.SourceSuricata
-			case strings.Contains(e.Source, "botguard"):
-				banSource = banlog.SourceDDoS // Bot guard bans categorized as DDoS
-			}
-			country := lookupCountry(e.IP)
-			// v1.41.0: Generate ban correlation ID to link BAN→UNBAN entries
-			banID := banlog.GenerateBanID()
-			d.banIDMap.Store(e.IP, banID)
-			// BLC-1: determine ban class from event data
-			banClass := banlog.ClassTemp
-			if timeout == 0 {
-				banClass = banlog.ClassPermanent
-			} else if timeout > 900 { // > 15m default = escalated
-				banClass = banlog.ClassEscalated
-			}
-			_ = banlog.LogBanFull(e.IP, banSource, country, reason, banID, timeout, banClass)
+			case errors.Is(err, nftlock.ErrBusy):
+				log.Printf("[BAN] NOT applied %s (source=%s): write boundary still busy after %d retries", e.IP, e.Source, detectorBanBusyRetries)
+				metrics.RecordBanError(e.Source, "busy")
+			case err != nil:
+				log.Printf("[BAN] Failed to ban %s: %v", e.IP, err)
+				metrics.RecordBanError(e.Source, "nft_error")
+			case result != nil && result.Exempt:
+				// v1.209.x F2: the never-ban guard refused this ban (admin/management/
+				// whitelist/system/live-SSH IP). Not an error, not a ban — log honestly.
+				log.Printf("[BAN] Exempt (not banned) %s (source=%s): %s", e.IP, e.Source, result.Message)
+			default:
+				log.Printf("[BAN] Successfully banned %s (timeout=%ds, source=%s)", e.IP, timeout, e.Source)
+				// Record in stats collector
+				d.stats.RecordBan()
+				// Record Prometheus metric
+				family := "ipv4"
+				if strings.Contains(e.IP, ":") {
+					family = "ipv6"
+				}
+				metrics.RecordBanWithIP(e.Source, family, e.IP)
+				// Log to bans.log with GeoIP country lookup
+				banSource := banlog.SourceManual
+				switch {
+				case strings.Contains(e.Source, "portscan"):
+					banSource = banlog.SourcePortscan
+				case strings.Contains(e.Source, "login"):
+					banSource = banlog.SourceLogin
+				case strings.Contains(e.Source, "ddos"):
+					banSource = banlog.SourceDDoS
+				case strings.Contains(e.Source, "feed"):
+					banSource = banlog.SourceFeeds
+				case strings.Contains(e.Source, "suricata"):
+					banSource = banlog.SourceSuricata
+				case strings.Contains(e.Source, "botguard"):
+					banSource = banlog.SourceDDoS // Bot guard bans categorized as DDoS
+				}
+				country := lookupCountry(e.IP)
+				// v1.41.0: Generate ban correlation ID to link BAN→UNBAN entries
+				banID := banlog.GenerateBanID()
+				d.banIDMap.Store(e.IP, banID)
+				// BLC-1: determine ban class from event data
+				banClass := banlog.ClassTemp
+				if timeout == 0 {
+					banClass = banlog.ClassPermanent
+				} else if timeout > 900 { // > 15m default = escalated
+					banClass = banlog.ClassEscalated
+				}
+				_ = banlog.LogBanFull(e.IP, banSource, country, reason, banID, timeout, banClass)
 
-			// Check persistent offender escalation for temp bans
-			// If this IP has been temp-banned too many times, escalate to permanent
-			if timeout > 0 {
-				go d.checkAndEscalate(e.IP, e.Source, country)
+				// Check persistent offender escalation for temp bans
+				// If this IP has been temp-banned too many times, escalate to permanent
+				if timeout > 0 {
+					go d.checkAndEscalate(e.IP, e.Source, country)
+				}
 			}
 		}
+
+		result, err := d.backend.Ban(d.ctx, banReq)
+		if errors.Is(err, nftlock.ErrBusy) {
+			// v1.236 (design §2.2): a firewall replacement held the write boundary for the
+			// whole wait. A detector ban must not be dropped for that: retry, bounded, off the
+			// event bus (each attempt can wait the full boundary wait again).
+			go func() {
+				for i := 1; i <= detectorBanBusyRetries && errors.Is(err, nftlock.ErrBusy); i++ {
+					log.Printf("[BAN] %s (source=%s): write boundary busy, retry %d/%d", e.IP, e.Source, i, detectorBanBusyRetries)
+					result, err = d.backend.Ban(d.ctx, banReq)
+				}
+				finish(result, err)
+			}()
+			return
+		}
+		finish(result, err)
 	})
 
 	// v1.41.0: Subscribe attack rate tracker to ban/ddos/portscan events
