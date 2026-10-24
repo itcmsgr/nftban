@@ -1,5 +1,5 @@
 {
-  "snapshot_at": "2026-10-23T08:28:52Z",
+  "snapshot_at": "2026-10-24T08:03:59Z",
   "platforms": [
     "Ubuntu 22.04",
     "Ubuntu 24.04",
@@ -14,7 +14,7 @@
   "unclassified_legacy": [
     {
       "name": "nftban-core_1.0.0_amd64.deb",
-      "downloads": 2,
+      "downloads": 3,
       "tag": "v1.0.0"
     },
     {
