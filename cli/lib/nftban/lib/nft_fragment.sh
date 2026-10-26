@@ -288,7 +288,10 @@ _nft_fragment_remove_jump_held() {
         done < <(nft -a list chain ${table_fam} input 2>/dev/null \
             | grep "jump ${chain_name}" \
             | grep -oE 'handle [0-9]+' \
-            | awk '{print $2}')
+            | awk '{print $2}' || true)
+        # `|| true`: no matching jump (already removed, or never projected) is the normal
+        # "nothing to remove" answer; under pipefail + the inherited ERR trap it printed a false
+        # "ERROR: Script failed" on every cross-mode teardown (lab2 classic -> suricata, x6).
     done
 }
 
