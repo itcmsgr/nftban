@@ -42,11 +42,13 @@ func moduleOf(name string) string {
 	return ""
 }
 
-// Jump is one rule in a schema chain that jumps into a carried module chain.
+// Jump is one module rule in a schema chain: a jump into a carried module chain, or any rule
+// that references a carried module set (`@set`). Placed before the anchor that follows it live;
+// Anchor "" = no anchor follows it live: appended at the end of the chain, where it was.
 type Jump struct {
 	Chain  string // schema chain holding the rule (e.g. input)
 	Rule   string // rule text as listed by nft
-	Anchor string // NFTBAN_ANCHOR token of the next anchor rule after it
+	Anchor string // NFTBAN_ANCHOR token of the next anchor rule after it ("" = chain end)
 }
 
 // ModuleObjects are the carried module objects of one family.
@@ -161,6 +163,7 @@ func ExtractModules(fam, live, schema string, enabled map[string]bool) (*ModuleO
 		}
 	}
 	carriedChains := map[string]bool{}
+	carriedSets := map[string]bool{}
 	for _, b := range liveBlocks {
 		if declared[b.kind+" "+b.name] {
 			continue
@@ -188,32 +191,62 @@ func ExtractModules(fam, live, schema string, enabled map[string]bool) (*ModuleO
 		if b.kind == "chain" {
 			carriedChains[b.name] = true
 		}
+		if b.kind == "set" || b.kind == "map" {
+			carriedSets[b.name] = true
+		}
 		mo.Blocks = append(mo.Blocks, strings.Join(lines, "\n"))
 	}
-	// Jumps from schema chains into carried module chains, with the anchor that follows them.
+	// Module rules in schema chains (jumps into carried module chains, or rules that use a
+	// carried module set), in live order, each with the anchor that follows it. Identical rule
+	// texts at the same place are carried once (a module that appended its rule on every apply
+	// leaves duplicates; the replacement does not reproduce them).
 	for _, b := range liveBlocks {
 		if b.kind != "chain" || !schemaChains[b.name] {
 			continue
 		}
 		var pending []Jump
-		for _, l := range b.lines {
-			if tgt := jumpTarget(l); tgt != "" && carriedChains[tgt] {
+		seen := map[string]bool{}
+		flush := func(anchor string) {
+			for _, j := range pending {
+				j.Anchor = anchor
+				if !seen[anchor+"\x00"+j.Rule] {
+					seen[anchor+"\x00"+j.Rule] = true
+					mo.Jumps = append(mo.Jumps, j)
+				}
+			}
+			pending = nil
+		}
+		for _, l := range b.lines[1:] { // lines[0] is `chain <name> {`
+			if isModuleRule(l, carriedChains, carriedSets) {
 				pending = append(pending, Jump{Chain: b.name, Rule: strings.TrimSpace(l)})
 				continue
 			}
 			if a := reAnchor.FindStringSubmatch(l); a != nil && len(pending) > 0 {
-				for _, j := range pending {
-					j.Anchor = a[1]
-					mo.Jumps = append(mo.Jumps, j)
-				}
-				pending = nil
+				flush(a[1])
 			}
 		}
-		if len(pending) > 0 {
-			return nil, fmt.Errorf("%s %s: jump %q has no anchor rule after it — cannot be placed in the replacement", fam, b.name, pending[0].Rule)
-		}
+		flush("") // rules after the last anchor: appended at the chain end, where they were
 	}
 	return mo, nil
+}
+
+var reSetRef = regexp.MustCompile(`@([A-Za-z0-9_]+)`)
+
+// isModuleRule: a rule line that jumps into a carried module chain or uses a carried module set.
+func isModuleRule(line string, chains, sets map[string]bool) bool {
+	if tgt := jumpTarget(line); tgt != "" && chains[tgt] {
+		return true
+	}
+	code := line
+	if i := strings.Index(code, " comment "); i >= 0 {
+		code = code[:i]
+	}
+	for _, m := range reSetRef.FindAllStringSubmatch(code, -1) {
+		if sets[m[1]] {
+			return true
+		}
+	}
+	return false
 }
 
 // Compose returns the load file: the schema with the generation marker and the carried module
@@ -253,6 +286,18 @@ func Compose(schema, nonce string, mods []*ModuleObjects, content string) (strin
 						out.WriteString(indent + j.Rule + "\n")
 						placed[j] = true
 					}
+				}
+			}
+		}
+		// End of a schema chain: rules that had no anchor after them live go here.
+		if fam != "" && chain != "" && depth == 2 && t == "}" && byFam[fam] != nil {
+			indent := strings.Repeat(" ", 4) + line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+			mo := byFam[fam]
+			for i := range mo.Jumps {
+				j := &mo.Jumps[i]
+				if j.Chain == chain && j.Anchor == "" && !placed[j] {
+					out.WriteString(indent + j.Rule + "\n")
+					placed[j] = true
 				}
 			}
 		}

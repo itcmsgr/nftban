@@ -156,11 +156,44 @@ func TestComposePlacesJumpsBeforeAnchorsInOrder(t *testing.T) {
 	}
 }
 
-func TestRefusals(t *testing.T) {
-	noAnchor := strings.Replace(liveIP, `		counter name "anchor_service" comment "NFTBAN_ANCHOR:ANCHOR_SERVICE"`+"\n", "", 1)
-	if _, err := ExtractModules("ip", noAnchor, schemaIP, map[string]bool{"ddos": true}); err == nil {
-		t.Fatal("a jump with no anchor after it must refuse")
+// A module rule that uses a module set (not a jump) is carried; one after the last anchor is
+// appended at the chain end; identical duplicates (an apply that appended every time) are carried once.
+func TestModuleSetRuleCarriedAtChainEndDeduplicated(t *testing.T) {
+	live := strings.Replace(liveIP, `		counter name "anchor_service" comment "NFTBAN_ANCHOR:ANCHOR_SERVICE"`+"\n",
+		`		counter name "anchor_service" comment "NFTBAN_ANCHOR:ANCHOR_SERVICE"`+"\n"+
+			`		ip saddr @ddos_ban_1h drop comment "DDoS Suricata blocked"`+"\n"+
+			`		ip saddr @ddos_ban_1h drop comment "DDoS Suricata blocked"`+"\n", 1)
+	mo, err := ExtractModules("ip", live, schemaIP, map[string]bool{"ddos": true})
+	if err != nil {
+		t.Fatal(err)
 	}
+	n := 0
+	for _, j := range mo.Jumps {
+		if strings.Contains(j.Rule, "@ddos_ban_1h") {
+			n++
+			if j.Anchor != "" {
+				t.Fatalf("a rule after the last anchor goes to the chain end, got anchor %q", j.Anchor)
+			}
+		}
+	}
+	if n != 1 {
+		t.Fatalf("duplicate module rule must be carried once, got %d", n)
+	}
+	out, err := Compose(schemaIP, "N", []*ModuleObjects{mo}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule := `@ddos_ban_1h drop comment "DDoS Suricata blocked"`
+	if strings.Count(out, rule) != 1 || strings.Index(out, rule) < strings.Index(out, "ANCHOR_SERVICE") {
+		t.Fatalf("module set rule must be carried once, after the last anchor:\n%s", out)
+	}
+	// A rule mentioning a set name only inside its comment is not a module rule.
+	if isModuleRule(`counter comment "uses @ddos_ban_1h"`, nil, map[string]bool{"ddos_ban_1h": true}) {
+		t.Fatal("a set name in a comment must not make a rule a module rule")
+	}
+}
+
+func TestRefusals(t *testing.T) {
 	mo, err := ExtractModules("ip", liveIP, schemaIP, map[string]bool{"ddos": true})
 	if err != nil {
 		t.Fatal(err)
