@@ -157,6 +157,18 @@ rc=0; cc 'cc_apply_begin 120' || rc=$?
 if [[ $rc -ne 0 ]] && has "$SB/cc.out" "still pending"; then ok "D6 a second apply is refused while one is pending"
 else ko "D6 pending refusal (rc=$rc)"; fi
 
+# v1.236: a rules.d fragment RENDERED by nftban is regenerated (new timestamp) by every apply,
+# so it is not configuration and is not in the change set; a hand-written rules.d file is.
+fresh; mkdir -p "$SB/etc/rules.d"
+printf '#!/usr/sbin/nft -f\n# NFTBan X\n# Generated: T1\n# Managed by nftband - DO NOT EDIT MANUALLY\nadd chain ip nftban x\n' > "$SB/etc/rules.d/15-rendered.nft"
+echo 'add chain ip nftban custom' > "$SB/etc/rules.d/50-custom.nft"
+cc 'cc_record_applied_baseline "'"$SB"'/loaded.nft"' || true
+sed -i 's/T1/T2/' "$SB/etc/rules.d/15-rendered.nft"; echo '# edited' >> "$SB/etc/rules.d/50-custom.nft"
+cc 'cc_apply_begin 120' || true
+if ! has "$CS" "rules.d/15-rendered.nft" && has "$CS" "./rules.d/50-custom.nft"; then
+    ok "D5b rendered rules.d fragment not in the change set; a hand-written rules.d file is"
+else ko "D5b rendered fragment filter: $(cut -f1 "$CS" 2>/dev/null | tr '\n' ' ')"; fi
+
 fresh; cc 'cc_record_applied_baseline "'"$SB"'/loaded.nft"' || true; echo 1 > "$SB/sdrun_rc"; : > "$SB/calls.log"
 rc=0; cc 'cc_apply_begin 120' || rc=$?
 if [[ $rc -ne 0 && ! -e "$REC" ]] && has "$SB/cc.out" "could not be armed" && ! has "$SB/calls.log" "nft -f"; then

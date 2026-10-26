@@ -107,6 +107,11 @@ cc_manifest() {  # dir
       find . -path ./generated -prune -o -type f -print0 | sort -z | xargs -0 -r sha256sum )
 }
 
+# A rules.d fragment rendered by nftban: "# Managed by nftband" in its header (v1.236).
+cc_is_rendered_fragment() {  # file
+    [[ -f "$1" ]] && awk 'NR > 5 { exit } /^# Managed by nftband/ { found = 1; exit } END { exit !found }' "$1"
+}
+
 # Copy the config inputs (excluding generated/) into a directory.
 cc_copy_config() {  # src dst
     mkdir -p "$2" || return 1
@@ -206,7 +211,22 @@ cc_apply_begin() {
     LC_ALL=C join -j2 -a1 -a2 -e MISSING -o 0,1.1,2.1 \
         <(awk '{print $1" "$2}' "$CC_BASE/manifest" | LC_ALL=C sort -k2) \
         <(awk '{print $1" "$2}' "$CC_WORK/candidate-manifest" | LC_ALL=C sort -k2) \
-      | awk '$2!=$3 {print $1"\t"$2"\t"$3}' > "$CC_WORK/changeset"
+      | awk '$2!=$3 {print $1"\t"$2"\t"$3}' > "$CC_WORK/changeset.all"
+    # v1.236: rules.d fragments RENDERED by nftban are regenerated, with a new timestamp, on
+    # every apply — the rebuild's own module re-apply rewrites them after the candidate is
+    # recorded — so, like generated/, they are not configuration. In the change set they made
+    # every rollback on a host with modules INCOMPLETE (lab2 2026-10-26: 9 "edited after the
+    # apply" conflicts, writers held). Filtered here, not in cc_manifest, so a baseline
+    # recorded by an older version does not reintroduce them.
+    local _p _b _c
+    : > "$CC_WORK/changeset"
+    while IFS=$'\t' read -r _p _b _c; do
+        if [[ "$_p" == ./rules.d/* ]] && { cc_is_rendered_fragment "$CC_WORK/candidate-config/$_p" \
+                || cc_is_rendered_fragment "$CC_BASE/config/$_p"; }; then
+            continue
+        fi
+        printf '%s\t%s\t%s\n' "$_p" "$_b" "$_c" >> "$CC_WORK/changeset"
+    done < "$CC_WORK/changeset.all"
     now=$(cc_now); deadline=$(( now + grace ))
     cc_write_record "apply_id=$id" "status=pending" "deadline_epoch=$deadline" "grace=$grace" \
         "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" "candidate_projection_sha=" "confirm_requested=" "conflicts=" \
