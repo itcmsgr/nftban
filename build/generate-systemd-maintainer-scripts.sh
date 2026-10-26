@@ -147,6 +147,8 @@ HELPER
 }
 
 # Emit the shared remove_unit_file_if_exists helper body. Identical RPM/DEB.
+# The rpm ownership check is a no-op on DEB hosts (no rpm, or rpm without the
+# file in its database), so DEB behaviour is unchanged.
 #
 # Used by policy stop_disable_remove (v1.228.2 Suricata retirement). It removes
 # the obsolete unit FILE and clears a pre-existing /dev/null mask residue, but
@@ -167,8 +169,20 @@ emit_remove_helper() {
 # residue (including a mask an operator applied by hand) after removing the
 # obsolete unit file.
 remove_unit_file_if_exists() {
-    local unit="$1"
-    rm -f "/usr/lib/systemd/system/$unit" "/lib/systemd/system/$unit" 2>/dev/null || true
+    local unit="$1" f
+    for f in "/usr/lib/systemd/system/$unit" "/lib/systemd/system/$unit"; do
+        [ -e "$f" ] || continue
+        # A file still owned by the installed nftban-core belongs to the package
+        # manager: on an RPM upgrade rpm erases the old package's files after the
+        # new %pre, and deleting one here first made rpm print "remove failed: No
+        # such file or directory" (v1.235.1, nftban-rollback.timer/.service).
+        # readlink -f: /lib is a symlink to /usr/lib on merged-/usr hosts.
+        if command -v rpm >/dev/null 2>&1 \
+            && rpm -qf --qf '%{NAME}\n' "$(readlink -f "$f")" 2>/dev/null | grep -qx 'nftban-core'; then
+            continue
+        fi
+        rm -f "$f" 2>/dev/null || true
+    done
     if [ -L "/etc/systemd/system/$unit" ]; then
         if [ "$(readlink "/etc/systemd/system/$unit" 2>/dev/null)" = "/dev/null" ]; then
             rm -f "/etc/systemd/system/$unit" 2>/dev/null || true
