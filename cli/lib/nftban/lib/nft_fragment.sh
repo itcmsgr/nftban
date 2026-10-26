@@ -2034,6 +2034,38 @@ nft_fragment_render_http_botguard_sets() {
     local timestamp
     timestamp=$(date -Iseconds)
 
+    # v1.236: declare only the sets that are missing. Once the chain's packet-path rule
+    # has added to http_bot_suspect, the kernel reports it as "size 65535; flags
+    # dynamic,timeout"; re-adding it as "flags timeout" was refused (File exists), so
+    # every re-apply of an enabled BotGuard (enable, reload step 4c) failed here.
+    local spec base comment ver name table type adds=""
+    for spec in \
+        "http_bot_suspect|Kernel-populated HTTP bot suspects" \
+        "http_bot_pending|Awaiting bot classification" \
+        "http_bot_allow|Verified allowed crawlers" \
+        "http_bot_grey|Suspicious bots, throttled" \
+        "http_bot_ban|Denied/malicious bots" \
+        "http_bot_emergency|Emergency pressure blocks"; do
+        base="${spec%%|*}"
+        comment="${spec#*|}"
+        for ver in 4 6; do
+            if [[ "$ver" == 4 ]]; then
+                name="$base" table="$table_ipv4" type="ipv4_addr"
+            else
+                name="${base}6" table="$table_ipv6" type="ipv6_addr"
+            fi
+            # shellcheck disable=SC2086 # table is "<family> <name>"
+            nft list set ${table} "$name" &>/dev/null && continue
+            adds+="add set ${table} ${name} { type ${type}; flags timeout; comment \"${comment}\"; }"$'\n'
+        done
+    done
+
+    # Every set already exists: nothing to apply.
+    if [[ -z "$adds" ]]; then
+        echo "/dev/null"
+        return 0
+    fi
+
     local content
     content=$(cat <<EOF
 #!/usr/sbin/nft -f
@@ -2043,23 +2075,9 @@ nft_fragment_render_http_botguard_sets() {
 #
 # These sets are always present (cost nothing when empty).
 # Since v1.21.4 they are also in the base nftables.conf schema.
-# This fragment ensures they exist on systems not yet rebuilt.
+# This fragment declares only the sets missing on this system.
 
-# --- IPv4 Bot Guard Sets ---
-add set ${table_ipv4} http_bot_suspect { type ipv4_addr; flags timeout; comment "Kernel-populated HTTP bot suspects"; }
-add set ${table_ipv4} http_bot_pending { type ipv4_addr; flags timeout; comment "Awaiting bot classification"; }
-add set ${table_ipv4} http_bot_allow { type ipv4_addr; flags timeout; comment "Verified allowed crawlers"; }
-add set ${table_ipv4} http_bot_grey { type ipv4_addr; flags timeout; comment "Suspicious bots, throttled"; }
-add set ${table_ipv4} http_bot_ban { type ipv4_addr; flags timeout; comment "Denied/malicious bots"; }
-add set ${table_ipv4} http_bot_emergency { type ipv4_addr; flags timeout; comment "Emergency pressure blocks"; }
-
-# --- IPv6 Bot Guard Sets ---
-add set ${table_ipv6} http_bot_suspect6 { type ipv6_addr; flags timeout; comment "Kernel-populated HTTP bot suspects"; }
-add set ${table_ipv6} http_bot_pending6 { type ipv6_addr; flags timeout; comment "Awaiting bot classification"; }
-add set ${table_ipv6} http_bot_allow6 { type ipv6_addr; flags timeout; comment "Verified allowed crawlers"; }
-add set ${table_ipv6} http_bot_grey6 { type ipv6_addr; flags timeout; comment "Suspicious bots, throttled"; }
-add set ${table_ipv6} http_bot_ban6 { type ipv6_addr; flags timeout; comment "Denied/malicious bots"; }
-add set ${table_ipv6} http_bot_emergency6 { type ipv6_addr; flags timeout; comment "Emergency pressure blocks"; }
+${adds}
 EOF
     )
 
@@ -2115,6 +2133,13 @@ nft_fragment_render_http_botguard() {
 # Architecture: Kernel DETECTS, Go DECIDES, Kernel ENFORCES
 # Set ownership: suspect=kernel, allow/ban/grey/emergency/pending=Go
 #
+# v1.236 (BUG-BOTGUARD-JUMP-AFTER-SYN-RATE-ACCEPT-BAN-NEVER-ENFORCED): the jump now sits before
+# ANCHOR_DETECT, ahead of the base SYN-rate "accept" that used to take every new HTTP(S)
+# connection before BotGuard saw it. Because the chain now runs BEFORE the DDoS / connlimit /
+# SYN-rate checks, its pass verdicts are `return` (exempt from the rest of BotGuard only), not
+# `accept` — verified crawlers and in-rate grey/pending sources still go through the DDoS
+# checks and the service-port accept, exactly as when the chain ran after them.
+#
 # Chain order (most permissive → most restrictive):
 #   1. Allow set: bypass throttle (verified crawlers)
 #   2. Ban set: full drop (denied/malicious bots)
@@ -2140,7 +2165,7 @@ add set ${table_ipv4} http_bot_pending_meter { type ipv4_addr; size 65535; flags
 add set ${table_ipv4} http_bot_meter { type ipv4_addr; size 65535; flags dynamic,timeout; timeout 5m; comment "v1.228.6 bounded suspect-marking rate state"; }
 
 # 1. Allow set: verified crawlers bypass throttle
-add rule ${table_ipv4} ${chain} ip saddr @http_bot_allow accept comment "BotGuard: verified crawler allow"
+add rule ${table_ipv4} ${chain} ip saddr @http_bot_allow return comment "BotGuard: verified crawler allow"
 
 # 2. Ban set: denied/malicious bots get dropped
 add rule ${table_ipv4} ${chain} ip saddr @http_bot_ban counter name total_input_drop counter drop comment "BotGuard: denied bot ban"
@@ -2149,11 +2174,11 @@ add rule ${table_ipv4} ${chain} ip saddr @http_bot_ban counter name total_input_
 add rule ${table_ipv4} ${chain} ip saddr @http_bot_emergency counter name total_input_drop counter drop comment "BotGuard: emergency drop"
 
 # 4. Grey set: suspicious bots get heavy throttle
-add rule ${table_ipv4} ${chain} ip saddr @http_bot_grey tcp dport {80, 443} ct state new update @http_bot_grey_meter { ip saddr limit rate ${grey_rate} burst ${grey_burst} packets } accept comment "BotGuard: grey throttle OK"
+add rule ${table_ipv4} ${chain} ip saddr @http_bot_grey tcp dport {80, 443} ct state new update @http_bot_grey_meter { ip saddr limit rate ${grey_rate} burst ${grey_burst} packets } return comment "BotGuard: grey throttle OK"
 add rule ${table_ipv4} ${chain} ip saddr @http_bot_grey tcp dport {80, 443} counter name total_input_drop counter drop comment "BotGuard: grey throttle exceeded"
 
 # 5. Pending set: awaiting classification, light throttle
-add rule ${table_ipv4} ${chain} ip saddr @http_bot_pending tcp dport {80, 443} ct state new update @http_bot_pending_meter { ip saddr limit rate ${pending_rate} burst ${pending_burst} packets } accept comment "BotGuard: pending throttle OK"
+add rule ${table_ipv4} ${chain} ip saddr @http_bot_pending tcp dport {80, 443} ct state new update @http_bot_pending_meter { ip saddr limit rate ${pending_rate} burst ${pending_burst} packets } return comment "BotGuard: pending throttle OK"
 add rule ${table_ipv4} ${chain} ip saddr @http_bot_pending tcp dport {80, 443} counter name total_input_drop counter drop comment "BotGuard: pending throttle exceeded"
 
 # 6. Suspect meter: mark IPs exceeding rate for Go classification
@@ -2172,7 +2197,7 @@ add set ${table_ipv6} http_bot_pending_meter6 { type ipv6_addr; size 65535; flag
 add set ${table_ipv6} http_bot_meter6 { type ipv6_addr; size 65535; flags dynamic,timeout; timeout 5m; comment "v1.228.6 bounded suspect-marking rate state"; }
 
 # 1. Allow set
-add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_allow6 accept comment "BotGuard: verified crawler allow"
+add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_allow6 return comment "BotGuard: verified crawler allow"
 
 # 2. Ban set
 add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_ban6 counter name total_input_drop counter drop comment "BotGuard: denied bot ban"
@@ -2181,11 +2206,11 @@ add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_ban6 counter name total_inpu
 add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_emergency6 counter name total_input_drop counter drop comment "BotGuard: emergency drop"
 
 # 4. Grey set
-add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_grey6 tcp dport {80, 443} ct state new update @http_bot_grey_meter6 { ip6 saddr limit rate ${grey_rate} burst ${grey_burst} packets } accept comment "BotGuard: grey throttle OK"
+add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_grey6 tcp dport {80, 443} ct state new update @http_bot_grey_meter6 { ip6 saddr limit rate ${grey_rate} burst ${grey_burst} packets } return comment "BotGuard: grey throttle OK"
 add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_grey6 tcp dport {80, 443} counter name total_input_drop counter drop comment "BotGuard: grey throttle exceeded"
 
 # 5. Pending set
-add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_pending6 tcp dport {80, 443} ct state new update @http_bot_pending_meter6 { ip6 saddr limit rate ${pending_rate} burst ${pending_burst} packets } accept comment "BotGuard: pending throttle OK"
+add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_pending6 tcp dport {80, 443} ct state new update @http_bot_pending_meter6 { ip6 saddr limit rate ${pending_rate} burst ${pending_burst} packets } return comment "BotGuard: pending throttle OK"
 add rule ${table_ipv6} ${chain} ip6 saddr @http_bot_pending6 tcp dport {80, 443} counter name total_input_drop counter drop comment "BotGuard: pending throttle exceeded"
 
 # 6. Suspect meter
@@ -2207,6 +2232,9 @@ EOF
 # Render HTTP Bot Guard jump rules fragment
 # v1.61.0: Insert BEFORE @tcp_ports_in (not append) so botguard classifies HTTP
 # traffic before service accept. Port-scoped to 80/443 only.
+# v1.236: before ANCHOR_DETECT, not ANCHOR_SERVICE — the base "SYN rate OK" rule between them
+# accepts every new connection to a service port, so at ANCHOR_SERVICE no new HTTP(S)
+# connection ever reached the ban set (lab2: banned source admitted 1438/1438).
 nft_fragment_render_http_botguard_jump() { nftban_writers_run _nft_fragment_render_http_botguard_jump_held; }
 _nft_fragment_render_http_botguard_jump_held() {
     local table_ipv4="${BOTGUARD_NFT_TABLE_IPV4:-ip nftban}"
@@ -2216,14 +2244,25 @@ _nft_fragment_render_http_botguard_jump_held() {
     local family handle table_fam
     for family in ip ip6; do
         table_fam="${family} nftban"
-        # Skip if jump already exists
-        if nft -a list chain ${table_fam} input 2>/dev/null | grep "jump ${chain}" >/dev/null 2>&1; then
-            continue
+        # Skip if the jump already exists BEFORE ANCHOR_DETECT. A jump left at the pre-v1.236
+        # position (after the SYN-rate accept, where it never saw a new connection) is removed
+        # and re-inserted, so an upgraded host is corrected the next time BotGuard is applied.
+        local _bg_rules _bg_j _bg_a _bg_h
+        _bg_rules=$(nft -a list chain ${table_fam} input 2>/dev/null || true)
+        _bg_j=$(grep -n "jump ${chain}" <<<"$_bg_rules" | head -1 | cut -d: -f1 || true)
+        _bg_a=$(grep -n 'NFTBAN_ANCHOR:ANCHOR_DETECT' <<<"$_bg_rules" | head -1 | cut -d: -f1 || true)
+        if [[ -n "$_bg_j" ]]; then
+            if [[ -n "$_bg_a" && "$_bg_j" -lt "$_bg_a" ]]; then
+                continue
+            fi
+            while IFS= read -r _bg_h; do
+                [[ -n "$_bg_h" ]] && nft delete rule ${table_fam} input handle "$_bg_h" 2>/dev/null
+            done < <(grep "jump ${chain}" <<<"$_bg_rules" | grep -oP 'handle \K\d+' || true)
         fi
 
         # v1.62.1: Primary anchor — NFTBAN_ANCHOR comment marker
         handle=$(nft -a list chain ${table_fam} input 2>/dev/null \
-            | grep 'NFTBAN_ANCHOR:ANCHOR_SERVICE' \
+            | grep 'NFTBAN_ANCHOR:ANCHOR_DETECT' \
             | grep -oP 'handle \K\d+' | head -1) || true
 
         if [[ -n "$handle" ]]; then
@@ -2231,14 +2270,14 @@ _nft_fragment_render_http_botguard_jump_held() {
             nft insert rule ${table_fam} input position "$handle" \
                 tcp dport {80, 443} jump "${chain}" \
                 comment "\"HTTP Bot Guard\"" 2>/dev/null || {
-                echo "WARNING: Failed to insert botguard jump at ANCHOR_SERVICE in ${table_fam}" >&2
+                echo "WARNING: Failed to insert botguard jump at ANCHOR_DETECT in ${table_fam}" >&2
                 continue
             }
             continue
         fi
 
         # v1.63.0: Legacy fallback removed — anchor is required
-        echo "ERROR: ANCHOR_SERVICE not found in ${table_fam} — run: nftban firewall rebuild" >&2
+        echo "ERROR: ANCHOR_DETECT not found in ${table_fam} — run: nftban firewall rebuild" >&2
     done
 
     # Return dummy path for API compatibility (no fragment file written)
@@ -2426,14 +2465,11 @@ nft_fragment_enable_module() {
             fragment_path=$(nft_fragment_render_http_botguard) || return 1
             nft_fragment_apply "$fragment_path" || return 1
 
-            # Add jump if not present
-            local table_ipv4="${BOTGUARD_NFT_TABLE_IPV4:-ip nftban}"
-            local chain="${BOTGUARD_NFT_CHAIN:-http_bot_guard}"
-            if ! nft_fragment_has_jump "$table_ipv4" "$chain"; then
-                local jump_path
-                jump_path=$(nft_fragment_render_http_botguard_jump) || return 1
-                nft_fragment_apply "$jump_path" || return 1
-            fi
+            # Jump: always rendered (v1.236). The renderer is idempotent and moves a jump
+            # left at the pre-v1.236 position to before ANCHOR_DETECT.
+            local jump_path
+            jump_path=$(nft_fragment_render_http_botguard_jump) || return 1
+            nft_fragment_apply "$jump_path" || return 1
             ;;
         *)
             echo "ERROR: Unknown module: $module" >&2

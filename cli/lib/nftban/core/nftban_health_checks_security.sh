@@ -1389,7 +1389,7 @@ nftban_health_check_module_jump_placement() {
         "portscan_detection|NFTBAN_ANCHOR:ANCHOR_DETECT|Portscan detection"
         "ddos_prefix|NFTBAN_ANCHOR:ANCHOR_SERVICE|DDoS prefix"
         "ddos_protection|NFTBAN_ANCHOR:ANCHOR_SERVICE|DDoS classic"
-        "http_bot_guard|NFTBAN_ANCHOR:ANCHOR_SERVICE|HTTP Bot Guard"
+        "http_bot_guard|NFTBAN_ANCHOR:ANCHOR_DETECT|HTTP Bot Guard"   # v1.236: before the SYN-rate accept
         "ddos_synproxy|NFTBAN_ANCHOR:ANCHOR_ESTABLISHED|SYNPROXY"
     )
 

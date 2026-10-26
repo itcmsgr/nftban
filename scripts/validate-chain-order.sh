@@ -59,7 +59,7 @@ declare -a MODULE_DEFS=(
     "portscan_detection|NFTBAN_ANCHOR:ANCHOR_DETECT|Portscan detection|optional"
     "ddos_protection|NFTBAN_ANCHOR:ANCHOR_SERVICE|DDoS classic|optional"
     "ddos_prefix|NFTBAN_ANCHOR:ANCHOR_SERVICE|DDoS prefix|optional"
-    "http_bot_guard|NFTBAN_ANCHOR:ANCHOR_SERVICE|HTTP Bot Guard|optional"
+    "http_bot_guard|NFTBAN_ANCHOR:ANCHOR_DETECT|HTTP Bot Guard|optional"  # v1.236: ahead of the SYN-rate accept
     "ddos_synproxy|NFTBAN_ANCHOR:ANCHOR_ESTABLISHED|SYNPROXY|optional"
 )
 
@@ -133,7 +133,7 @@ MODULES CHECKED:
     portscan_detection Must be BEFORE syn_meter
     ddos_protection   Must be BEFORE @tcp_ports_in
     ddos_prefix       Must be BEFORE @tcp_ports_in
-    http_bot_guard    Must be BEFORE @tcp_ports_in
+    http_bot_guard    Must be BEFORE ANCHOR_DETECT (v1.236)
     ddos_synproxy     Must be BEFORE established,related
 
 EXIT CODES:
