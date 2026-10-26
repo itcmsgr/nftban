@@ -2783,15 +2783,18 @@ FIREWALL_RELOAD_HELP
             local _al_rc=0
             _fw_atomic_load "$nftban_conf" "$quiet" || _al_rc=$?
             if [[ $_al_rc -ne 0 ]]; then
-                echo "Warning: Failed to re-apply NFTBan schema (atomic load rc=$_al_rc: 1=rejected/unchanged 2=unknown 3=refused before change)" >&2
+                # v1.236: a reload that applied nothing (1 rejected, 3 refused) or whose outcome is
+                # unknown (2) is a FAILED reload, never rc 0 (lab2: an oversize refusal exited 0).
+                echo "ERROR: reload did not apply the NFTBan ruleset (atomic load rc=$_al_rc: 1=rejected/unchanged 2=unknown 3=refused before change)" >&2
                 echo "Try: nftban firewall rebuild" >&2
-                [[ $_al_rc -ne 2 ]] || return 1
+                return 1
             fi
         else
             echo "Warning: Template validation failed, loading live config" >&2
             rm -f "$_tmp_conf"
             if [[ -f "$nftban_conf" ]] && ! _fw_atomic_load "$nftban_conf" "$quiet"; then
                 echo "Try: nftban firewall rebuild" >&2
+                return 1
             fi
         fi
     elif [[ -f "$nftban_conf" ]]; then
@@ -2806,14 +2809,17 @@ FIREWALL_RELOAD_HELP
                 echo "Warning: effective service-port render failed — NOT applying skeletal reload. Try: nftban firewall rebuild" >&2
             elif ! _fw_atomic_load "$_tmp_conf" "$quiet"; then
                 # v1.236: one transaction with the set contents, as the template branch above.
-                echo "Warning: Failed to re-apply NFTBan schema" >&2
+                echo "ERROR: reload did not apply the NFTBan ruleset" >&2
                 echo "Try: nftban firewall rebuild" >&2
+                rm -f "$_tmp_conf"
+                return 1
             fi
             rm -f "$_tmp_conf"
         else
             if ! _fw_atomic_load "$nftban_conf" "$quiet"; then
-                echo "Warning: Failed to re-apply NFTBan schema" >&2
+                echo "ERROR: reload did not apply the NFTBan ruleset" >&2
                 echo "Try: nftban firewall rebuild" >&2
+                return 1
             fi
         fi
     fi
