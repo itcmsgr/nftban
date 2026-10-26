@@ -248,6 +248,9 @@ type Daemon struct {
 	setCounters *stats.SetCounters // Per-set element counts (O(1) reads)
 	bgWg        sync.WaitGroup     // Tracks background goroutines for clean shutdown
 
+	// v1.236: a daemon set write asks for a debounced kernel recount (startCountRefresh)
+	countRefresh chan struct{}
+
 	// v1.13.12: Config reload tracking
 	configHash   string       // SHA256 of loaded config files
 	lastReloadTs time.Time    // When config was last loaded/reloaded

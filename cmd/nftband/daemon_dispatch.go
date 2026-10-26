@@ -20,8 +20,26 @@
 
 package main
 
+// setWriteMethods are the IPC methods that change set contents. A successful one asks for a
+// debounced kernel recount of the active set counts (v1.236, COUNT-MECH-INCREMENTAL-COUNTER-DRIFT).
+var setWriteMethods = map[string]bool{
+	"ban": true, "unban": true, "add_element": true, "delete_element": true, "flush_set": true,
+	"apply_ruleset": true, "sync": true, "add_port_element": true, "delete_port_element": true,
+	"load_cidrs": true, "evict_old_bans": true, "replace_set": true, "flush_source": true,
+	"reload": true, "access_allow": true, "access_revoke": true,
+}
+
 // handleSocketRequest processes a socket request
 func (d *Daemon) handleSocketRequest(req SocketRequest) SocketResponse {
+	resp := d.routeSocketRequest(req)
+	if resp.Success && setWriteMethods[req.Method] {
+		d.noteSetWrite()
+	}
+	return resp
+}
+
+// routeSocketRequest dispatches a socket request to its handler
+func (d *Daemon) routeSocketRequest(req SocketRequest) SocketResponse {
 	switch req.Method {
 	case "status":
 		return d.handleStatusRequest()

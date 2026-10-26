@@ -193,6 +193,7 @@ func (d *Daemon) Run() error {
 		}
 		// finish records the outcome of this module ban.
 		finish := func(result *nftbackend.BanResult, err error) {
+			defer d.noteSetWrite()
 			switch {
 			case errors.Is(err, nftlock.ErrBusy):
 				log.Printf("[BAN] NOT applied %s (source=%s): write boundary still busy after %d retries", e.IP, e.Source, detectorBanBusyRetries)
@@ -585,6 +586,7 @@ func (d *Daemon) initOpQueue() error {
 	// v1.32.0: Initialize set element counters for huge set management
 	runDir, _, _, _ := getDaemonPaths()
 	d.setCounters = stats.NewSetCounters(runDir)
+	d.countRefresh = make(chan struct{}, 1)
 
 	// Wire OpQueue flush callback to update set counters
 	d.opQueue.SetOnFlush(func(setName string, applied int, opType string) {
@@ -598,6 +600,7 @@ func (d *Daemon) initOpQueue() error {
 		case "flush":
 			d.setCounters.Set(setName, 0)
 		}
+		d.noteSetWrite()
 	})
 
 	// Create SourceIndex for tracking element sources
@@ -631,7 +634,10 @@ func (d *Daemon) initOpQueue() error {
 		d.sourceIndex.ReconcileWithBackend(wrapper)
 
 		// v1.32.0: Reconcile set counters from kernel on startup (one-time full count)
-		d.reconcileSetCountersFromKernel(wrapper)
+		d.reconcileSetCountersFromKernel(wrapper, true)
+
+		// v1.236: keep the active counts in step between reconciliations
+		go d.startCountRefresh(wrapper)
 
 		// v1.34.0: Start periodic reconciliation after initial startup
 		d.startPeriodicReconciliation(wrapper)
@@ -643,62 +649,62 @@ func (d *Daemon) initOpQueue() error {
 	return nil
 }
 
-// reconcileSetCountersFromKernel counts elements in all nftban sets
-// and initializes the in-memory counters. Called once on startup. (v1.32.0)
-func (d *Daemon) reconcileSetCountersFromKernel(wrapper *opqueue.NFTBackendWrapper) {
-	log.Println("[set_counters] Reconciling set counts from kernel state...")
+// reconcileSetCountersFromKernel counts elements in all nftban sets and sets the in-memory
+// counters. full: the startup and periodic reconciliation (every set, logged, cache written).
+// Not full: the light recount of startCountRefresh (v1.236) — quiet, and sets already at
+// HUGE scale are left to the full reconciliation (GetSetCount reads every element; those are
+// feed sets, written by replace with an exact count). (v1.32.0)
+func (d *Daemon) reconcileSetCountersFromKernel(wrapper *opqueue.NFTBackendWrapper, full bool) {
+	if full {
+		log.Println("[set_counters] Reconciling set counts from kernel state...")
+	}
+
+	recount := func(setName string, logSkip bool) {
+		if !full && d.setCounters.Get(setName) >= stats.ThresholdHuge {
+			return
+		}
+		// Use GetSetCount instead of GetSetElements to avoid keeping all elements
+		// in memory. On a 500K+ interval set, GetSetElements causes 1GB+ heap spike.
+		count, err := wrapper.GetSetCount("nftban", setName)
+		if err != nil {
+			if full && logSkip {
+				// Set might not exist yet (e.g. IPv6 not configured)
+				log.Printf("[set_counters] %s: skipped (%v)", setName, err)
+			}
+			return
+		}
+		// v1.236 (COUNT-MECH-RECONCILE-SKIPS-ZERO): a successful read of 0 is a count.
+		d.setCounters.SetReconciled(setName, int64(count))
+		if full && count > 0 {
+			log.Printf("[set_counters] %s: %d elements [%s]", setName, count, d.setCounters.Scale(setName))
+		}
+	}
 
 	// Known set names in the nftban schema
-	setNames := []string{
+	for _, setName := range []string{
 		"blacklist_ipv4", "blacklist_ipv6",
 		"blacklist_manual_ipv4", "blacklist_manual_ipv6", // v1.34.0: hash sets
 		"whitelist_ipv4", "whitelist_ipv6",
 		"tcp_ports_in", "tcp_ports_out",
 		"udp_ports_in", "udp_ports_out",
 		"ssh_ports", // v1.171 §3.6: was omitted → ssh_ports counter never seeded from kernel on startup
+	} {
+		recount(setName, true)
 	}
 
-	for _, setName := range setNames {
-		// Use GetSetCount instead of GetSetElements to avoid loading all elements
-		// into memory. On a 500K+ interval set, GetSetElements causes 1GB+ heap spike.
-		count, err := wrapper.GetSetCount("nftban", setName)
-		if err != nil {
-			// Set might not exist yet (e.g. IPv6 not configured)
-			log.Printf("[set_counters] %s: skipped (%v)", setName, err)
-			continue
-		}
-		d.setCounters.SetReconciled(setName, int64(count))
-		if count > 0 {
-			log.Printf("[set_counters] %s: %d elements [%s]", setName, count, d.setCounters.Scale(setName))
-		}
-	}
-
-	// v1.41.0: Also check port_allow concat sets
-	portAllowSets := []string{
+	// v1.41.0: port_allow concat sets (may not exist on older schemas), and the botguard
+	// sets (may not exist)
+	for _, setName := range []string{
 		"port_allow_tcp_ipv4", "port_allow_udp_ipv4",
 		"port_allow_tcp_ipv6", "port_allow_udp_ipv6",
-	}
-	for _, setName := range portAllowSets {
-		count, err := wrapper.GetSetCount("nftban", setName)
-		if err != nil {
-			continue // Port allow sets may not exist on older schemas
-		}
-		// v1.236 (COUNT-MECH-RECONCILE-SKIPS-ZERO): a successful read of 0 is a count. Skipping
-		// it left a drained set at its last non-zero count until the daemon restarted.
-		d.setCounters.SetReconciled(setName, int64(count))
-	}
-
-	// Also check botguard sets if they exist
-	botguardSets := []string{
 		"http_bot_suspect", "http_bot_pending", "http_bot_allow",
 		"http_bot_grey", "http_bot_ban", "http_bot_emergency",
+	} {
+		recount(setName, false)
 	}
-	for _, setName := range botguardSets {
-		count, err := wrapper.GetSetCount("nftban", setName)
-		if err != nil {
-			continue // Botguard sets may not exist
-		}
-		d.setCounters.SetReconciled(setName, int64(count)) // 0 included (see above)
+
+	if !full {
+		return // the cache writer loop publishes the change within 10 s
 	}
 
 	// Force immediate cache file write
