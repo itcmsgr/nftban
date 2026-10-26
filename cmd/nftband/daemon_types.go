@@ -95,6 +95,10 @@ var knownNFTBanSets = map[string]bool{
 	// Per-IP port access sets (v1.43.0 — BUG-008 fix: flush was silently failing)
 	"port_allow_tcp_ipv4": true, "port_allow_tcp_ipv6": true,
 	"port_allow_udp_ipv4": true, "port_allow_udp_ipv6": true,
+	// v1.236: the DDoS (Suricata) block set. Without it flush_set refused it ("invalid set"),
+	// so `nftban ddos` teardown / switch to classic and `nftban flush ddos` never flushed it.
+	// Element adds stay under the never-ban guard (nftbackend.IsEnforcementSet).
+	"ddos_blocked": true,
 }
 
 func validNFTBanSet(set string) bool {
