@@ -468,13 +468,19 @@ make_world() {  # fresh "never projected, disabled" host
     local fam
     for fam in ip ip6; do
         mkdir -p "$FAKE_K/c/$fam/nftban" "$FAKE_K/s/$fam/nftban" "$FAKE_K/ct/$fam/nftban"
+        # v1.236: all seven anchors, as the schema always carries them (docs/ANCHOR_CONTRACT.md);
+        # the Suricata block rule is placed before ANCHOR_BAN and refuses without it.
         printf '%s\n' \
+            $'9\tcounter name anchor_hygiene comment "NFTBAN_ANCHOR:ANCHOR_HYGIENE"' \
             $'10\tct state invalid drop' \
             $'11\tcounter name anchor_trusted comment "NFTBAN_ANCHOR:ANCHOR_TRUSTED"' \
+            $'16\tcounter name anchor_ban comment "NFTBAN_ANCHOR:ANCHOR_BAN"' \
             $'12\tct state established,related accept' \
             $'13\tcounter name anchor_established comment "NFTBAN_ANCHOR:ANCHOR_ESTABLISHED"' \
+            $'17\tcounter name anchor_detect comment "NFTBAN_ANCHOR:ANCHOR_DETECT"' \
             $'14\tcounter name anchor_service comment "NFTBAN_ANCHOR:ANCHOR_SERVICE"' \
-            $'15\ttcp dport 22 accept' > "$FAKE_K/c/$fam/nftban/input"
+            $'15\ttcp dport 22 accept' \
+            $'18\tcounter name anchor_final comment "NFTBAN_ANCHOR:ANCHOR_FINAL"' > "$FAKE_K/c/$fam/nftban/input"
     done
     echo up > "$FAKE_K/daemon"; echo false > "$FAKE_K/enabled_at_start"
     python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1])' "$NFTBAN_DAEMON_SOCKET"
