@@ -127,7 +127,9 @@ nftban_sync_full() {
 
     echo ""
     case "$exit_code" in
-        0)  nftban_output "success" "Firewall sync completed" ;;
+        0)  nftban_output "success" "Firewall sync completed"
+            # The permanent upsert is additive (v1.236 stage 1): runtime bans stay.
+            nftban_output "info" "Runtime state: NFTBan runtime bans preserved" ;;
         69) nftban_output "error" "Firewall sync NOT delivered: daemon unreachable, nothing ran (exit 69)" ;;
         74) nftban_output "error" "Firewall sync completion UNKNOWN: no answer from the daemon (exit 74)" ;;
         75) nftban_output "warning" "Firewall sync still RUNNING at the wait limit; not reported as complete (exit 75)" ;;
