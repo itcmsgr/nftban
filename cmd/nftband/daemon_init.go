@@ -683,9 +683,9 @@ func (d *Daemon) reconcileSetCountersFromKernel(wrapper *opqueue.NFTBackendWrapp
 		if err != nil {
 			continue // Port allow sets may not exist on older schemas
 		}
-		if count > 0 {
-			d.setCounters.SetReconciled(setName, int64(count))
-		}
+		// v1.236 (COUNT-MECH-RECONCILE-SKIPS-ZERO): a successful read of 0 is a count. Skipping
+		// it left a drained set at its last non-zero count until the daemon restarted.
+		d.setCounters.SetReconciled(setName, int64(count))
 	}
 
 	// Also check botguard sets if they exist
@@ -698,9 +698,7 @@ func (d *Daemon) reconcileSetCountersFromKernel(wrapper *opqueue.NFTBackendWrapp
 		if err != nil {
 			continue // Botguard sets may not exist
 		}
-		if count > 0 {
-			d.setCounters.SetReconciled(setName, int64(count))
-		}
+		d.setCounters.SetReconciled(setName, int64(count)) // 0 included (see above)
 	}
 
 	// Force immediate cache file write
