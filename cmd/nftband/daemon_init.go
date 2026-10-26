@@ -693,12 +693,15 @@ func (d *Daemon) reconcileSetCountersFromKernel(wrapper *opqueue.NFTBackendWrapp
 	}
 
 	// v1.41.0: port_allow concat sets (may not exist on older schemas), and the botguard
-	// sets (may not exist)
+	// sets (may not exist; GetSetCount never creates one)
 	for _, setName := range []string{
 		"port_allow_tcp_ipv4", "port_allow_udp_ipv4",
 		"port_allow_tcp_ipv6", "port_allow_udp_ipv6",
 		"http_bot_suspect", "http_bot_pending", "http_bot_allow",
 		"http_bot_grey", "http_bot_ban", "http_bot_emergency",
+		// v1.236: the IPv6 BotGuard sets were never counted
+		"http_bot_suspect6", "http_bot_pending6", "http_bot_allow6",
+		"http_bot_grey6", "http_bot_ban6", "http_bot_emergency6",
 	} {
 		recount(setName, false)
 	}
