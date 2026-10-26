@@ -11,6 +11,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.236.0] - 2026-10-26 — Firewall replacement without enforcement gaps; BotGuard enforcement
+
+As of v1.236.0. Verified on Ubuntu 24.04 (DEB), Rocky 9 (EL9 RPM) and Rocky 10 (EL10 RPM) as an upgrade from
+v1.235.1 with DDoS, PortScan and BotGuard enabled.
+
+### Fixed — bans during upgrade, reload and rebuild
+
+- **Banned sources were admitted while the firewall was replaced.** The rendered schema deletes and recreates the
+  NFTBan tables with every set empty; reload, rebuild and the installer loaded it and refilled the sets in later
+  steps. Reload and rebuild now load the schema, a generation marker and the set contents in one `nft -f`
+  transaction (`nftban-core ruleset content`). Timed bans keep their remaining lifetime; expired entries are not
+  restored; the never-ban check applies. A refused load leaves the existing ruleset in place; the schema-only
+  `NFTBAN_ATOMIC_LOAD=legacy` path is removed.
+- **Module objects were missing until the module was re-applied.** The DDoS, PortScan and BotGuard chains, their
+  sets and their jumps from base chains are carried in the same transaction for enabled modules.
+- **Daemon writes could be lost during a replacement.** A write boundary (`/run/nftban/nft_writers.lock`) separates
+  daemon writes (shared) from replacements and shell writers (exclusive), from the kernel read to the commit
+  readback. Every NFTBan nft write outside the daemon takes it, or is declared outside it.
+- **A busy write boundary dropped detector bans.** They are retried, then logged as not applied.
+- **The installer's rebuild raced the previous daemon.** A daemon still running the replaced binary is stopped
+  before the rebuild.
+- **Reload exited 0 when nothing was applied.** It now exits non-zero.
+
+### Fixed — BotGuard
+
+- **BotGuard bans were never enforced on new HTTP(S) connections.** The jump into `http_bot_guard` sat after the
+  base SYN-rate rule that accepts new connections to service ports. It is now inserted before `ANCHOR_DETECT`; an
+  existing jump is moved the next time BotGuard is applied (on upgrade, by the installer's rebuild). The chain's
+  pass verdicts are `return`, so verified crawlers and in-rate grey/pending sources still pass the DDoS checks.
+  - **Behaviour change:** BotGuard's suspect marking now sees new connections, so its classification starts acting
+    on hosts with BotGuard enabled.
+- **Re-applying BotGuard failed on an enabled host** ("File exists" on `http_bot_suspect`). The sets fragment now
+  declares only missing sets.
+- **Each re-apply briefly admitted banned sources** (the chain was flushed in a separate write). The chain is
+  flushed and refilled in one transaction.
+
+### Fixed — DDoS (Suricata mode)
+
+- **The block rule never matched and was duplicated on every reload.** It is now one rule before `ANCHOR_BAN`.
+- **Switching to classic left the block rule and the set's entries.** The daemon refused to flush `ddos_blocked`;
+  it now accepts it (element adds stay under the never-ban check). This also fixes `nftban flush ddos`.
+
+### Fixed — sync, feeds, IPC
+
+- **Full sync took 15-30 s with a few thousand blacklist.d entries**, longer than the installer waits. Permanent
+  bans are applied in one batched read and commit.
+- **Retried sync requests queued redundant syncs.** Requests join the run that covers them; the result reports
+  configuration and enforcement separately.
+- **Sync and reload/rebuild followed different feed rules.** One feed authority decides for both. On upgrade, a
+  host with feed files but the master switch off keeps its feeds (`CONFLICT_KEPT`, reported); a fresh install
+  never enables leftover feed files. `nftban feeds enable|disable` without a name is the master switch.
+- **Shell IPC clients dropped daemon answers slower than 0.5 s** and reported "daemon not responding".
+
+### Fixed — counters, bans, reporting
+
+- **Set counters drifted from the kernel for hours.** Active counts are re-read from the kernel shortly after a
+  daemon write (seconds) and on the exporter interval otherwise (60 s at normal scale), which covers expiry and
+  other writers. This is bounded reconciliation, not an exact live count. The IPv6 BotGuard sets are now counted;
+  counting never creates a set. Cumulative ban counters are unchanged.
+- **One temp ban counted twice toward persistent-offender escalation.**
+- **A ban refused by the never-ban check was reported as banned.**
+- **`nftban status` / `health` could rewrite the SSH port configuration.** Reads no longer write; fixes run only
+  with `--auto-heal` / `--fix`.
+- **The support bundle ran a sync.**
+
+### Fixed — commit-confirm
+
+- **`rebuild --confirm` followed by a rollback always ended INCOMPLETE on hosts with modules**, holding NFTBan
+  writers. Module fragments rendered into `rules.d/` are no longer treated as configuration.
+
+### Known limitations
+
+- `firewall restore <backup>` and a commit-confirm rollback restore their snapshot: bans added after the snapshot
+  are not kept.
+- Adding an address to the session whitelist removes it from ban sets; the ban does not return when the entry
+  expires.
+- Suricata mode's `ddos_blocked` set is IPv4 only (IPv6 Suricata blocks use the daemon ban path).
+
+---
+
 ## [v1.235.1] - 2026-10-14 — PortScan classic mode upgrade fix
 
 A fix release for v1.235.0. Its known issues (see the v1.235.0 entry below) still apply.
