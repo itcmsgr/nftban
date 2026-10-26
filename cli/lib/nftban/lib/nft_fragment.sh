@@ -2452,14 +2452,28 @@ nft_fragment_enable_module() {
             local bg_table_v4="${BOTGUARD_NFT_TABLE_IPV4:-ip nftban}"
             local bg_table_v6="${BOTGUARD_NFT_TABLE_IPV6:-ip6 nftban}"
             local bg_chain="${BOTGUARD_NFT_CHAIN:-http_bot_guard}"
-            nftban_nft_write flush chain $bg_table_v4 "$bg_chain" 2>/dev/null || true
-            nftban_nft_write delete set $bg_table_v4 http_bot_grey_meter 2>/dev/null || true
-            nftban_nft_write delete set $bg_table_v4 http_bot_pending_meter 2>/dev/null || true
-            nftban_nft_write delete set $bg_table_v4 http_bot_meter 2>/dev/null || true
-            nftban_nft_write flush chain $bg_table_v6 "$bg_chain" 2>/dev/null || true
-            nftban_nft_write delete set $bg_table_v6 http_bot_grey_meter6 2>/dev/null || true
-            nftban_nft_write delete set $bg_table_v6 http_bot_pending_meter6 2>/dev/null || true
-            nftban_nft_write delete set $bg_table_v6 http_bot_meter6 2>/dev/null || true
+            # v1.236: only when a live meter is NOT in the bounded v1.228.6 shape the fragment
+            # declares. The fragment itself flushes and refills the chain in ONE transaction;
+            # this separate flush left the jump pointing at an empty chain until the fragment
+            # landed (lab2: a BotGuard-banned source admitted once per reload/rebuild/upgrade).
+            local bg_stale=0 bg_m bg_def
+            for bg_m in "$bg_table_v4 http_bot_grey_meter" "$bg_table_v4 http_bot_pending_meter" \
+                        "$bg_table_v4 http_bot_meter" "$bg_table_v6 http_bot_grey_meter6" \
+                        "$bg_table_v6 http_bot_pending_meter6" "$bg_table_v6 http_bot_meter6"; do
+                # shellcheck disable=SC2086 # "<family> <table> <set>"
+                bg_def=$(nft -t list set $bg_m 2>/dev/null) || continue # absent: the fragment adds it (-t: no elements)
+                [[ "$bg_def" == *'comment "v1.228.6 bounded'* ]] || bg_stale=1
+            done
+            if (( bg_stale )); then
+                nftban_nft_write flush chain $bg_table_v4 "$bg_chain" 2>/dev/null || true
+                nftban_nft_write delete set $bg_table_v4 http_bot_grey_meter 2>/dev/null || true
+                nftban_nft_write delete set $bg_table_v4 http_bot_pending_meter 2>/dev/null || true
+                nftban_nft_write delete set $bg_table_v4 http_bot_meter 2>/dev/null || true
+                nftban_nft_write flush chain $bg_table_v6 "$bg_chain" 2>/dev/null || true
+                nftban_nft_write delete set $bg_table_v6 http_bot_grey_meter6 2>/dev/null || true
+                nftban_nft_write delete set $bg_table_v6 http_bot_pending_meter6 2>/dev/null || true
+                nftban_nft_write delete set $bg_table_v6 http_bot_meter6 2>/dev/null || true
+            fi
 
             # Then create enforcement chain + rules
             fragment_path=$(nft_fragment_render_http_botguard) || return 1
