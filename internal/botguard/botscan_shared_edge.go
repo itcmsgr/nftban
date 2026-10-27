@@ -157,6 +157,26 @@ func (s *sharedEdgeSet) Match(ip netip.Addr) (string, bool) {
 	return "", false
 }
 
+// Overlaps is Match for a prefix: whether p shares any address with a shared-edge range
+// (a campaign /24 must not touch a CDN edge at all, in either direction).
+func (s *sharedEdgeSet) Overlaps(p netip.Prefix) (string, bool) {
+	if s == nil {
+		return "", false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if st := s.currentStamp(); st != s.stamp {
+		s.reloadLocked()
+		s.stamp = st
+	}
+	for _, e := range s.prefixes {
+		if e.p.Overlaps(p) {
+			return e.label, true
+		}
+	}
+	return "", false
+}
+
 // Size returns the number of loaded ranges (0 = no data: edges NOT protected).
 func (s *sharedEdgeSet) Size() int {
 	if s == nil {
@@ -171,9 +191,8 @@ func (s *sharedEdgeSet) Size() int {
 	return len(s.prefixes)
 }
 
-// botscanSharedEdgeSkip returns true (and logs + counts the visible reason) when a BotScan
-// signal targets a shared CDN edge and must NOT be applied.
-func (m *Module) botscanSharedEdgeSkip(sig *BatchSignal, ip netip.Addr) bool {
+// sharedEdgeRanges returns the lazily created shared-edge set (one per module).
+func (m *Module) sharedEdgeRanges() *sharedEdgeSet {
 	m.sharedEdgesOnce.Do(func() {
 		files := DefaultSharedEdgeFiles()
 		if m.config != nil && len(m.config.SharedEdgeFiles) > 0 {
@@ -181,7 +200,13 @@ func (m *Module) botscanSharedEdgeSkip(sig *BatchSignal, ip netip.Addr) bool {
 		}
 		m.sharedEdges = newSharedEdgeSet(files)
 	})
-	if m.sharedEdges.Size() == 0 {
+	return m.sharedEdges
+}
+
+// botscanSharedEdgeSkip returns true (and logs + counts the visible reason) when a BotScan
+// signal targets a shared CDN edge and must NOT be applied.
+func (m *Module) botscanSharedEdgeSkip(sig *BatchSignal, ip netip.Addr) bool {
+	if m.sharedEdgeRanges().Size() == 0 {
 		// No range data readable by the daemon (missing file, or a confinement denial on an
 		// enforcing host): the daemon-side refusal is inactive. The scanner's own guard still
 		// runs before any signal is written. Say so once instead of failing silently.

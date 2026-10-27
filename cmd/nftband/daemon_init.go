@@ -27,6 +27,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -146,6 +147,7 @@ func (d *Daemon) Run() error {
 	if bgMod, ok := d.registry.Get(botguard.ModuleName); ok {
 		if bg, ok := bgMod.(*botguard.Module); ok && d.opQueue != nil {
 			bg.InitEnforcer(d.opQueue)
+			bg.SetCampaignKernel(campaignKernel{backend: d.backend})
 		}
 	}
 
@@ -583,6 +585,11 @@ func (d *Daemon) initOpQueue() error {
 		return false, ""
 	})
 
+	// BotScan HTTP campaign: re-decide every campaign_prefix_ipv4 add at application time
+	// (disable, a removed rule or a new never-ban overlap while it was queued refuses it).
+	_, _, campaignDataDir, _ := getDaemonPaths()
+	d.opQueue.SetApplyGuard(campaignKernel{backend: d.backend}.applyGuard(filepath.Join(campaignDataDir, constants.CampaignEnabledMarker)))
+
 	// v1.32.0: Initialize set element counters for huge set management
 	runDir, _, _, _ := getDaemonPaths()
 	d.setCounters = stats.NewSetCounters(runDir)
@@ -702,6 +709,8 @@ func (d *Daemon) reconcileSetCountersFromKernel(wrapper *opqueue.NFTBackendWrapp
 		// v1.236: the IPv6 BotGuard sets were never counted
 		"http_bot_suspect6", "http_bot_pending6", "http_bot_allow6",
 		"http_bot_grey6", "http_bot_ban6", "http_bot_emergency6",
+		// HTTP campaign prefixes (absent on a ruleset rendered before the set existed)
+		"campaign_prefix_ipv4",
 	} {
 		recount(setName, false)
 	}

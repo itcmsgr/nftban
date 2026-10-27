@@ -203,6 +203,16 @@ type GuardStats struct {
 
 	// v1.234.0: BotScan signals refused because the address is a shared CDN edge
 	BatchSignalsSharedEdgeSkipped int64
+
+	// BotScan HTTP campaign: detection, request, application and enforcement kept apart.
+	CampaignSignals      int64 // campaign signals received (detected by BotScan)
+	CampaignRequested    int64 // bans enqueued (REQUESTED: the queue's apply guard still decides)
+	CampaignDuplicate    int64 // already active: not renewed
+	CampaignRefused      int64 // refused by never-ban admission, class or shape
+	CampaignNotEnforced  int64 // set or drop rule absent: nothing written, reported
+	CampaignRecurrence   int64 // applied with the recurrence duration
+	CampaignCycleCapHits int64 // signals over the per-cycle action cap (not applied)
+	CampaignDisabled     int64 // signals received while the campaign marker was absent
 }
 
 // BatchSignal represents a signal from the shell botscan (Clock 3).
@@ -225,4 +235,18 @@ type BatchSignal struct {
 	// value is logged and recorded beside the effective one so the two are never confused.
 	// Additive: an older producer omits it, an older consumer ignores it.
 	RequestedTTLSec int64 `json:"requested_ttl_sec,omitempty"`
+	// BotScan HTTP campaign (additive; absent = a per-IP signal, behaviour unchanged).
+	// "campaign_prefix": Prefix is the IPv4 /24 to escalate; IP is one of its sources.
+	// "campaign_member": IP is an IPv6 campaign source, enforced per address.
+	// The consumer decides the duration (3600 s, a fresh recurrence 5400 s); a requested
+	// value is never honoured for these kinds.
+	Kind       string `json:"kind,omitempty"`
+	Prefix     string `json:"prefix,omitempty"`
+	CampaignID string `json:"campaign_id,omitempty"`
 }
+
+// Campaign signal kinds (BatchSignal.Kind).
+const (
+	SignalKindCampaignPrefix = "campaign_prefix"
+	SignalKindCampaignMember = "campaign_member"
+)
