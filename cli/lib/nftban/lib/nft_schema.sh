@@ -116,6 +116,10 @@ declare -g -A NFTBAN_IPV4_SETS=(
     # Blacklist Manual - Manual/auto-detect bans (hash set, O(1) performance)
     ["blacklist_manual_ipv4"]="ipv4_addr|timeout|Manual and auto-detect bans (hash O(1))"
 
+    # HTTP campaign prefixes - BotScan cross-IP campaign /24 escalation (timed, HTTP/HTTPS only).
+    # IPv4 only: IPv6 campaign enforcement is per-IP (blacklist_manual_ipv6), no subnet bans.
+    ["campaign_prefix_ipv4"]="ipv4_addr|interval,timeout|BotScan HTTP campaign prefixes (timed, HTTP/HTTPS only)"
+
     # Directional port sets (v2.1 model)
     ["tcp_ports_in"]="inet_service||Allowed TCP ports (inbound)"
     ["tcp_ports_out"]="inet_service||Allowed TCP ports (outbound)"
@@ -1362,6 +1366,15 @@ nftban_nft_validate_named_counters() {
             ((warnings++)) || true
         elif [[ $missing -gt 0 ]]; then
             echo "WARNING: ${family} nftban: $missing of ${#expected_counters[@]} named counters missing" >&2
+            ((warnings++)) || true
+        fi
+    done
+
+    # IPv4-only counters (no IPv6 twin by design: campaign enforcement is a /24 IPv4 set).
+    local counter_name
+    for counter_name in input_campaign_prefix_drop; do
+        if ! nft list counter ip nftban "$counter_name" &>/dev/null; then
+            echo "WARNING: ip nftban: named counter ${counter_name} missing (consider 'nftban firewall rebuild')" >&2
             ((warnings++)) || true
         fi
     done
