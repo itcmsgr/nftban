@@ -48,6 +48,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/itcmsgr/nftban/internal/constants"
 	"github.com/itcmsgr/nftban/internal/netutil"
 	"github.com/itcmsgr/nftban/internal/procenv"
 	nftsync "github.com/itcmsgr/nftban/internal/setsync"
@@ -603,6 +604,8 @@ var enforcementSets = map[string]bool{
 	"blacklist_manual_ipv4": true,
 	"blacklist_manual_ipv6": true,
 	"ddos_blocked":          true,
+	// BotScan HTTP campaign prefixes: an add must pass whole-prefix admission (AdmitPrefix)
+	"campaign_prefix_ipv4": true,
 }
 
 // IsEnforcementSet reports whether set is a drop/block set subject to the never-ban
@@ -660,6 +663,23 @@ func (b *Backend) SubtractExempt(cidrs []string) (kept []string, removed int, om
 	return kept, removed, omitted
 }
 
+// AdmitPrefix is the never-ban decision for an AUTOMATIC prefix escalation (BotScan HTTP
+// campaign, campaign_prefix_ipv4): the whole prefix is admitted or refused, through the same
+// snapshot as Ban/SubtractExempt. Unlike SubtractExempt it fails CLOSED: no backend, no
+// resolver or an incomplete snapshot refuses (exemptResolver.AdmitPrefix).
+func (b *Backend) AdmitPrefix(prefix string) (bool, string) {
+	if b == nil {
+		return false, "exemption-unavailable"
+	}
+	b.mu.Lock()
+	r := b.exempt
+	b.mu.Unlock()
+	if r == nil {
+		return false, "exemption-unavailable"
+	}
+	return r.AdmitPrefix(prefix)
+}
+
 // exemptAddRejection reports whether adding element to set must be refused by the
 // never-ban invariant: enforcement set AND a single exempt IP. Pure (no nft I/O), so the
 // decision is unit-testable without netlink/root. IsExempt returns false for CIDR/range
@@ -673,6 +693,17 @@ func (b *Backend) exemptAddRejection(set, element string) (bool, string) {
 	// multicast + non-public classes can never enter a drop set via AddElement either.
 	if reject, reason := netutil.EnforcementClassReject(element); reject {
 		return true, "non-bannable-class:" + reason
+	}
+	// A campaign prefix is admitted whole or not at all, failing closed (the IPC add_element
+	// verb reaches this set too). Called under b.mu: the resolver directly, not AdmitPrefix.
+	if set == constants.CampaignPrefixSetIPv4 {
+		if b.exempt == nil {
+			return true, "exemption-unavailable"
+		}
+		if ok, why := b.exempt.AdmitPrefix(element); !ok {
+			return true, why
+		}
+		return false, ""
 	}
 	if b.exempt == nil {
 		return false, ""
