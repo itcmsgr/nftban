@@ -451,7 +451,7 @@ func (m *NFTManager) addIPWithTimeoutCLI(set *nftables.Set, ipStr string, timeou
 	if timeout == 0 {
 		script := fmt.Sprintf("delete element %s %s %s %s\nadd element %s %s %s %s\n",
 			family, set.Table.Name, set.Name, elementStr, family, set.Table.Name, set.Name, elementStr)
-		tmp, err := os.CreateTemp("", "nftban-elemrepl-*.nft")
+		tmp, err := os.CreateTemp(scriptTempDir, "nftban-elemrepl-*.nft")
 		if err != nil {
 			return fmt.Errorf("failed to create temp file: %w", err)
 		}
