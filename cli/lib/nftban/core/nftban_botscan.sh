@@ -91,6 +91,21 @@ nftban_botscan_load_config() {
     : "${BOTSCAN_ENDPOINT_FLOOD_WINDOW:=60}"
     : "${BOTSCAN_ENDPOINT_FLOOD_BAN:=3600}"
     : "${BOTSCAN_ENDPOINT_FLOOD_ENDPOINTS:=xmlrpc.php wp-login.php}"
+    # HTTP CAMPAIGN — cross-IP detection of one expensive request shape (high query
+    # complexity: parameters + multi-value separators) spread over many sources, counted
+    # BEFORE the per-IP thresholds. A confirmed campaign under server pressure escalates each
+    # IPv4 /24 holding >= PREFIX_MIN_SOURCES of its sources (daemon: campaign_prefix_ipv4,
+    # HTTP/HTTPS drop, 3600 s / recurrence 5400 s) and each IPv6 source per address.
+    # Off by default: an automatic /24 drop is an operator decision.
+    : "${BOTSCAN_CAMPAIGN_ENABLED:=false}"
+    : "${BOTSCAN_CAMPAIGN_MIN_TERMS:=4}"            # query terms that make a request a candidate
+    : "${BOTSCAN_CAMPAIGN_MIN_REQUESTS:=200}"       # candidate requests per site per window
+    : "${BOTSCAN_CAMPAIGN_MIN_SOURCES:=50}"         # distinct sources per site per window
+    : "${BOTSCAN_CAMPAIGN_PREFIX_MIN_SOURCES:=3}"   # distinct sources inside one IPv4 /24
+    : "${BOTSCAN_CAMPAIGN_WINDOW:=600}"             # request-time window (s), relative to the cycle
+    : "${BOTSCAN_CAMPAIGN_PRESSURE:=ELEVATED HIGH CRITICAL}"  # pressure states that permit enforcement
+    : "${BOTSCAN_CAMPAIGN_MAX_SOURCES:=50000}"      # tracked source identities per cycle (bound)
+    : "${BOTSCAN_CAMPAIGN_MAX_SIGNALS:=64}"         # campaign signals per cycle (bound)
     # v1.234.0 — the v1.192.2 WP-admin "authenticated context" gate is RETIRED
     # (BUG-BOTSCAN-WPADMIN-AUTH-CONTEXT-IS-CYCLE-SCOPED-BANS-LOGGED-IN-EDITORS).
     # It inferred a login from `POST /wp-login.php -> 302` and then suppressed EXP_WPREST /
@@ -191,6 +206,20 @@ declare -gA _BOTSCAN_PROBE_SEEN               # "ip<US>target" -> 1 (a target co
 declare -g  _BS_CYCLE_NOW=""                # the cycle's reference "now" (nftban_timestamp_unix), set by init_state
 declare -gi _BS_T_PAT_STALE=0 _BS_T_PAT_UNREADABLE=0 _BS_T_PAT_FUTURE=0 _BS_T_PAT_REPEAT=0
 declare -gi _BS_T_TAIL_UNREADABLE=0 _BS_T_TAIL_FUTURE=0 _BS_T_UA_UNPARSED=0
+# HTTP CAMPAIGN — per-cycle, bounded (BOTSCAN_CAMPAIGN_MAX_SOURCES identities), reset by
+# init_state. Keys use _BS_US. No cross-cycle state: a campaign must show inside one cycle.
+declare -g  _BS_CMP_SITE=""                 # log object being read (set per file by process_logs)
+declare -gA _BS_CMP_SITE_REQ                # site -> candidate requests in the window
+declare -gA _BS_CMP_SITE_SRC                # site -> distinct candidate sources
+declare -gA _BS_CMP_SEEN                    # "site<US>ip" -> 1
+declare -gA _BS_CMP_NET_SRC                 # "site<US>a.b.c.0/24" -> distinct sources in that /24
+declare -gA _BS_CMP_NET_IP                  # "site<US>a.b.c.0/24" -> first source seen (signal ip)
+declare -gA _BS_CMP_V6                      # "site<US>ipv6" -> 1 (per-address members)
+declare -gA _BS_CMP_NET6_SRC                # "site<US>/64" -> distinct sources (evidence only, never a ban)
+declare -gi _BS_CMP_TRACKED=0 _BS_CMP_OVERFLOW=0 _BS_CMP_STALE=0
+declare -g  _BS_VERIFY_VERDICT=""           # verdict behind nftban_botscan_verify_crawler's rc
+declare -gA _BS_CMP_CLAIMS                  # campaign eval: target (/24 or v6 addr) -> claimed crawler IPs
+declare -gi _BS_CMP_VBUDGET=0               # campaign eval: FCrDNS lookups left this cycle
 
 # v1.234.0 — EVIDENCE HORIZON D for URL/UA pattern evidence (design V1_234_0_BOTSCAN404_DESIGN.md
 # §15 C3: a burst is actionable iff max(ts)-min(ts) <= W AND 0 <= now-max(ts) <= D).
@@ -228,6 +257,9 @@ nftban_botscan_init_state() {
     _BOTSCAN_PROBE_SEEN=()
     _BS_T_PAT_STALE=0; _BS_T_PAT_UNREADABLE=0; _BS_T_PAT_FUTURE=0; _BS_T_PAT_REPEAT=0
     _BS_T_TAIL_UNREADABLE=0; _BS_T_TAIL_FUTURE=0; _BS_T_UA_UNPARSED=0
+    _BS_CMP_SITE=""; _BS_CMP_SITE_REQ=(); _BS_CMP_SITE_SRC=(); _BS_CMP_SEEN=()
+    _BS_CMP_NET_SRC=(); _BS_CMP_NET_IP=(); _BS_CMP_V6=(); _BS_CMP_NET6_SRC=()
+    _BS_CMP_TRACKED=0; _BS_CMP_OVERFLOW=0; _BS_CMP_STALE=0
     # One reference "now" per cycle (overridable through nftban_timestamp_unix, like the tail).
     _BS_CYCLE_NOW="$(nftban_timestamp_unix 2>/dev/null || date +%s)"
     [[ "$_BS_CYCLE_NOW" =~ ^[0-9]+$ ]] || printf -v _BS_CYCLE_NOW '%(%s)T' -1
@@ -1320,6 +1352,9 @@ nftban_botscan_resolver() {
 # flood does not fan out N lookups; hard per-lookup timeouts. Reuses the RBL resolver chain.
 nftban_botscan_verify_crawler() {
     local ip="$1" family="$2"
+    # The verdict behind the return code (OK / BAD / ERR / INFLIGHT / NONE) for a caller
+    # that must tell "proven not a crawler" (BAD) from "unknown" (ERR / INFLIGHT / NONE).
+    _BS_VERIFY_VERDICT="NONE"
     [[ "${BOTSCAN_VERIFY_CRAWLERS:-true}" == "true" ]] || return 1
     local suffix; suffix=$(nftban_botscan_crawler_family_suffix "$family") || return 1
     local cdir="${BOTSCAN_VERIFY_CACHE_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/crawler-verify}"
@@ -1335,6 +1370,7 @@ nftban_botscan_verify_crawler() {
             *)   ttl="${BOTSCAN_VERIFY_TTL_ERR:-1800}" ;;
         esac
         if [[ "$age" -lt "$ttl" ]]; then
+            _BS_VERIFY_VERDICT="${cached:-ERR}"
             [[ "$cached" == "OK" ]] && return 0 || return 1
         fi
     fi
@@ -1342,7 +1378,7 @@ nftban_botscan_verify_crawler() {
     # atomic in-flight guard: if another verification for this key is running, treat as
     # unknown (=not verified) this cycle rather than fan out a second lookup.
     local lock="${cf}.lock"
-    mkdir "$lock" 2>/dev/null || return 1
+    mkdir "$lock" 2>/dev/null || { _BS_VERIFY_VERDICT="INFLIGHT"; return 1; }
     local resolver to verdict="ERR" ptr="" fwd=""
     resolver=$(nftban_botscan_resolver)
     to="${BOTSCAN_VERIFY_TIMEOUT:-1}"
@@ -1365,6 +1401,7 @@ nftban_botscan_verify_crawler() {
     fi
     printf '%s|%s\n' "$verdict" "$ptr" > "$cf" 2>/dev/null || true
     rmdir "$lock" 2>/dev/null || true
+    _BS_VERIFY_VERDICT="$verdict"
     [[ "$verdict" == "OK" ]] && return 0 || return 1
 }
 
@@ -1559,6 +1596,9 @@ nftban_botscan_process_entry() {
     # Check whitelists
     nftban_botscan_is_whitelisted "$ip" "$ua" && return 0
     nftban_botscan_is_path_whitelisted "$url" && return 0
+
+    # HTTP campaign evidence: counted before (and independent of) the per-IP pattern match.
+    nftban_botscan_campaign_observe "$ip" "$url" "$method" "$status" "$req_ts" "$now"
 
     # (v1.234.0: the dead main-loop 404 counter is removed -- design §5; the 404 arrays are
     #  owned by nftban_botscan_count_404_tail, which resets them before counting.)
@@ -1883,6 +1923,16 @@ nftban_botscan_build_prefilter() {
         printf '%s\n' ' 404 ' >> "$out"
         n=$((n + 1))
     fi
+    if [[ "${BOTSCAN_CAMPAIGN_ENABLED:-false}" == "true" ]]; then
+        # HTTP campaign candidates: a query with >= MIN_TERMS-1 separators ('&', ',' or a
+        # %-escape such as %2C) is a sound superset of MIN_TERMS terms; the exact count is
+        # campaign_observe's. Without this line the prefilter drops them before counting.
+        local _cmp_re='\?' _cmp_i _cmp_sep=$(( ${BOTSCAN_CAMPAIGN_MIN_TERMS:-4} - 1 ))
+        (( _cmp_sep >= 1 )) || _cmp_sep=1
+        for (( _cmp_i=0; _cmp_i<_cmp_sep; _cmp_i++ )); do _cmp_re+='[^ "]*[&,%]'; done
+        printf '%s\n' "$_cmp_re" >> "$out"
+        n=$((n + 1))
+    fi
     [[ "$n" -gt 0 ]]
 }
 
@@ -2106,6 +2156,131 @@ nftban_botscan_classify_request_class() {
     echo "mixed"
 }
 
+# =============================================================================
+# HTTP CAMPAIGN — cross-IP detection, counted before per-IP thresholds
+# =============================================================================
+# nftban_botscan_campaign_observe <ip> <url> <method> <status> <req_ts> <now>
+# Per line, no fork. A candidate is a GET/HEAD with status < 400 whose query has at least
+# BOTSCAN_CAMPAIGN_MIN_TERMS terms (parameters + ',' / %2C / %7C value separators), inside
+# the request-time window. Counts per site; per IPv4 /24 and IPv6 address for enforcement.
+# A new identity past BOTSCAN_CAMPAIGN_MAX_SOURCES is counted as overflow and not tracked,
+# so overflow can only narrow enforcement, never widen it.
+nftban_botscan_campaign_observe() {
+    [[ "${BOTSCAN_CAMPAIGN_ENABLED:-false}" == "true" ]] || return 0
+    local ip="$1" url="$2" method="${3^^}" status="$4" req_ts="$5" now="$6"
+    [[ "$url" == *\?* ]] || return 0
+    [[ "$method" == GET || "$method" == HEAD ]] || return 0
+    [[ "$status" =~ ^[0-9]+$ ]] && (( status < 400 )) || return 0
+    if [[ ! "$req_ts" =~ ^[0-9]+$ ]] || (( req_ts > now || now - req_ts > ${BOTSCAN_CAMPAIGN_WINDOW:-600} )); then
+        _BS_CMP_STALE=$(( _BS_CMP_STALE + 1 )); return 0
+    fi
+    local q="${url#*\?}"; q="${q%%#*}"; q="${q,,}"
+    local amp="${q//[^&]/}" sep="${q//%2c/,}"; sep="${sep//%7c/,}"; sep="${sep//[^,]/}"
+    (( ${#amp} + 1 + ${#sep} >= ${BOTSCAN_CAMPAIGN_MIN_TERMS:-4} )) || return 0
+
+    local site="${_BS_CMP_SITE:-unknown}" key
+    _BS_CMP_SITE_REQ["$site"]=$(( ${_BS_CMP_SITE_REQ[$site]:-0} + 1 ))
+    key="${site}${_BS_US}${ip}"
+    [[ -n "${_BS_CMP_SEEN[$key]:-}" ]] && return 0
+    if (( _BS_CMP_TRACKED >= ${BOTSCAN_CAMPAIGN_MAX_SOURCES:-50000} )); then
+        _BS_CMP_OVERFLOW=$(( _BS_CMP_OVERFLOW + 1 )); return 0
+    fi
+    _BS_CMP_SEEN["$key"]=1
+    _BS_CMP_TRACKED=$(( _BS_CMP_TRACKED + 1 ))
+    _BS_CMP_SITE_SRC["$site"]=$(( ${_BS_CMP_SITE_SRC[$site]:-0} + 1 ))
+    if [[ "$ip" == *:* ]]; then
+        _BS_CMP_V6["$key"]=1
+        if _bs_v6_groups "$ip"; then
+            local -a g=(); IFS=' ' read -ra g <<< "$_BS_V6"
+            local n6="${site}${_BS_US}${g[0]}:${g[1]}:${g[2]}:${g[3]}/64"
+            _BS_CMP_NET6_SRC["$n6"]=$(( ${_BS_CMP_NET6_SRC[$n6]:-0} + 1 ))
+        fi
+    elif [[ "$ip" =~ ^([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})\.[0-9]{1,3}$ ]]; then
+        local nk="${site}${_BS_US}${BASH_REMATCH[1]}.0/24"
+        _BS_CMP_NET_SRC["$nk"]=$(( ${_BS_CMP_NET_SRC[$nk]:-0} + 1 ))
+        [[ -n "${_BS_CMP_NET_IP[$nk]:-}" ]] || _BS_CMP_NET_IP["$nk"]="$ip"
+    fi
+    return 0
+}
+
+# nftban_botscan_campaign_eval <pressure_state>
+# End of the pass, on the counters observe() built. A site is a confirmed campaign when it
+# has >= MIN_REQUESTS candidate requests from >= MIN_SOURCES sources. Enforcement needs the
+# pressure state in BOTSCAN_CAMPAIGN_PRESSURE: then each /24 with >= PREFIX_MIN_SOURCES of
+# the campaign's sources becomes a campaign_prefix signal and each IPv6 source a
+# campaign_member signal (at most BOTSCAN_CAMPAIGN_MAX_SIGNALS per cycle). The daemon
+# decides admission and duration. One report line per confirmed campaign.
+nftban_botscan_campaign_eval() {
+    [[ "${BOTSCAN_CAMPAIGN_ENABLED:-false}" == "true" ]] || return 0
+    local pressure="${1:-NORMAL}" now="${_BS_CYCLE_NOW:-0}"
+    local win="${BOTSCAN_CAMPAIGN_WINDOW:-600}" max="${BOTSCAN_CAMPAIGN_MAX_SIGNALS:-64}"
+    local emitted=0 capped=0 crawler_kept=0 site k n cid nets members target
+    local enforce=0
+    [[ " ${BOTSCAN_CAMPAIGN_PRESSURE:-ELEVATED HIGH CRITICAL} " == *" ${pressure} "* ]] && enforce=1
+
+    # Crawler claims by network (/24, or the IPv6 address). A network holding a claimed
+    # crawler is signalled only when every claim in it is PROVEN false (FCrDNS verdict BAD):
+    # a verified crawler or an unknown verdict keeps the whole network out. Verification runs
+    # only for candidate networks, at most `vbudget` per cycle; past it the verdict is unknown.
+    local cip
+    _BS_CMP_CLAIMS=(); _BS_CMP_VBUDGET=32
+    for cip in "${!_BOTSCAN_IP_CRAWLER_CLAIM[@]}"; do
+        if [[ "$cip" == *:* ]]; then target="$cip"
+        elif [[ "$cip" =~ ^([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})\.[0-9]{1,3}$ ]]; then target="${BASH_REMATCH[1]}.0/24"
+        else continue; fi
+        _BS_CMP_CLAIMS["$target"]="${_BS_CMP_CLAIMS[$target]:-} $cip"
+    done
+
+    for site in "${!_BS_CMP_SITE_REQ[@]}"; do
+        (( ${_BS_CMP_SITE_REQ[$site]} >= ${BOTSCAN_CAMPAIGN_MIN_REQUESTS:-200} )) || continue
+        (( ${_BS_CMP_SITE_SRC[$site]:-0} >= ${BOTSCAN_CAMPAIGN_MIN_SOURCES:-50} )) || continue
+        cid="${site}:query_complexity:$(( now / win ))"
+        nets=0; members=0
+        if (( enforce )); then
+            for k in "${!_BS_CMP_NET_SRC[@]}"; do
+                [[ "$k" == "${site}${_BS_US}"* ]] || continue
+                n="${_BS_CMP_NET_SRC[$k]}"
+                (( n >= ${BOTSCAN_CAMPAIGN_PREFIX_MIN_SOURCES:-3} )) || continue
+                if (( emitted >= max )); then capped=$(( capped + 1 )); continue; fi
+                target="${k#*"${_BS_US}"}"
+                _bs_campaign_crawler_free "$target" || { crawler_kept=$(( crawler_kept + 1 )); continue; }
+                BOTSCAN_SIGNAL_KIND=campaign_prefix BOTSCAN_SIGNAL_PREFIX="$target" BOTSCAN_SIGNAL_CAMPAIGN_ID="$cid" \
+                    nftban_botscan_write_signal "${_BS_CMP_NET_IP[$k]}" 90 ban "campaign:${cid}:prefix_sources=${n}" || true
+                emitted=$(( emitted + 1 )); nets=$(( nets + 1 ))
+            done
+            for k in "${!_BS_CMP_V6[@]}"; do
+                [[ "$k" == "${site}${_BS_US}"* ]] || continue
+                if (( emitted >= max )); then capped=$(( capped + 1 )); continue; fi
+                _bs_campaign_crawler_free "${k#*"${_BS_US}"}" || { crawler_kept=$(( crawler_kept + 1 )); continue; }
+                BOTSCAN_SIGNAL_KIND=campaign_member BOTSCAN_SIGNAL_CAMPAIGN_ID="$cid" \
+                    nftban_botscan_write_signal "${k#*"${_BS_US}"}" 90 ban "campaign:${cid}:member" || true
+                emitted=$(( emitted + 1 )); members=$(( members + 1 ))
+            done
+        fi
+        echo "BOTSCAN_CAMPAIGN site=${site} class=query_complexity requests=${_BS_CMP_SITE_REQ[$site]} sources=${_BS_CMP_SITE_SRC[$site]} pressure=${pressure} enforcement=$( (( enforce )) && echo requested || echo withheld) prefix_signals=${nets} member_signals=${members}"
+    done
+    if (( capped + _BS_CMP_OVERFLOW + crawler_kept > 0 )); then
+        echo "BOTSCAN_CAMPAIGN_BOUNDS signals_over_cap=${capped} sources_overflow=${_BS_CMP_OVERFLOW} crawler_networks_kept=${crawler_kept} (not tracked / not signalled: never a wider ban)"
+    fi
+    return 0
+}
+
+# _bs_campaign_crawler_free <target> — rc0: no crawler claim in target (a /24 or an IPv6
+# address), or every claim in it proven false (FCrDNS BAD) within _BS_CMP_VBUDGET lookups.
+_bs_campaign_crawler_free() {
+    local t="$1" c
+    [[ -n "${_BS_CMP_CLAIMS[$t]:-}" ]] || return 0
+    local -a cs=()
+    IFS=' ' read -ra cs <<< "${_BS_CMP_CLAIMS[$t]}"   # strict IFS has no space: split explicitly
+    for c in "${cs[@]}"; do
+        (( _BS_CMP_VBUDGET > 0 )) || return 1
+        _BS_CMP_VBUDGET=$(( _BS_CMP_VBUDGET - 1 ))
+        nftban_botscan_verify_crawler "$c" "${_BOTSCAN_IP_CRAWLER_CLAIM[$c]}" || true
+        [[ "${_BS_VERIFY_VERDICT:-NONE}" == "BAD" ]] || return 1
+    done
+    return 0
+}
+
 nftban_botscan_write_signal() {
     local ip="$1"
     local score="$2"
@@ -2154,6 +2329,13 @@ nftban_botscan_write_signal() {
     # grey/ban mapping and logs/records requested beside effective.
     if [[ -n "${BOTSCAN_SIGNAL_REQUESTED_TTL:-}" && "${BOTSCAN_SIGNAL_REQUESTED_TTL}" =~ ^[0-9]+$ && "${BOTSCAN_SIGNAL_REQUESTED_TTL}" -gt 0 ]]; then
         conf_json+=",\"requested_ttl_sec\":${BOTSCAN_SIGNAL_REQUESTED_TTL}"
+    fi
+    # HTTP campaign signals (nftban_botscan_campaign_eval sets these; the daemon decides
+    # the duration). Values are validated by the caller; quotes are escaped regardless.
+    if [[ -n "${BOTSCAN_SIGNAL_KIND:-}" ]]; then
+        conf_json+=",\"kind\":\"${BOTSCAN_SIGNAL_KIND//\"/\\\"}\""
+        [[ -n "${BOTSCAN_SIGNAL_PREFIX:-}" ]] && conf_json+=",\"prefix\":\"${BOTSCAN_SIGNAL_PREFIX//\"/\\\"}\""
+        [[ -n "${BOTSCAN_SIGNAL_CAMPAIGN_ID:-}" ]] && conf_json+=",\"campaign_id\":\"${BOTSCAN_SIGNAL_CAMPAIGN_ID//\"/\\\"}\""
     fi
 
     # v1.212 (OPEN_BOTSCAN_LOST_BAN_SIGNAL) — build the JSONL line once, then append it under a
@@ -2415,6 +2597,20 @@ nftban_botscan_process_logs() {
     # $2 (legacy "time_window") is accepted and ignored: every window is the matched
     # pattern's own, evaluated in request time (v1.234.0).
 
+    # HTTP campaign marker: the daemon applies campaign signals, and a reload/rebuild carries
+    # campaign prefixes, only while it exists. It is the feature's ENABLED state, not cycle
+    # activity: created only when absent (its mtime = enabled since; never refreshed by an
+    # ordinary cycle, a quiet log or low pressure) and removed only when disabled.
+    local _cmp_marker="${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/campaign.enabled"
+    if [[ "$BOTSCAN_ENABLED" == "true" && "${BOTSCAN_CAMPAIGN_ENABLED:-false}" == "true" ]]; then
+        if [[ ! -e "$_cmp_marker" ]]; then
+            mkdir -p "${_cmp_marker%/*}" 2>/dev/null || true
+            : > "$_cmp_marker" 2>/dev/null || echo "[botscan] WARN: cannot publish ${_cmp_marker}: campaign signals will not be applied" >&2
+        fi
+    else
+        rm -f "$_cmp_marker" 2>/dev/null || true
+    fi
+
     [[ "$BOTSCAN_ENABLED" != "true" ]] && {
         echo "Bot scanner is disabled"
         # v1.207 recording-discipline: a disabled module records DISABLED_BY_CONFIG
@@ -2662,6 +2858,7 @@ nftban_botscan_process_logs() {
         # the cursor on every pass, so a mid-object stop leaves durable progress
         # and the next cycle resumes the SAME object rather than replaying it.
         local _bs_pass=0 _bs_chunk_lines _bs_rts
+        _BS_CMP_SITE="$(basename -- "$f")"   # HTTP campaign: evidence is per log object (site)
         while :; do
         _bs_chunk_lines=0
         while IFS= read -r line; do
@@ -2836,6 +3033,9 @@ nftban_botscan_process_logs() {
     local banned=0 _analyze_rc=0
     ( nftban_botscan_analyze ) || _analyze_rc=$?
     [[ "$_analyze_rc" -ne 0 ]] && echo "[botscan] WARN: analyze exited rc=${_analyze_rc} — counts below may be partial" >&2
+    # HTTP campaign: end-of-pass evaluation of the counters built during this same pass
+    # (no re-read). Its signals land in this cycle's counter sink before it is read below.
+    nftban_botscan_campaign_eval "${_BS_PRESSURE:-NORMAL}" || true
     banned="$(nftban_botscan_counter_get bans_emitted)"
     # v1.234.0 — shared CDN edges: one aggregate line when bans were skipped, and a loud
     # line if no shared-edge data could be loaded (edges are then NOT protected).

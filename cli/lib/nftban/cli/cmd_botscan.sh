@@ -472,6 +472,15 @@ _nftban_botscan_cmd_disable() {
         echo 'BOTSCAN_ENABLED="false"' >> "$config_local"
     fi
 
+    # HTTP campaign: withdraw the marker first (the daemon then refuses queued campaign
+    # signals), then empty the campaign set through the daemon (no direct nft write).
+    rm -f "${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan/campaign.enabled" 2>/dev/null || true
+    if declare -F nft_ipc_flush_set >/dev/null 2>&1 \
+       || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_ipc.sh" 2>/dev/null; then
+        nft_ipc_flush_set "ip nftban" campaign_prefix_ipv4 >/dev/null 2>&1 \
+            || echo "WARN: campaign prefixes not flushed (daemon unreachable); they expire on their own (max 5400 s) or at the next 'nftban firewall reload'" >&2
+    fi
+
     echo "Bot scanner disabled"
 }
 
