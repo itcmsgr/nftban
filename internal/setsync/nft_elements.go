@@ -742,6 +742,24 @@ func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string)
 	return stats, nil
 }
 
+// ReplaceCIDRUnion replaces an interval blacklist set with exactly these elements — the
+// canonical durable union (CanonicalCIDRElements) plus carried elements already rendered
+// as "<key> timeout <n>s" — in ONE `nft -f` transaction (v1.236, F5/F6). Unlike
+// AddCIDRElementsWithStats it also runs for an empty list: the caller has established that
+// the union is complete, so nothing durable left means the set keeps only what is carried.
+func (m *NFTManager) ReplaceCIDRUnion(set *nftables.Set, elements []string) error {
+	var family string
+	switch set.Table.Family {
+	case nftables.TableFamilyIPv4:
+		family = "ip"
+	case nftables.TableFamilyIPv6:
+		family = "ip6"
+	default:
+		return fmt.Errorf("unsupported table family: %v", set.Table.Family)
+	}
+	return replaceSetElementsViaFile(family, set.Table.Name, set.Name, elements)
+}
+
 // CanonicalCIDRElements validates, deduplicates and merges CIDRs into the element
 // list an interval blacklist set receives (MergeCIDRsSafe also filters bogon and
 // oversized ranges). v1.236: shared by the daemon's set replace above and the

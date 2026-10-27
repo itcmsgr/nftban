@@ -23,6 +23,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/netip"
 	"os"
 	goruntime "runtime"
 	"strings"
@@ -37,6 +38,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
 	"github.com/itcmsgr/nftban/internal/opqueue"
 	"github.com/itcmsgr/nftban/internal/ports"
+	"github.com/itcmsgr/nftban/internal/ruleset"
 	"github.com/itcmsgr/nftban/internal/runtime"
 	"github.com/itcmsgr/nftban/internal/safety"
 	nftsync "github.com/itcmsgr/nftban/internal/setsync"
@@ -554,21 +556,32 @@ func (d *Daemon) runSync(quickMode bool) SocketResponse {
 
 		// v1.236: a failed replace was only logged while the sync still answered success;
 		// it is now part of the effect ("partial"), so callers can see it.
-		if len(unifiedBlacklistV4) > 0 {
-			if _, err := nft.AddCIDRElementsWithStats(blacklistIPv4Set, unifiedBlacklistV4); err != nil {
-				log.Printf("[SYNC] Warning: unified blacklist_ipv4 replace failed: %v", err)
-				partialReasons = append(partialReasons, "blacklist_ipv4_replace_failed")
-			} else {
-				log.Printf("[SYNC] Unified blacklist_ipv4 replace: %d input CIDRs (feeds+geoban+blacklist.d)", len(unifiedBlacklistV4))
+		// v1.236 F5/F6: the replace runs for an empty union too (the union is complete
+		// here, so removed durable entries must leave the kernel) and carries the live
+		// timed elements — detector / LoginMon CIDR bans — with their remaining lifetime.
+		for _, u := range []struct {
+			set    *nftables.Set
+			family string
+			name   string
+			union  []string
+		}{
+			{blacklistIPv4Set, "ip", "blacklist_ipv4", unifiedBlacklistV4},
+			{blacklistIPv6Set, "ip6", "blacklist_ipv6", unifiedBlacklistV6},
+		} {
+			if u.set == nil {
+				continue
 			}
-		}
-		if len(unifiedBlacklistV6) > 0 {
-			if _, err := nft.AddCIDRElementsWithStats(blacklistIPv6Set, unifiedBlacklistV6); err != nil {
-				log.Printf("[SYNC] Warning: unified blacklist_ipv6 replace failed: %v", err)
-				partialReasons = append(partialReasons, "blacklist_ipv6_replace_failed")
-			} else {
-				log.Printf("[SYNC] Unified blacklist_ipv6 replace: %d input CIDRs (feeds+geoban+blacklist.d)", len(unifiedBlacklistV6))
+			durable, carried, reason, err := d.unifiedBlacklistElements(u.family, u.name, u.union)
+			if err == nil {
+				err = nft.ReplaceCIDRUnion(u.set, append(durable, carried...))
+				reason = u.name + "_replace_failed"
 			}
+			if err != nil {
+				log.Printf("[SYNC] Warning: unified %s replace not applied (set unchanged): %v", u.name, err)
+				partialReasons = append(partialReasons, reason)
+				continue
+			}
+			log.Printf("[SYNC] Unified %s replace: %d durable elements (feeds+geoban+blacklist.d), %d timed kept", u.name, len(durable), len(carried))
 		}
 	}
 
@@ -1133,4 +1146,68 @@ func (d *Daemon) handleQueueStatusRequest() SocketResponse {
 			"queue_depth":              d.opQueue.QueueDepth(),
 		},
 	}
+}
+
+// unifiedBlacklistElements returns the canonical durable union for one interval blacklist
+// set and the live timed elements to carry through its replace (v1.236 F6): every kernel
+// element with a timeout, with its remaining lifetime (ruleset.TimedCarry, the reload
+// content's rule), except one that covers a never-ban address or lies inside a durable
+// CIDR (kept by that CIDR). If the live set cannot be read the replace is refused, so the
+// timed bans are never wiped blind (partial reason <set>_timed_unreadable).
+func (d *Daemon) unifiedBlacklistElements(family, set string, union []string) ([]string, []string, string, error) {
+	var durable []string
+	if len(union) > 0 {
+		c, _, err := nftsync.CanonicalCIDRElements(union)
+		if err != nil {
+			return nil, nil, set + "_replace_failed", err
+		}
+		durable = c
+	}
+	live, err := ruleset.NftSetReader(family, set)
+	if err != nil {
+		return nil, nil, set + "_timed_unreadable", fmt.Errorf("live timed elements unreadable: %w", err)
+	}
+	covered := make(map[netip.Prefix]bool, len(durable))
+	for _, c := range durable {
+		if p, perr := netip.ParsePrefix(c); perr == nil {
+			covered[p.Masked()] = true
+		}
+	}
+	var carried []string
+	for _, e := range live {
+		if !e.HasTimeout {
+			continue // permanent elements are re-derived from their sources
+		}
+		if !strings.Contains(e.Key, "-") { // a kernel-merged range is carried as is
+			if _, removed, omitted := d.backend.SubtractExempt([]string{e.Key}); removed > 0 || len(omitted) > 0 {
+				continue
+			}
+			if insideDurable(e.Key, covered) {
+				continue
+			}
+		}
+		if v, ok := ruleset.TimedCarry(e, 2*time.Second); ok {
+			carried = append(carried, v)
+		}
+	}
+	return durable, carried, "", nil
+}
+
+// insideDurable reports whether an address or prefix lies inside one of the durable CIDRs
+// (looked up by its supernets, so the cost does not grow with the union).
+func insideDurable(key string, covered map[netip.Prefix]bool) bool {
+	p, err := netip.ParsePrefix(key)
+	if err != nil {
+		a, aerr := netip.ParseAddr(key)
+		if aerr != nil {
+			return false
+		}
+		p = netip.PrefixFrom(a, a.BitLen())
+	}
+	for bits := p.Bits(); bits >= 0; bits-- {
+		if covered[netip.PrefixFrom(p.Addr(), bits).Masked()] {
+			return true
+		}
+	}
+	return false
 }

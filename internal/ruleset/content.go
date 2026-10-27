@@ -520,12 +520,27 @@ func carry(e Element, margin time.Duration, res *Result) (string, bool) {
 		res.Carried++
 		return e.Key, true
 	}
-	left := e.Remaining - margin
-	if left < time.Second {
+	v, ok := TimedCarry(e, margin)
+	if !ok {
 		res.Expired++
 		return "", false
 	}
 	res.Carried++
+	return v, true
+}
+
+// TimedCarry renders a kernel element that has a timeout with its remaining lifetime,
+// shortened by margin, as an nft element ("<key> timeout <n>s"); false for an element
+// without a timeout or with less than a second left. The reload content (carry) and the
+// daemon's unified blacklist replace (v1.236 F6) use the same rule.
+func TimedCarry(e Element, margin time.Duration) (string, bool) {
+	if !e.HasTimeout {
+		return "", false
+	}
+	left := e.Remaining - margin
+	if left < time.Second {
+		return "", false
+	}
 	return withTimeout(e.Key, left), true
 }
 
