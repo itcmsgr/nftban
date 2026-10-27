@@ -63,6 +63,10 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
   host with feed files but the master switch off keeps its feeds (`CONFLICT_KEPT`, reported); a fresh install
   never enables leftover feed files. `nftban feeds enable|disable` without a name is the master switch.
 - **Shell IPC clients dropped daemon answers slower than 0.5 s** and reported "daemon not responding".
+- **On SELinux-enforcing EL hosts, the daemon's sync never applied CIDR blacklist and feed changes.** The daemon
+  wrote its set-replace script to `/tmp`, which its SELinux domain may not create files in; the replace failed
+  ("permission denied", no AVC logged) while the sync still reported success. The script now goes to
+  `/run/nftban`. Present since v1.192; reload and rebuild were not affected.
 
 ### Fixed — counters, bans, reporting
 
