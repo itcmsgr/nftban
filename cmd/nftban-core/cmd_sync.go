@@ -38,13 +38,17 @@ import (
 // Exit codes of `nftban-core sync` (v1.236). The installer and the shell wrapper act on
 // them, so they are part of the contract:
 //
-//	0   completed; effect applied or partial (partial is printed as a warning)
+//	0   completed; every requested set committed
 //	1   failed, or refused (completed with no effect), or a usage error
+//	3   completed PARTIALLY: some requested state was not committed (the reasons are
+//	    printed). v1.236 F1b: this was exit 0 followed by "Firewall is now in sync",
+//	    so a failed set replace read as success to every caller.
 //	69  not delivered: the daemon was not reachable, nothing ran (safe to retry)
 //	74  completion unknown: the request was sent but no answer was read
 //	75  still running when --wait ran out; join it with --join <generation>
 const (
 	syncExitFailed       = 1
+	syncExitPartial      = 3
 	syncExitNotDelivered = 69
 	syncExitUnknown      = 74
 	syncExitRunning      = 75
@@ -297,6 +301,9 @@ func cmdSync(cfg *nftbanconf.Config) error {
 	}
 
 	fmt.Println()
+	if effect == ipc.EffectPartial {
+		return &syncExit{syncExitPartial, "sync completed PARTIALLY: the firewall is NOT fully in sync with the configuration files"}
+	}
 	fmt.Println("Firewall is now in sync with configuration files.")
 	fmt.Println()
 
