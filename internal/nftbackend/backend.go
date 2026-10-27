@@ -370,6 +370,23 @@ func (b *Backend) Ban(ctx context.Context, req BanRequest) (*BanResult, error) {
 				Message: fmt.Sprintf("not banned: never-ban exempt (%s)", reason),
 			}, nil
 		}
+		// F2: IsExempt answers for one address and is false for every CIDR, so a prefix
+		// covering a protected address passed here (manual `nftban ban <CIDR>`, loginmon
+		// subnet bans and their permanent escalation). A CIDR is admitted whole or refused
+		// whole by the same authority the campaign path uses; an incomplete snapshot
+		// refuses. Called under b.mu: the resolver directly, not Backend.AdmitPrefix.
+		if strings.Contains(req.IP, "/") {
+			if ok, reason := b.exempt.AdmitPrefix(req.IP); !ok {
+				b.stats.ExemptSkips++
+				log.Printf("[BAN] REFUSED (prefix not admitted: %s) cidr=%s source=%s — a prefix that touches never-ban space (or with incomplete protection data) is NOT added to blacklist", reason, req.IP, req.Source)
+				return &BanResult{
+					Success: true,
+					IP:      req.IP,
+					Exempt:  true,
+					Message: fmt.Sprintf("not banned: prefix not admitted (%s)", reason),
+				}, nil
+			}
+		}
 	}
 
 	// Ensure netlink connection
