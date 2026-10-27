@@ -53,11 +53,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/itcmsgr/nftban/internal/constants"
 	"github.com/itcmsgr/nftban/internal/feeds"
 	"github.com/itcmsgr/nftban/internal/geoban"
 	"github.com/itcmsgr/nftban/internal/netutil"
 	"github.com/itcmsgr/nftban/internal/runtime"
 	nftsync "github.com/itcmsgr/nftban/internal/setsync"
+	"github.com/itcmsgr/nftban/internal/util"
 )
 
 // Exemption is the never-ban authority (nftbackend.NewExemption).
@@ -109,6 +111,16 @@ type Result struct {
 	Exempt   int // elements refused by the never-ban authority
 	// Omitted are union inputs dropped WHOLE at the exemption split limit (a gap, named).
 	Omitted []string
+	// CampaignRefused are campaign_prefix_ipv4 elements not carried: untimed (a campaign ban is
+	// never permanent), a range key, or a prefix the never-ban authority does not admit whole.
+	CampaignRefused int
+}
+
+// prefixAdmitter is the all-or-nothing, fail-closed never-ban decision for an automatic
+// prefix escalation (nftbackend AdmitPrefix). An authority without it carries no campaign
+// prefix: refusing is the safe side for a /24 drop.
+type prefixAdmitter interface {
+	AdmitPrefix(prefix string) (bool, string)
 }
 
 type family struct {
@@ -295,6 +307,42 @@ func Render(opts Options, read SetReader, ex Exemption) (*Result, error) {
 				}
 			}
 			add(f, set, values(keyed))
+		}
+
+		// campaign_prefix_ipv4 (BotScan HTTP campaign, IPv4 only): runtime-only and timed.
+		// Carried with the remaining TTL, capped at the campaign maximum, so a reload or
+		// rebuild never extends a ban nor restarts its timer. Never carried: an untimed
+		// element, a range key (the set has no auto-merge, so a range is not ours), or a
+		// prefix the never-ban authority does not admit whole (re-checked at every render:
+		// a whitelist entry added after the ban removes it here).
+		// Not carried at all while the campaign is disabled (marker absent): a reload or
+		// rebuild after a disable empties the set.
+		if f.v4 {
+			cset := constants.CampaignPrefixSetIPv4
+			kernel, err := read(f.name, cset)
+			if err != nil {
+				return nil, fmt.Errorf("read %s %s: %w", f.name, cset, err)
+			}
+			enabled := opts.DataDir != "" && util.FileExists(filepath.Join(opts.DataDir, constants.CampaignEnabledMarker))
+			admit, canAdmit := ex.(prefixAdmitter)
+			keyed = map[string]string{}
+			for _, e := range kernel {
+				if !enabled || !e.HasTimeout || strings.Contains(e.Key, "-") || !canAdmit {
+					res.CampaignRefused++
+					continue
+				}
+				if ok, _ := admit.AdmitPrefix(e.Key); !ok {
+					res.CampaignRefused++
+					continue
+				}
+				if e.Remaining > constants.BotscanCampaignBanMax {
+					e.Remaining = constants.BotscanCampaignBanMax
+				}
+				if v, ok := carry(e, opts.CommitMargin, res); ok {
+					keyed[e.Key] = v
+				}
+			}
+			add(f, cset, values(keyed))
 		}
 
 		// v1.236 step B: carried module sets (ddos ban/limit sets, ...): every element passes

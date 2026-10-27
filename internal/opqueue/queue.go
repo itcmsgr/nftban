@@ -604,6 +604,9 @@ type OpQueue struct {
 	exemptCheck           func(set, ip string) (bool, string)
 	enqueueBanExemptSkips atomic.Uint64
 
+	// applyGuardRefused counts elements an ApplyGuard refused at application time.
+	applyGuardRefused atomic.Int64
+
 	// Last flush time
 	lastFlushTime atomic.Value // time.Time
 
@@ -711,6 +714,7 @@ func (q *OpQueue) Stats() QueueStats {
 		TotalDropped:           q.totalDropped.Load(),
 		ReplacePartialFailures: q.replacePartialFailures.Load(),
 		EnqueueBanExemptSkips:  q.enqueueBanExemptSkips.Load(),
+		ApplyGuardRefused:      q.applyGuardRefused.Load(),
 		LastFlushTime:          lastFlush,
 	}
 }

@@ -27,17 +27,83 @@ import (
 // NftSetReader reads sets with `nft -j list set <family> nftban <set>`. A set or table
 // that does not exist is an empty result, not an error.
 func NftSetReader(family, set string) ([]Element, error) {
+	elems, _, err := NftSetReaderPresent(family, set)
+	return elems, err
+}
+
+// NftSetReaderPresent is NftSetReader that also says whether the set exists (an empty set
+// and an absent set are different answers for a caller that must prove enforcement).
+func NftSetReaderPresent(family, set string) ([]Element, bool, error) {
 	cmd := exec.Command("nft", "-j", "list", "set", family, "nftban", set) // #nosec G204 -- fixed table, constant set names
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
 		if strings.Contains(stderr.String(), "No such file or directory") {
-			return nil, nil
+			return nil, false, nil
 		}
-		return nil, fmt.Errorf("nft list set %s nftban %s: %v: %s", family, set, err, strings.TrimSpace(stderr.String()))
+		return nil, false, fmt.Errorf("nft list set %s nftban %s: %v: %s", family, set, err, strings.TrimSpace(stderr.String()))
 	}
-	return ParseSetJSON(out)
+	elems, err := ParseSetJSON(out)
+	return elems, err == nil, err
+}
+
+// NftChainDropsFromSet reports whether chain holds a rule that matches @set and drops
+// (`nft -j list chain <family> nftban <chain>`: rules only, no set elements are printed).
+// An absent chain or table is false, not an error.
+func NftChainDropsFromSet(family, chain, set string) (bool, error) {
+	cmd := exec.Command("nft", "-j", "list", "chain", family, "nftban", chain) // #nosec G204 -- fixed table, constant chain/set names
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		if strings.Contains(stderr.String(), "No such file or directory") {
+			return false, nil
+		}
+		return false, fmt.Errorf("nft list chain %s nftban %s: %v: %s", family, chain, err, strings.TrimSpace(stderr.String()))
+	}
+	return chainDropsFromSet(out, set)
+}
+
+// chainDropsFromSet is the parse half of NftChainDropsFromSet.
+func chainDropsFromSet(data []byte, set string) (bool, error) {
+	var doc struct {
+		Nftables []map[string]json.RawMessage `json:"nftables"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return false, fmt.Errorf("decode nft json: %w", err)
+	}
+	ref := "@" + set
+	for _, obj := range doc.Nftables {
+		raw, ok := obj["rule"]
+		if !ok {
+			continue
+		}
+		var rule struct {
+			Expr []map[string]json.RawMessage `json:"expr"`
+		}
+		if err := json.Unmarshal(raw, &rule); err != nil {
+			return false, fmt.Errorf("decode rule: %w", err)
+		}
+		uses, drops := false, false
+		for _, e := range rule.Expr {
+			if _, ok := e["drop"]; ok {
+				drops = true
+			}
+			if m, ok := e["match"]; ok {
+				var match struct {
+					Right json.RawMessage `json:"right"`
+				}
+				if json.Unmarshal(m, &match) == nil && strings.Trim(string(match.Right), "\"") == ref {
+					uses = true
+				}
+			}
+		}
+		if uses && drops {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // ParseSetJSON parses `nft -j list set` output.
