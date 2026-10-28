@@ -11,10 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v1.236.0] - 2026-10-26 — Firewall replacement without enforcement gaps; BotGuard enforcement
+## [v1.236.0] - 2026-10-28 — Firewall replacement without enforcement gaps; BotGuard enforcement
 
 As of v1.236.0. Verified on Ubuntu 24.04 (DEB), Rocky 9 (EL9 RPM) and Rocky 10 (EL10 RPM) as an upgrade from
 v1.235.1 with DDoS, PortScan and BotGuard enabled.
+
+### Added
+
+- **BotScan HTTP campaign detection (off by default).** With `BOTSCAN_CAMPAIGN_ENABLED=true`, BotScan detects
+  the same HTTP request pattern spread across many addresses of one IPv4 /24 and bans the prefix for HTTP/HTTPS
+  only, through the timed set `campaign_prefix_ipv4` (dropped before `ANCHOR_ESTABLISHED`). A prefix that
+  touches never-ban space is refused whole; campaign bans expire on their own and never escalate to permanent
+  bans. Behind a CDN the origin firewall does not see the client addresses, so this blocks nothing there.
 
 ### Fixed — bans during upgrade, reload and rebuild
 
@@ -67,6 +75,11 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
   wrote its set-replace script to `/tmp`, which its SELinux domain may not create files in; the replace failed
   ("permission denied", no AVC logged) while the sync still reported success. The script now goes to
   `/run/nftban`. Present since v1.192; reload and rebuild were not affected.
+- **A full sync removed detector and LoginMon timed CIDR bans**, and removing the last durable blacklist CIDR
+  left it enforced until the next reload. The sync's blacklist replace now keeps live timed entries with their
+  remaining lifetime and also runs when no durable CIDR is left.
+- **A sync that could not apply part of the configuration reported success.** `nftban sync` and
+  `nftban-core sync` now report it as partial and exit 3.
 
 ### Fixed — counters, bans, reporting
 
@@ -76,6 +89,9 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
   counting never creates a set. Cumulative ban counters are unchanged.
 - **One temp ban counted twice toward persistent-offender escalation.**
 - **A ban refused by the never-ban check was reported as banned.**
+- **A CIDR ban could cover a never-ban address.** The never-ban check answered for single addresses only, so
+  `nftban ban <CIDR>` and LoginMon subnet bans (and their permanent escalation) could include a whitelisted or
+  admin address. A CIDR is now admitted whole or refused whole.
 - **`nftban status` / `health` could rewrite the SSH port configuration.** Reads no longer write; fixes run only
   with `--auto-heal` / `--fix`.
 - **The support bundle ran a sync.**
@@ -92,6 +108,10 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
 - Adding an address to the session whitelist removes it from ban sets; the ban does not return when the entry
   expires.
 - Suricata mode's `ddos_blocked` set is IPv4 only (IPv6 Suricata blocks use the daemon ban path).
+- `nftban unban <CIDR>` reports "already not banned" and removes nothing; remove a CIDR ban with
+  `nftban firewall reload` after its source is gone, or let it expire.
+- `nftban whitelist add <ip>` inside a banned CIDR says it removed the ban; the whitelist takes effect, but the
+  covering CIDR stays in the ban set.
 
 ---
 
