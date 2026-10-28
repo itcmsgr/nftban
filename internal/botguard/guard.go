@@ -114,7 +114,7 @@ type Module struct {
 	// daemon, and the bounded per-target expiry history used for recurrence decisions.
 	campaignKernel  CampaignKernel
 	campaignMu      sync.Mutex
-	campaignHistory map[string]time.Time
+	campaignHistory map[string]campaignRecord
 }
 
 // New creates a new bot guard module.

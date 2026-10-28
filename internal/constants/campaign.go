@@ -49,6 +49,11 @@ const (
 	// lives at most the bounded write-boundary wait (60 s), so any add from before a
 	// disable is gone before the grace ends: a disable/re-enable cannot revive it.
 	BotscanCampaignReenableGrace = 120 * time.Second
+
+	// BotscanCampaignQueuedWindow: an enqueued prefix ban the kernel has not shown within this
+	// time was never applied (the apply guard refused it): it is forgotten, so neither its
+	// suppression nor its expiry outlives the refusal. One queue wait (60 s) + one tick (60 s).
+	BotscanCampaignQueuedWindow = 120 * time.Second
 )
 
 const (

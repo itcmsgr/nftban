@@ -122,12 +122,41 @@ func TestCampaignStaleSignalAcrossReenable(t *testing.T) {
 // written a second time.
 func TestCampaignQueuedBanNotReissued(t *testing.T) {
 	h := newCampaignHarness(t)
-	h.m.campaignHistory = map[string]time.Time{"45.33.32.0/24": time.Now().Add(50 * time.Minute)}
+	h.m.campaignHistory = map[string]campaignRecord{"45.33.32.0/24": {
+		queuedAt: time.Now().Add(-10 * time.Second), expires: time.Now().Add(3590 * time.Second)}}
 	if n := h.m.applyCampaignSignals([]BatchSignal{prefixSig("45.33.32.0/24")}); n != 0 {
 		t.Fatalf("a queued/running ban was re-issued (%d)", n)
 	}
 	if h.m.stats.CampaignDuplicate != 1 {
 		t.Fatalf("duplicate=%d, want 1", h.m.stats.CampaignDuplicate)
+	}
+}
+
+// RC regression (found by the v1.236 RC kernel tests on EL9/EL10): an enqueued prefix ban that
+// the apply guard refused (re-enable grace) never reached the kernel, yet its record kept the
+// /24 "active" for 3600 s, so the next cycle never issued it. An unconfirmed record past the
+// queued window is forgotten: the next signal issues an INITIAL ban (not a recurrence).
+func TestCampaignRefusedAtApplyIsReissued(t *testing.T) {
+	h := newCampaignHarness(t)
+	h.m.campaignHistory = map[string]campaignRecord{"45.33.32.0/24": {
+		queuedAt: time.Now().Add(-5 * time.Minute), expires: time.Now().Add(55 * time.Minute)}}
+	if n := h.m.applyCampaignSignals([]BatchSignal{prefixSig("45.33.32.0/24")}); n != 1 {
+		t.Fatalf("a ban refused at application was not re-issued (%d)", n)
+	}
+	if ttl, ok := h.waitTTL(constants.CampaignPrefixSetIPv4, "45.33.32.0/24"); !ok || ttl != 3600 {
+		t.Fatalf("ttl=%d ok=%v, want an initial 3600 (an unapplied ban is not a recurrence)", ttl, ok)
+	}
+}
+
+// A kernel read that shows the prefix confirms its record (then it can count as a recurrence).
+func TestCampaignKernelReadConfirms(t *testing.T) {
+	h := newCampaignHarness(t)
+	h.m.campaignHistory = map[string]campaignRecord{"45.33.32.0/24": {
+		queuedAt: time.Now().Add(-10 * time.Minute), expires: time.Now().Add(50 * time.Minute)}}
+	h.k.elems["45.33.32.0/24"] = 3000 * time.Second
+	h.m.applyCampaignSignals([]BatchSignal{prefixSig("45.33.32.0/24")})
+	if r := h.m.campaignHistory["45.33.32.0/24"]; !r.confirmed {
+		t.Fatal("a prefix seen in the kernel was not confirmed")
 	}
 }
 
@@ -211,7 +240,8 @@ func TestCampaignRecurrenceWindow(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			h := newCampaignHarness(t)
-			h.m.campaignHistory = map[string]time.Time{"45.33.32.0/24": time.Now().Add(-c.expired)}
+			h.m.campaignHistory = map[string]campaignRecord{"45.33.32.0/24": {
+				queuedAt: time.Now().Add(-c.expired - time.Hour), expires: time.Now().Add(-c.expired), confirmed: true}}
 			h.m.applyCampaignSignals([]BatchSignal{prefixSig("45.33.32.0/24")})
 			ttl, ok := h.waitTTL(constants.CampaignPrefixSetIPv4, "45.33.32.0/24")
 			if !ok || ttl != c.want {

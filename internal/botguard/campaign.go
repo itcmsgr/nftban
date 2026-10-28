@@ -29,6 +29,7 @@ import (
 	"log"
 	"net/netip"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/constants"
@@ -68,37 +69,73 @@ func campaignPrefix(s string) (string, bool) {
 	return p.String(), true
 }
 
-// campaignTTL decides the duration for target at now: a recurrence (5400 s) when its previous
-// campaign ban expired within the recurrence window, otherwise the initial 3600 s.
+// campaignRecord is one target's campaign ban as the consumer knows it. A prefix ban is
+// confirmed only once the kernel has shown it: the apply guard may refuse an enqueued add,
+// and an unconfirmed record must then neither suppress the next issue nor make it a
+// recurrence. IPv6 member bans have no apply guard and are confirmed when enqueued.
+type campaignRecord struct {
+	queuedAt  time.Time
+	expires   time.Time
+	confirmed bool
+}
+
+// campaignTTL decides the duration for target at now: a recurrence (5400 s) when a confirmed
+// previous campaign ban expired within the recurrence window, otherwise the initial 3600 s.
 func (m *Module) campaignTTL(target string, now time.Time) (time.Duration, bool) {
 	m.campaignMu.Lock()
 	defer m.campaignMu.Unlock()
-	if exp, ok := m.campaignHistory[target]; ok && now.After(exp) && now.Sub(exp) <= constants.BotscanCampaignRecurrenceWindow {
+	if r, ok := m.campaignHistory[target]; ok && r.confirmed && now.After(r.expires) && now.Sub(r.expires) <= constants.BotscanCampaignRecurrenceWindow {
 		return constants.BotscanCampaignBanMax, true
 	}
 	return constants.BotscanCampaignBanInitial, false
 }
 
-// campaignActive reports a remembered, still running campaign ban for target (the IPv6 per-IP
-// path, where the kernel set is the shared manual set and is not read).
+// campaignActive reports a campaign ban for target that must not be issued again: confirmed
+// and still running, or enqueued so recently that the queue may still be applying it.
 func (m *Module) campaignActive(target string, now time.Time) bool {
 	m.campaignMu.Lock()
 	defer m.campaignMu.Unlock()
-	exp, ok := m.campaignHistory[target]
-	return ok && now.Before(exp)
+	r, ok := m.campaignHistory[target]
+	if !ok {
+		return false
+	}
+	if r.confirmed {
+		return now.Before(r.expires)
+	}
+	return now.Sub(r.queuedAt) <= constants.BotscanCampaignQueuedWindow
 }
 
-// rememberCampaign records target's expiry. Entries older than the recurrence window are
-// pruned first; a full history does not record (the next ban is then an initial one).
-func (m *Module) rememberCampaign(target string, exp, now time.Time) {
+// reconcileCampaignPrefixes aligns the prefix records with the kernel read of this cycle: a
+// record whose prefix is in the set is confirmed; an unconfirmed one past the queued window
+// was never applied (refused at application) and is forgotten, so the next signal issues it.
+func (m *Module) reconcileCampaignPrefixes(elems map[string]time.Duration, now time.Time) {
+	m.campaignMu.Lock()
+	defer m.campaignMu.Unlock()
+	for t, r := range m.campaignHistory {
+		if !strings.Contains(t, "/") {
+			continue // IPv6 members: not in this set
+		}
+		if _, in := elems[t]; in {
+			r.confirmed = true
+			m.campaignHistory[t] = r
+		} else if !r.confirmed && now.Sub(r.queuedAt) > constants.BotscanCampaignQueuedWindow {
+			delete(m.campaignHistory, t)
+		}
+	}
+}
+
+// rememberCampaign records an enqueued campaign ban. Entries whose ban ended more than the
+// recurrence window ago are pruned first; a full history does not record (the next ban is
+// then an initial one).
+func (m *Module) rememberCampaign(target string, exp, now time.Time, confirmed bool) {
 	m.campaignMu.Lock()
 	defer m.campaignMu.Unlock()
 	if m.campaignHistory == nil {
-		m.campaignHistory = make(map[string]time.Time)
+		m.campaignHistory = make(map[string]campaignRecord)
 	}
 	if _, ok := m.campaignHistory[target]; !ok && len(m.campaignHistory) >= constants.BotscanCampaignHistoryMax {
-		for t, e := range m.campaignHistory {
-			if now.Sub(e) > constants.BotscanCampaignRecurrenceWindow {
+		for t, r := range m.campaignHistory {
+			if now.Sub(r.expires) > constants.BotscanCampaignRecurrenceWindow {
 				delete(m.campaignHistory, t)
 			}
 		}
@@ -107,7 +144,7 @@ func (m *Module) rememberCampaign(target string, exp, now time.Time) {
 			return
 		}
 	}
-	m.campaignHistory[target] = exp
+	m.campaignHistory[target] = campaignRecord{queuedAt: now, expires: exp, confirmed: confirmed}
 }
 
 // applyCampaignSignals applies one consumer cycle's campaign signals. The kernel is read
@@ -162,6 +199,9 @@ func (m *Module) applyCampaignSignals(sigs []BatchSignal) int {
 	prefixEnforceable := eerr == nil && present && rerr == nil && live
 	if elems == nil {
 		elems = map[string]time.Duration{}
+	}
+	if eerr == nil && present {
+		m.reconcileCampaignPrefixes(elems, time.Now()) // only on a valid read of the set
 	}
 	if !prefixEnforceable {
 		log.Printf("[botguard] campaign prefixes NOT enforceable (set present=%v err=%v, drop rule live=%v err=%v): prefix signals reported, nothing written",
@@ -258,7 +298,9 @@ func (m *Module) applyCampaignSignals(sigs []BatchSignal) int {
 			notEnforced++
 			continue
 		}
-		m.rememberCampaign(target, now.Add(ttl), now)
+		// A prefix is confirmed by a later kernel read (the apply guard may still refuse it);
+		// an IPv6 member has no apply guard.
+		m.rememberCampaign(target, now.Add(ttl), now, setName != constants.CampaignPrefixSetIPv4)
 		if setName == constants.CampaignPrefixSetIPv4 {
 			elems[target] = ttl // a second signal for it in this cycle is a duplicate
 		}
