@@ -20,7 +20,8 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
 
 - **BotScan HTTP campaign detection (off by default).** With `BOTSCAN_CAMPAIGN_ENABLED=true`, BotScan detects
   the same HTTP request pattern spread across many addresses of one IPv4 /24 and bans the prefix for HTTP/HTTPS
-  only, through the timed set `campaign_prefix_ipv4` (dropped before `ANCHOR_ESTABLISHED`). A prefix that
+  only, through the timed set `campaign_prefix_ipv4` (dropped before `ANCHOR_ESTABLISHED`). IPv6 is banned per
+  address, not per prefix, and such a ban drops all traffic from that address, not only HTTP/HTTPS. A prefix that
   touches never-ban space is refused whole; campaign bans expire on their own and never escalate to permanent
   bans. Behind a CDN the origin firewall does not see the client addresses, so this blocks nothing there.
 
