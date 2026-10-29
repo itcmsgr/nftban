@@ -456,7 +456,6 @@ product	cli/lib/nftban/core/nftban_watchdog.sh	43401a00bd39cbf5	1	grep-q	B	n/a	U
 product	cli/lib/nftban/core/nftban_watchdog_checks.sh	91e958e6a56d6751	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_watchdog_checks.sh	9ae8840347471b16	1	grep-q	E	n/a	UNVERIFIED	fn=nftban_watchdog_check_conntrack; needs a producer-size probe on a representative host
 product	cli/lib/nftban/core/nftban_watchdog_checks.sh	c54c141cc9af3d42	2	head	E	n/a	UNVERIFIED	fn=nftban_watchdog_get_top_mem; needs a producer-size probe on a representative host
-product	cli/lib/nftban/core/nftban_watchdog_checks.sh	ecc8b5efe8e0225a	1	head	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cron/maintenance.sh	7d6f8edd9a6a9b86	1	grep-q	A	n/a	UNVERIFIED	fn=main; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
 product	cli/lib/nftban/cron/maintenance.sh	99f273a0af1c7040	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cron/maintenance.sh	a39b8ad06de68bf3	1	head	C	n/a	UNVERIFIED	-

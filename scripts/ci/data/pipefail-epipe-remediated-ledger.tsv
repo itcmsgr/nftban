@@ -70,6 +70,7 @@ product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	f37bffa5069aff6b	1	grep
 product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	fb2896e195b3ed48	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_stats_format.sh	162852f14b3de3d3	1	head	E	n/a	UNVERIFIED	fn=nftban_stats_generate_dashboard; needs a producer-size probe on a representative host
 product	cli/lib/nftban/core/nftban_sync.sh	dd7eb2cc39e98694	1	grep-q	B	n/a	UNVERIFIED	-
+product	cli/lib/nftban/core/nftban_watchdog_checks.sh	ecc8b5efe8e0225a	1	head	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/lib/nft_probe.sh	323ad0874e5c301a	1	grep-q	E	n/a	UNVERIFIED	fn=nftban_nft_probe_redact; needs a producer-size probe on a representative host; REMEDIATED v1.233.1 (in-shell [[ =~ ]], no pipe); MEASURED ~200 KiB listing: pre-fix 18/18 wrong verdicts (MALFORMED_OUTPUT / ABSENT), post-fix 45/0 x3 (typed_nft_probe arm P)
 product	cli/lib/nftban/lib/nft_probe.sh	88294984ad502035	1	grep-q	E	n/a	UNVERIFIED	fn=nftban_nft_probe_redact; needs a producer-size probe on a representative host; REMEDIATED v1.233.1 (in-shell [[ =~ ]], no pipe); MEASURED ~200 KiB listing: pre-fix 18/18 wrong verdicts (MALFORMED_OUTPUT / ABSENT), post-fix 45/0 x3 (typed_nft_probe arm P)
 product	cli/lib/nftban/lib/nft_probe.sh	a3a9c5b0b5bec270	1	grep-q	E	n/a	UNVERIFIED	fn=nftban_nft_probe_redact; needs a producer-size probe on a representative host; REMEDIATED v1.233.1 (in-shell [[ =~ ]], no pipe); MEASURED ~200 KiB listing: pre-fix 18/18 wrong verdicts (MALFORMED_OUTPUT / ABSENT), post-fix 45/0 x3 (typed_nft_probe arm P)
