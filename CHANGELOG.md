@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v1.236.0] - 2026-10-28 — Firewall replacement without enforcement gaps; BotGuard enforcement
+## [v1.236.0] - 2026-10-29 — Firewall replacement without enforcement gaps; BotGuard enforcement
 
 As of v1.236.0. Verified on Ubuntu 24.04 (DEB), Rocky 9 (EL9 RPM) and Rocky 10 (EL10 RPM) as an upgrade from
 v1.235.1 with DDoS, PortScan and BotGuard enabled.
@@ -118,21 +118,27 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
   covering CIDR stays in the ban set.
 - **BotScan HTTP campaign** (only with `BOTSCAN_CAMPAIGN_ENABLED=true`):
   - The first ban after enabling takes at least 2 minutes (re-enable grace) plus up to one BotScan cycle.
-  - A campaign is detected only when, within one BotScan cycle, a site receives at least
-    `BOTSCAN_CAMPAIGN_MIN_REQUESTS` (200) candidate requests from at least `BOTSCAN_CAMPAIGN_MIN_SOURCES` (50)
-    sources in a 10-minute request-time window. Candidates are GET/HEAD requests with status below 400 and at
-    least `BOTSCAN_CAMPAIGN_MIN_TERMS` (4) query terms. Slower campaigns are not detected.
+  - Counting is per BotScan cycle and starts empty in each cycle. A campaign is detected only when one cycle
+    reads, for one site, at least `BOTSCAN_CAMPAIGN_MIN_REQUESTS` (200) candidate requests from at least
+    `BOTSCAN_CAMPAIGN_MIN_SOURCES` (50) sources, each request timestamped within the 10 minutes before that
+    cycle (`BOTSCAN_CAMPAIGN_WINDOW`, 600 s). Requests read by earlier cycles do not carry over. Candidates are
+    GET/HEAD requests with status below 400 and at least `BOTSCAN_CAMPAIGN_MIN_TERMS` (4) query terms. Slower
+    campaigns are not detected.
   - Bans are applied only under host pressure (`BOTSCAN_CAMPAIGN_PRESSURE`, default `ELEVATED HIGH CRITICAL`);
     on a quiet host a campaign is reported, not banned.
   - At most 64 campaign bans are applied per BotScan cycle; the rest are counted, not applied.
   - BotScan reads about 44 log lines per second within its 180 s cycle budget (about 7,900 lines per cycle,
     measured); a larger flood is only partly read in each cycle.
-  - Only ports 80 and 443 are covered, as for BotGuard.
+  - IPv4 prefix bans cover ports 80 and 443 only, as for BotGuard. IPv6 bans are the exception: they are per
+    address, in the shared manual ban set, and block all traffic from that address.
+  - Queued IPv6 bans are not checked again when they are applied. Disabling the feature stops new bans from
+    being queued but does not cancel bans already queued.
   - Turning the feature off in configuration takes effect at the next BotScan cycle; `nftban botscan disable`
     removes campaign bans at once but disables all of BotScan. Remaining bans expire within 5400 s, or are
     dropped by `nftban firewall reload`.
-  - Measured on one incident's logs, replayed as direct traffic: 40.4% of the attack requests would have been
-    blocked, with no browser request blocked (0 of 25,406).
+  - Result of one incident replay (one site's logs, replayed as if the traffic were direct): 40.4% of the attack
+    requests would have been blocked, and none of 25,406 browser requests. This describes that incident; it is
+    not a general effectiveness figure.
 
 ---
 
