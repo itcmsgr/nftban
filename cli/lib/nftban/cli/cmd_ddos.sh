@@ -405,7 +405,11 @@ nftban_cmd_ddos() {
             # restarted the daemon mid-rebuild -- violating PR-2's own contract:
             # ONLY EXPLICIT OPERATOR ACTIONS MAY WRITE DURABLE INTENT.
             # Reload is a RUNTIME re-application, so it uses the neutral halves.
-            nftban_ddos_reconcile
+            # v1.236: its result is the command's result. The function ends with `return 0`,
+            # so a reload that applied nothing (e.g. Suricata mode with Suricata unavailable:
+            # effective mode UNKNOWN, or a failed apply) used to exit 0. Callers in the
+            # firewall lane already treat a failure as a warning / MR_FAILED.
+            nftban_ddos_reconcile || return $?
             ;;
 
         status)
