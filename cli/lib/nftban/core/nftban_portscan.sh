@@ -174,7 +174,9 @@ _nftban_portscan_suricata_service_running() {
     fi
 
     # Fall back to pgrep
-    if pgrep -x suricata &>/dev/null; then
+    # v1.236: Suricata 7+ names its main thread "Suricata-Main", so `pgrep -x suricata` never
+    # matched; match the binary in the command line instead.
+    if pgrep -f '(^|/)suricata( |$)' &>/dev/null; then
         return 0
     fi
 

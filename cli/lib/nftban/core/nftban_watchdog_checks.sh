@@ -563,7 +563,9 @@ nftban_watchdog_check_suricata_drift() {
     # CHECK 2: Memory usage (RSS)
     local rss_kb=0 rss_mb=0
     local suricata_pid
-    suricata_pid=$(pgrep -x suricata 2>/dev/null | head -1)
+    # v1.236: `pgrep -x suricata` never matched Suricata 7+ ("Suricata-Main"), so the RSS check
+    # never saw the process; -o = the oldest match, the main process.
+    suricata_pid=$(pgrep -o -f '(^|/)suricata( |$)' 2>/dev/null)
     if [[ -n "$suricata_pid" && -f "/proc/$suricata_pid/status" ]]; then
         rss_kb=$(awk '/VmRSS/ {print $2}' "/proc/$suricata_pid/status" 2>/dev/null || echo 0)
         rss_mb=$((rss_kb / 1024))
