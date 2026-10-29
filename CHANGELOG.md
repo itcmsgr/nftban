@@ -99,6 +99,23 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
 - **`nftban status` / `health` could rewrite the SSH port configuration.** Reads no longer write; fixes run only
   with `--auto-heal` / `--fix`.
 - **The support bundle ran a sync.**
+- **`nftban unban <CIDR>` did nothing for a CIDR ban held only in the kernel** (for example a timed LoginMon
+  subnet ban) and reported "already not banned". It now removes it. `unban` reports "Removed" and "UNBANNED"
+  only when something was removed, and fails when the removal fails.
+- **`nftban whitelist add <ip>` inside a banned network said it removed the ban.** It now names the covering
+  network ban, which stays (the whitelist exempts the address), and how to remove it. An add whose daemon
+  answer was lost is no longer reported as failed when the entry is in the kernel.
+- **`nftban ddos reload` exited 0 when nothing was applied** (for example Suricata mode with Suricata
+  unavailable). It now returns the result.
+- **On SELinux-enforcing EL hosts the daemon could not read utmp**, which lists the live SSH sessions used
+  by the never-ban check. The SELinux module now allows it.
+- **The installer reported `FAILED_SSH_UNKNOWN` instead of `FAILED_CONFIG_INVALID`** for an invalid master
+  switch on a host where SSH detection fails. The switch is now checked first.
+
+### Security
+
+- **Go 1.26.10 and `golang.org/x/net` v0.62.0**: fixes GO-2026-6809 (`crypto/x509`, reachable from NFTBan
+  code) and GO-2026-6866 / GO-2026-6860 (`golang.org/x/net`, not called by NFTBan).
 
 ### Fixed — commit-confirm
 
@@ -112,10 +129,6 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
 - Adding an address to the session whitelist removes it from ban sets; the ban does not return when the entry
   expires.
 - Suricata mode's `ddos_blocked` set is IPv4 only (IPv6 Suricata blocks use the daemon ban path).
-- `nftban unban <CIDR>` reports "already not banned" and removes nothing; remove a CIDR ban with
-  `nftban firewall reload` after its source is gone, or let it expire.
-- `nftban whitelist add <ip>` inside a banned CIDR says it removed the ban; the whitelist takes effect, but the
-  covering CIDR stays in the ban set.
 - **BotScan HTTP campaign** (only with `BOTSCAN_CAMPAIGN_ENABLED=true`):
   - The first ban after enabling takes at least 2 minutes (re-enable grace) plus up to one BotScan cycle.
   - Counting is per BotScan cycle and starts empty in each cycle. A campaign is detected only when one cycle
