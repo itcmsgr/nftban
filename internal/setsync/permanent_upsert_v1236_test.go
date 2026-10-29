@@ -102,20 +102,20 @@ func TestCommitPermanentUpsertOneTransaction(t *testing.T) {
 	}
 }
 
-func run(t *testing.T, reads [][]nftables.SetElement, flushErrs []error, values []string) (*SyncStats, error, *upsertFake) {
+func run(t *testing.T, reads [][]nftables.SetElement, flushErrs []error, values []string) (*SyncStats, *upsertFake, error) {
 	t.Helper()
 	f := &upsertFake{flushErrs: flushErrs}
 	r := &readerSeq{states: reads}
 	st, err := upsertPermanentElements(v4Set(), values,
 		func() (setReader, error) { return r, nil },
 		func() (upsertConn, error) { return f, nil })
-	return st, err, f
+	return st, f, err
 }
 
 func TestUpsertConvergesAndCountsAcknowledgedEffects(t *testing.T) {
 	before := []nftables.SetElement{perm("192.0.2.1"), timedEl("192.0.2.2")}
 	after := []nftables.SetElement{perm("192.0.2.1"), perm("192.0.2.2"), perm("192.0.2.3")}
-	st, err, f := run(t, [][]nftables.SetElement{before, after}, nil,
+	st, f, err := run(t, [][]nftables.SetElement{before, after}, nil,
 		[]string{"192.0.2.1", "192.0.2.2", "192.0.2.3", "192.0.2.3", "2001:db8::1", "bad"})
 	if err != nil || !st.Converged {
 		t.Fatalf("err=%v converged=%v", err, st.Converged)
@@ -131,7 +131,7 @@ func TestUpsertRejectedCommitCountsNothingAndReplans(t *testing.T) {
 	r1 := []nftables.SetElement{timedEl("192.0.2.2")}
 	r2 := []nftables.SetElement{}
 	r3 := []nftables.SetElement{perm("192.0.2.2")}
-	st, err, f := run(t, [][]nftables.SetElement{r1, r2, r3}, []error{os.ErrNotExist, nil}, []string{"192.0.2.2"})
+	st, f, err := run(t, [][]nftables.SetElement{r1, r2, r3}, []error{os.ErrNotExist, nil}, []string{"192.0.2.2"})
 	if err != nil || !st.Converged {
 		t.Fatalf("err=%v converged=%v", err, st.Converged)
 	}
@@ -144,7 +144,7 @@ func TestUpsertConcurrentWriterCountedOnceAndBounded(t *testing.T) {
 	// After each commit another writer makes the key timed again: one corrective commit, then
 	// stop (bounded), report not-converged, and never count the key twice.
 	timedState := []nftables.SetElement{timedEl("192.0.2.2")}
-	st, err, f := run(t, [][]nftables.SetElement{timedState, timedState, timedState}, nil, []string{"192.0.2.2"})
+	st, f, err := run(t, [][]nftables.SetElement{timedState, timedState, timedState}, nil, []string{"192.0.2.2"})
 	if err != nil {
 		t.Fatalf("err=%v", err)
 	}
@@ -157,7 +157,7 @@ func TestUpsertConcurrentWriterCountedOnceAndBounded(t *testing.T) {
 }
 
 func TestUpsertHardCommitFailureReturnsError(t *testing.T) {
-	st, err, _ := run(t, [][]nftables.SetElement{{}}, []error{errors.New("netlink: permission denied")}, []string{"192.0.2.5"})
+	st, _, err := run(t, [][]nftables.SetElement{{}}, []error{errors.New("netlink: permission denied")}, []string{"192.0.2.5"})
 	if err == nil || st.IPsAdded != 0 {
 		t.Fatalf("hard failure: err=%v stats=%+v, want error and nothing counted", err, *st)
 	}
