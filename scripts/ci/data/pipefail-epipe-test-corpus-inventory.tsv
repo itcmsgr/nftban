@@ -22,6 +22,7 @@ cli/lib/nftban/tests/botscan_collector_gather_stream_v2092_test.sh	1
 cli/lib/nftban/tests/botscan_deadline_rotation_v185_test.sh	5
 cli/lib/nftban/tests/botscan_exp_rfi_fp_v218_13_test.sh	4
 cli/lib/nftban/tests/botscan_health_truth_contract_v1231_0_test.sh	5
+cli/lib/nftban/tests/botscan_http_campaign_test.sh	3
 cli/lib/nftban/tests/botscan_operator_truth_contract_v219_0_test.sh	1
 cli/lib/nftban/tests/botscan_read_authority_v178_test.sh	5
 cli/lib/nftban/tests/botscan_revslider_fp_v218_10_test.sh	3
@@ -57,8 +58,8 @@ cli/lib/nftban/tests/cmd_status_authority_test.sh	13
 cli/lib/nftban/tests/cmd_update_lock_cleanup_v135_test.sh	2
 cli/lib/nftban/tests/cmd_whitelist_management_v218_10_test.sh	2
 cli/lib/nftban/tests/cmd_whitelist_static_v149_test.sh	2
-cli/lib/nftban/tests/comms_a1b_emulate_test.sh	1
 cli/lib/nftban/tests/comms_a1_centralization_test.sh	3
+cli/lib/nftban/tests/comms_a1b_emulate_test.sh	1
 cli/lib/nftban/tests/comms_a2a_delivery_truth_test.sh	2
 cli/lib/nftban/tests/comms_a2b_operator_surfacing_test.sh	10
 cli/lib/nftban/tests/comms_a2c_support_summary_test.sh	1
@@ -116,14 +117,14 @@ cli/lib/nftban/tests/mail_recipient_subject_help_v1223_test.sh	1
 cli/lib/nftban/tests/maintenance_stats_config_precondition_v1229_8_test.sh	4
 cli/lib/nftban/tests/managed_authority_invariant_v1229_3_test.sh	1
 cli/lib/nftban/tests/mode_plan_exclusivity_v1229_7_test.sh	7
-cli/lib/nftban/tests/nftables_conf_ownership_transition_v1229_12_test.sh	13
-cli/lib/nftban/tests/nftban_da_help_ssh_port_r1a2_test.sh	2
-cli/lib/nftban/tests/nftban_update_progress_r1b3_test.sh	1
 cli/lib/nftban/tests/nft_consumer_authority_guard_v1228_4_test.sh	2
 cli/lib/nftban/tests/nft_loopback_before_invalid_v217_test.sh	9
 cli/lib/nftban/tests/nft_ndp_rfc4861_source_scope_test.sh	2
 cli/lib/nftban/tests/nft_shipped_conf_cold_load_idiom_test.sh	2
 cli/lib/nftban/tests/nft_writer_authority_v150_test.sh	2
+cli/lib/nftban/tests/nftables_conf_ownership_transition_v1229_12_test.sh	13
+cli/lib/nftban/tests/nftban_da_help_ssh_port_r1a2_test.sh	2
+cli/lib/nftban/tests/nftban_update_progress_r1b3_test.sh	1
 cli/lib/nftban/tests/operator_config_not_package_owned_v1229_test.sh	3
 cli/lib/nftban/tests/osv_observability_v1229_4_test.sh	4
 cli/lib/nftban/tests/panel_group_retirement_v137_test.sh	2
@@ -173,8 +174,8 @@ cli/lib/nftban/tests/suricata_subcommand_authority_v1228_2_test.sh	4
 cli/lib/nftban/tests/suricata_usr2_guard_gateb_test.sh	2
 cli/lib/nftban/tests/sysctl_risk_idle_age_v2161_test.sh	1
 cli/lib/nftban/tests/systemd_cli_token_dispatch_v1228_1_test.sh	1
-cli/lib/nftban/tests/trusted_gate_publication_truth_v1229_4_test.sh	5
 cli/lib/nftban/tests/trust_load_missing_whitelist_test.sh	6
+cli/lib/nftban/tests/trusted_gate_publication_truth_v1229_4_test.sh	5
 cli/lib/nftban/tests/typed_nft_probe_v1228_4_test.sh	1
 cli/lib/nftban/tests/uninstall_sh_critical_safety_v1229_test.sh	2
 cli/lib/nftban/tests/update_degraded_render_truth_v225_test.sh	14

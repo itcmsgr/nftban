@@ -320,7 +320,6 @@ product	cli/lib/nftban/core/nftban_config_doctor.sh	eea28f1d5c01cdd3	1	grep-q	B	
 product	cli/lib/nftban/core/nftban_config_local.sh	d715398d1eda6d6e	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_ddos.sh	9b201d02c882cd13	1	head	B	shared	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_ddos.sh	e89e1836060593e6	1	head	B	shared	UNVERIFIED	-
-product	cli/lib/nftban/core/nftban_ddos_suricata.sh	3f7a22209d0e3454	1	grep-q	E	suricata	UNVERIFIED	fn=nftban_ddos_suricata_enable; needs a producer-size probe on a representative host
 product	cli/lib/nftban/core/nftban_ddos_suricata.sh	49d2708d636b4f64	1	head	B	suricata	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_ddos_suricata.sh	5ae69cd26be3f55f	1	grep-q	E	suricata	UNVERIFIED	fn=_nftban_ddos_suricata_process_alerts; needs a producer-size probe on a representative host
 product	cli/lib/nftban/core/nftban_ddos_suricata.sh	71d18f50877b7b46	1	grep-q	E	suricata	UNVERIFIED	fn=_nftban_ddos_suricata_calculate_score; needs a producer-size probe on a representative host
@@ -496,6 +495,8 @@ product	cli/lib/nftban/helpers/suricata_effective_config.sh	c8942c969cb46fba	1	g
 product	cli/lib/nftban/helpers/suricata_effective_config.sh	e217e393cf94043b	1	grep-q	A	n/a	UNVERIFIED	fn=_suricata_get_server_role; security_or_count_surface=condition; INFERRED ~65024
 product	cli/lib/nftban/lib/derived_state_reconcile.sh	77c182092b10fadc	1	head	E	n/a	UNVERIFIED	fn=_nftban_dsr_plan_get; needs a producer-size probe on a representative host
 product	cli/lib/nftban/lib/nft_fragment.sh	0855bc4fef8b3f5f	8	head	C	n/a	UNVERIFIED	-
+product	cli/lib/nftban/lib/nft_fragment.sh	8e25b117dca0215c	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
+product	cli/lib/nftban/lib/nft_fragment.sh	a6e612d0f49b62df	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 product	cli/lib/nftban/lib/nft_schema.sh	131cdcabfa88a5b5	2	head	E	n/a	UNVERIFIED	fn=nftban_nft_validate_set_flags; needs a producer-size probe on a representative host
 product	cli/lib/nftban/lib/nft_schema.sh	1490ca09ea3564a1	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/lib/nft_schema.sh	2fc534e10083ed54	1	grep-q	B	n/a	UNVERIFIED	-
