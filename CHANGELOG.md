@@ -93,6 +93,9 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
 - **A CIDR ban could cover a never-ban address.** The never-ban check answered for single addresses only, so
   `nftban ban <CIDR>` and LoginMon subnet bans (and their permanent escalation) could include a whitelisted or
   admin address. A CIDR is now admitted whole or refused whole.
+  - **Behaviour change:** a CIDR whose network address is not public (for example `10.0.0.0/8`) is now refused,
+    as single private addresses already were, and a CIDR is refused while the never-ban data cannot be read
+    completely. Single-address bans are unchanged.
 - **`nftban status` / `health` could rewrite the SSH port configuration.** Reads no longer write; fixes run only
   with `--auto-heal` / `--fix`.
 - **The support bundle ran a sync.**
@@ -113,6 +116,23 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
   `nftban firewall reload` after its source is gone, or let it expire.
 - `nftban whitelist add <ip>` inside a banned CIDR says it removed the ban; the whitelist takes effect, but the
   covering CIDR stays in the ban set.
+- **BotScan HTTP campaign** (only with `BOTSCAN_CAMPAIGN_ENABLED=true`):
+  - The first ban after enabling takes at least 2 minutes (re-enable grace) plus up to one BotScan cycle.
+  - A campaign is detected only when, within one BotScan cycle, a site receives at least
+    `BOTSCAN_CAMPAIGN_MIN_REQUESTS` (200) candidate requests from at least `BOTSCAN_CAMPAIGN_MIN_SOURCES` (50)
+    sources in a 10-minute request-time window. Candidates are GET/HEAD requests with status below 400 and at
+    least `BOTSCAN_CAMPAIGN_MIN_TERMS` (4) query terms. Slower campaigns are not detected.
+  - Bans are applied only under host pressure (`BOTSCAN_CAMPAIGN_PRESSURE`, default `ELEVATED HIGH CRITICAL`);
+    on a quiet host a campaign is reported, not banned.
+  - At most 64 campaign bans are applied per BotScan cycle; the rest are counted, not applied.
+  - BotScan reads about 44 log lines per second within its 180 s cycle budget (about 7,900 lines per cycle,
+    measured); a larger flood is only partly read in each cycle.
+  - Only ports 80 and 443 are covered, as for BotGuard.
+  - Turning the feature off in configuration takes effect at the next BotScan cycle; `nftban botscan disable`
+    removes campaign bans at once but disables all of BotScan. Remaining bans expire within 5400 s, or are
+    dropped by `nftban firewall reload`.
+  - Measured on one incident's logs, replayed as direct traffic: 40.4% of the attack requests would have been
+    blocked, with no browser request blocked (0 of 25,406).
 
 ---
 
