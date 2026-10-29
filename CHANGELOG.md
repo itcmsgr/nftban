@@ -109,6 +109,12 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
   unavailable). It now returns the result.
 - **On SELinux-enforcing EL hosts the daemon could not read utmp**, which lists the live SSH sessions used
   by the never-ban check. The SELinux module now allows it.
+- **On SELinux-enforcing EL hosts the daemon's process checks flooded the audit log** (about 600 denials a
+  minute on a host without an active Suricata service). The SELinux module now allows reading process
+  state.
+- **Suricata 7 and later were not found by the process checks** of PortScan, LoginMon and the watchdog
+  (`pgrep -x suricata` does not match the `Suricata-Main` thread name); the watchdog's Suricata memory
+  check never saw the process. They now match the Suricata binary in the command line.
 - **The installer reported `FAILED_SSH_UNKNOWN` instead of `FAILED_CONFIG_INVALID`** for an invalid master
   switch on a host where SSH detection fails. The switch is now checked first.
 
