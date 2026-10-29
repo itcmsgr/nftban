@@ -165,6 +165,30 @@ func nftDeleteElement(family, table, setName, elements string) error {
 	return runNftIgnoring([]string{ErrElementNotExist, ErrNoSuchFile}, args...)
 }
 
+// nftDeleteElementExact deletes one element and reports an element that is not in the set
+// as os.ErrNotExist (v1.236 F7). nftDeleteElement ignores "does not exist", which suits bulk
+// deletes, but an unban must know whether it removed anything.
+func nftDeleteElementExact(family, table, setName, element string) error {
+	if WriteGate != nil {
+		if err := WriteGate(); err != nil {
+			return err
+		}
+	}
+	release, err := BeginWrite()
+	if err != nil {
+		return err
+	}
+	defer release()
+	output, err := runNft("delete", "element", family, table, setName, "{ "+element+" }")
+	if err != nil {
+		if isIgnorableNftError(string(output), ErrElementNotExist, ErrNoSuchFile) {
+			return os.ErrNotExist
+		}
+		return err
+	}
+	return nil
+}
+
 // replaceSetElementsViaFile atomically replaces the full contents of a set by
 // emitting `flush set` followed by batched `add element` into ONE `nft -f`
 // transaction. The flush is the FIRST statement inside the loaded file — never a

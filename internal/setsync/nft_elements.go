@@ -705,6 +705,16 @@ func (m *NFTManager) AddCIDRElements(set *nftables.Set, cidrs []string) error {
 	return err
 }
 
+// DeleteSetElementExact removes one element; an element that is not in the set is
+// os.ErrNotExist (v1.236 F7, the unban path). Interval sets and CIDRs go through the nft CLI
+// without the bulk path's "ignore not found".
+func (m *NFTManager) DeleteSetElementExact(set *nftables.Set, element string) error {
+	if !set.Interval && !strings.Contains(element, "/") {
+		return m.DeleteSetElements(set, []string{element})
+	}
+	return nftDeleteElementExact(nftFamily(set.Table.Family == nftables.TableFamilyIPv4), set.Table.Name, set.Name, element)
+}
+
 // AddCIDRElementsWithStats adds CIDR elements to an interval set and returns merge statistics
 func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string) (*MergeStats, error) {
 	if len(cidrs) == 0 {

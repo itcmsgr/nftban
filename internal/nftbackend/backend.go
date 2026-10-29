@@ -519,7 +519,9 @@ func (b *Backend) Unban(ctx context.Context, req UnbanRequest) (*UnbanResult, er
 		intervalSet = b.setBlacklistIPv4
 	}
 	if intervalSet != nil {
-		err := b.nft.DeleteSetElements(intervalSet, []string{req.IP})
+		// v1.236 F7: exact delete — the bulk path ignores "does not exist", so an absent
+		// element was reported as removed.
+		err := b.nft.DeleteSetElementExact(intervalSet, req.IP)
 		if err == nil {
 			if removedFrom == "" {
 				if isIPv6 {
