@@ -2248,7 +2248,11 @@ _nft_fragment_render_http_botguard_jump_held() {
         # position (after the SYN-rate accept, where it never saw a new connection) is removed
         # and re-inserted, so an upgraded host is corrected the next time BotGuard is applied.
         local _bg_rules _bg_j _bg_a _bg_h
-        _bg_rules=$(nft -a list chain ${table_fam} input 2>/dev/null || true)
+        if ! _bg_rules=$(nft -a list chain ${table_fam} input 2>/dev/null); then
+            # UNKNOWN is not "no jump" (nft parser contract): leave the jump as it is.
+            echo "ERROR: cannot read ${table_fam} input — BotGuard jump not changed" >&2
+            continue
+        fi
         _bg_j=$(grep -n "jump ${chain}" <<<"$_bg_rules" | head -1 | cut -d: -f1 || true)
         _bg_a=$(grep -n 'NFTBAN_ANCHOR:ANCHOR_DETECT' <<<"$_bg_rules" | head -1 | cut -d: -f1 || true)
         if [[ -n "$_bg_j" ]]; then

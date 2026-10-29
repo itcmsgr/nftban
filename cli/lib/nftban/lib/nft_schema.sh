@@ -1371,13 +1371,11 @@ nftban_nft_validate_named_counters() {
     done
 
     # IPv4-only counters (no IPv6 twin by design: campaign enforcement is a /24 IPv4 set).
-    local counter_name
-    for counter_name in input_campaign_prefix_drop; do
-        if ! nft list counter ip nftban "$counter_name" &>/dev/null; then
-            echo "WARNING: ip nftban: named counter ${counter_name} missing (consider 'nftban firewall rebuild')" >&2
-            ((warnings++)) || true
-        fi
-    done
+    local counter_name=input_campaign_prefix_drop
+    if ! nft list counter ip nftban "$counter_name" &>/dev/null; then
+        echo "WARNING: ip nftban: named counter ${counter_name} missing (consider 'nftban firewall rebuild')" >&2
+        ((warnings++)) || true
+    fi
 
     return 0
 }

@@ -528,14 +528,20 @@ _nftban_ddos_suricata_block_rule() {
     local comment="DDoS Suricata blocked" listing handles anchor_h rule_line anchor_line frag rc=0
 
     # shellcheck disable=SC2086 # table is "<family> <name>"
-    if ! listing=$(timeout 10s nft -a list chain $table input 2>/dev/null); then
-        # shellcheck disable=SC2086
-        if [[ "$action" == "remove" ]] && ! timeout 10s nft list table $table &>/dev/null; then
-            return 0 # no nftban table: no rule
+    local nerr
+    nerr=$(mktemp) || return 1
+    if ! listing=$(timeout 10s nft -a list chain $table input 2>"$nerr"); then
+        # Only nft's own "No such file or directory" (no table/chain) means there is no rule
+        # to remove; any other failure is UNKNOWN and refused (nft parser contract).
+        if [[ "$action" == "remove" ]] && grep -q "No such file or directory" "$nerr"; then
+            rm -f "$nerr"
+            return 0
         fi
-        echo "  ERROR: cannot read ${table} input" >&2
+        echo "  ERROR: cannot read ${table} input: $(head -c 200 "$nerr")" >&2
+        rm -f "$nerr"
         return 1
     fi
+    rm -f "$nerr"
     handles=$(awk -v c="comment \"${comment}\"" 'index($0, c) {print $NF}' <<<"$listing")
     anchor_h=$(awk '/NFTBAN_ANCHOR:ANCHOR_BAN"/ {print $NF; exit}' <<<"$listing")
 

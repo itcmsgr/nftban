@@ -246,6 +246,19 @@ func phaseDetect(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	// v1.235 row 486: stored master switch + per-boot emergency bypass, once per run.
 	resolveLifecycleMode(exec, pd, log)
 
+	// v1.235 K2/K2-c (owner 2026-10-08): an INVALID or UNKNOWN master switch is refused HERE,
+	// before any installer mutation (the package pre-install check normally stopped the
+	// transaction already; this covers a switch that became unusable after it). The later
+	// phases keep their own no-change branches as defence in depth.
+	// v1.236: refused BEFORE the detections below. It sat at the end of this phase, so on a
+	// host where SSH detection fails (no sshd listener, no state file) the run ended
+	// FAILED_SSH_UNKNOWN and the real cause, the switch, was not the reported state.
+	if pd.switchInvalid {
+		reason := pd.skipReason()
+		log.Error("preflight: %s", reason)
+		return sf.Transition(state.StateFailedConfigInvalid, state.PhaseDetect, reason)
+	}
+
 	// 1. Detect SSH port(s). v1.125 R-1: multi-port-aware — captures the
 	// full list of sshd listener ports (e.g. dns2-class hosts on :22 + :55000)
 	// and the primary port (SSH_CLIENT-aware: prefers the port the operator's
@@ -366,16 +379,6 @@ func phaseDetect(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	if err := preflight.EnsureMinDiskFree(stateDir, preflight.MinDiskFreeBytes()); err != nil {
 		log.Error("preflight: %v", err)
 		return sf.Transition(state.StateFailedPreflightDiskSpace, state.PhaseDetect, err.Error())
-	}
-
-	// v1.235 K2/K2-c (owner 2026-10-08): an INVALID or UNKNOWN master switch is refused HERE,
-	// before any installer mutation (the package pre-install check normally stopped the
-	// transaction already; this covers a switch that became unusable after it). The later
-	// phases keep their own no-change branches as defence in depth.
-	if pd.switchInvalid {
-		reason := pd.skipReason()
-		log.Error("preflight: %s", reason)
-		return sf.Transition(state.StateFailedConfigInvalid, state.PhaseDetect, reason)
 	}
 
 	log.PhaseEnd("Detect")

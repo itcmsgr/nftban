@@ -57,10 +57,10 @@ reset() { nftban_botscan_init_state; _BS_CMP_SITE="site.log"; : > "$BOTSCAN_BATC
 # Campaign fixture: 25 distinct sources, 4 per /24 in 5 nets (45.33.40-44), plus 5 single-source
 # /24s (45.33.50-54) and 2 IPv6 sources; 3 requests each.
 campaign() {
-    local n h i
-    for n in 40 41 42 43 44; do for h in 1 2 3 4; do for i in 1 2 3; do observe "45.33.$n.$h" "$DEEP"; done; done; done
-    for n in 50 51 52 53 54; do for i in 1 2 3; do observe "45.33.$n.9" "$DEEP"; done; done
-    for i in 1 2 3; do observe "2a01:4f8:c0c:1234::7" "$DEEP"; observe "2a01:4f8:c0c:5678::9" "$DEEP"; done
+    local n h
+    for n in 40 41 42 43 44; do for h in 1 2 3 4; do for _ in 1 2 3; do observe "45.33.$n.$h" "$DEEP"; done; done; done
+    for n in 50 51 52 53 54; do for _ in 1 2 3; do observe "45.33.$n.9" "$DEEP"; done; done
+    for _ in 1 2 3; do observe "2a01:4f8:c0c:1234::7" "$DEEP"; observe "2a01:4f8:c0c:5678::9" "$DEEP"; done
 }
 
 # --- T1: counting per site, /24 and IPv6 address ---
@@ -106,7 +106,7 @@ grep -q 'enforcement=withheld prefix_signals=0 member_signals=0' "$tmp/eval.out"
 echo "PASS T6: without pressure the campaign is reported and nothing is signalled"
 
 # --- T7: below the site thresholds nothing is a campaign ---
-reset; for i in 1 2 3; do observe 45.33.40.1 "$DEEP"; observe 45.33.40.2 "$DEEP"; observe 45.33.40.3 "$DEEP"; done
+reset; for _ in 1 2 3; do observe 45.33.40.1 "$DEEP"; observe 45.33.40.2 "$DEEP"; observe 45.33.40.3 "$DEEP"; done
 nftban_botscan_campaign_eval HIGH > "$tmp/eval.out"
 grep -q BOTSCAN_CAMPAIGN "$tmp/eval.out" && fail "T7 a 3-source burst was a campaign"
 [[ ! -s "$BOTSCAN_BATCH_SIGNAL_FILE" ]] || fail "T7 signals written"
@@ -121,7 +121,7 @@ grep -q '45.33.43.0/24\|45.33.44.0/24' "$BOTSCAN_BATCH_SIGNAL_FILE" && fail "T8 
 echo "PASS T8: overflow reported; only fully tracked /24s can be signalled"
 
 # --- T9: a /24 holding a crawler claim that is not proven false is kept out ---
-reset; campaign; _BOTSCAN_IP_CRAWLER_CLAIM["45.33.41.2"]="googlebot"
+reset; campaign; claim_ip="45.33.41.2"; _BOTSCAN_IP_CRAWLER_CLAIM["$claim_ip"]="googlebot"
 nftban_botscan_campaign_eval HIGH > "$tmp/eval.out"
 grep -q '45.33.41.0/24' "$BOTSCAN_BATCH_SIGNAL_FILE" && fail "T9 a crawler-claim /24 was signalled"
 grep -q 'crawler_networks_kept=1' "$tmp/eval.out" || fail "T9 kept network not reported"

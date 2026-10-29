@@ -64,8 +64,8 @@ cli/lib/nftban/lib/nftban_immutable_owned.sh	1
 cli/lib/nftban/lib/nftban_panel_common.sh	1
 cli/lib/nftban/lib/nftban_panel_directadmin.sh	2
 cli/lib/nftban/lib/nftban_pro.sh	1
-cli/lib/nftban/lib/nft_fragment.sh	22
-cli/lib/nftban/lib/nft_schema.sh	31
+cli/lib/nftban/lib/nft_fragment.sh	23
+cli/lib/nftban/lib/nft_schema.sh	32
 cli/lib/nftban/lib/service_control.sh	3
 cli/lib/nftban/lib/whitelist_members.sh	1
 internal/installer/authority/classify.go	1
@@ -84,7 +84,7 @@ internal/metrics/evidence_sets.go	2
 internal/metrics/rule_counters.go	3
 internal/nftbackend/backend.go	2
 internal/rulefp/baseline.go	2
-internal/ruleset/kernel.go	1
+internal/ruleset/kernel.go	2
 internal/ruleset/modules.go	1
 internal/validator/module_health.go	2
 internal/validator/nftjson.go	1
