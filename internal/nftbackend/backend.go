@@ -442,6 +442,9 @@ type UnbanResult struct {
 	IP      string
 	Set     string
 	Message string
+	// Removed reports whether an element was actually deleted (v1.236 F7): Success alone
+	// is also true for "was not in the blocklist".
+	Removed bool
 }
 
 // Unban removes an IP from all blacklist sets (hash + interval)
@@ -491,7 +494,9 @@ func (b *Backend) Unban(ctx context.Context, req UnbanRequest) (*UnbanResult, er
 	} else {
 		manualSet = b.setBlacklistManualIPv4
 	}
-	if manualSet != nil {
+	// The manual sets are hash sets of single addresses; a CIDR lives only in the interval
+	// set (v1.236 F7: a CIDR sent to the hash set could fail before the interval set was tried).
+	if manualSet != nil && ip != nil {
 		err := b.nft.DeleteSetElements(manualSet, []string{req.IP})
 		if err == nil {
 			if isIPv6 {
@@ -555,6 +560,7 @@ func (b *Backend) Unban(ctx context.Context, req UnbanRequest) (*UnbanResult, er
 		IP:      req.IP,
 		Set:     removedFrom,
 		Message: fmt.Sprintf("removed from %s %s", tableName, removedFrom),
+		Removed: true,
 	}, nil
 }
 

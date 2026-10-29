@@ -368,7 +368,7 @@ func (d *Daemon) handleUnbanRequest(params map[string]any) SocketResponse {
 		Data: map[string]any{
 			"ip":      ip,
 			"set":     result.Set,
-			"status":  "unbanned",
+			"status":  unbanStatus(result.Removed),
 			"message": result.Message,
 		},
 	}
@@ -537,4 +537,13 @@ func (d *Daemon) handlePermanentBanStatsRequest() SocketResponse {
 			"evictable": evictable,
 		},
 	}
+}
+
+// unbanStatus is the unban answer's status: "unbanned" only when an element was deleted
+// (v1.236 F7: "not_banned" was reported as "unbanned").
+func unbanStatus(removed bool) string {
+	if removed {
+		return "unbanned"
+	}
+	return "not_banned"
 }
