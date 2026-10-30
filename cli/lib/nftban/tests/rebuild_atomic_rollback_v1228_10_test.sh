@@ -47,6 +47,10 @@ echo "=== rebuild_atomic_rollback_v1228_10 ==="
 [[ -f "$SRC" ]] || { echo "  FATAL: $SRC not found"; exit 2; }
 
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
+# v1.236: the extracted code writes through the write boundary; load the real helper, sandboxed.
+export NFTBAN_RUN_DIR="$WORK/run"
+# shellcheck source=/dev/null
+source "$(dirname "$SRC")/../lib/nft_writers.sh"
 
 FN="$WORK/fn.sh"
 awk '/^_rebuild_rollback\(\) \{/{f=1} f{print} f&&/^\}$/{exit}' "$SRC" > "$FN"

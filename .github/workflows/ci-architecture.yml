@@ -46,7 +46,9 @@ permissions:
 jobs:
   architecture-check:
     name: Policy Gates
-    runs-on: ubuntu-latest
+    # v1.236: pinned. ubuntu-latest moved to 26.04 (uutils coreutils); four ci-bash tests fail there (GNU/uutils
+    # compatibility unconfirmed, tracked separately). The pin is the CI environment only.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -595,6 +597,20 @@ jobs:
           printf '%s\n' "$output"
           if [ "$rc" -ne 0 ]; then
             echo "::error::nft probe authority guard failed (rc=$rc) — use nftban_nft_probe_table/_set; see scripts/ci/nft-probe-debt-baseline.txt"
+            exit "$rc"
+          fi
+
+      # v1.236: every nft write outside nftband holds the write boundary (nft_writers.lock
+      # EXCLUSIVE). B-1 converted files carry no raw write; B-2 ratchets the rest.
+      - name: Check nft write boundary B-1/B-2/B-3 (v1.236, BLOCKING)
+        run: |
+          set +e
+          output="$(./scripts/ci/check-nft-write-boundary.sh 2>&1)"
+          rc=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::nft write boundary guard failed (rc=$rc) — use nftban_nft_write; see scripts/ci/nft-write-boundary-baseline.txt"
             exit "$rc"
           fi
 

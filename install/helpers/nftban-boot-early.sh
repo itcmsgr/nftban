@@ -154,6 +154,9 @@ mode_bypass_guard() {
     grep -qx 'table ip6 nftban' <<<"$tables" && found="${found:+$found }ip6"
     [[ -n "$found" ]] || return 0      # guarantee held; primary record stands
     local fam failed=""
+    # Runs in early boot, before nftband and before any firewall lane, so no write can overlap
+    # it; and the bypass removal must never depend on a lock (a lock failure would silently
+    # defeat the operator's bypass).  nftban:outside-boundary
     for fam in $found; do nft delete table "$fam" nftban 2>/dev/null || failed="${failed:+$failed }$fam"; done
     if [[ -z "$failed" ]]; then
         record backstop-removed "NFTBan tables ($found) WERE loaded during this bypass boot and were removed"

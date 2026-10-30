@@ -10,11 +10,14 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/installer/state"
+	"github.com/itcmsgr/nftban/internal/nftlock"
 	nftsync "github.com/itcmsgr/nftban/internal/setsync"
 )
 
@@ -59,4 +62,16 @@ func installWriteGate(in state.AuthorityInputs) {
 		}
 		return nil
 	}
+
+	// v1.236 (design V1236_STAGE2_DESIGN_DRAFT.md §9.1a): every kernel write of this process
+	// also runs inside the inner write boundary, so a firewall replacement (_fw_atomic_load,
+	// LOCK_EX on nft_writers.lock) can read the kernel and commit with no daemon write in
+	// between. A write that waits longer than NFTBAN_NFT_WRITE_WAIT (default 30 s) fails busy.
+	wait := 30 * time.Second
+	if v, err := strconv.Atoi(os.Getenv("NFTBAN_NFT_WRITE_WAIT")); err == nil && v > 0 {
+		wait = time.Duration(v) * time.Second
+	}
+	boundary := nftlock.NewBoundary(wait)
+	nftsync.WriteSection = boundary.Begin
+	nftsync.SectionLock = boundary.ChildLock
 }

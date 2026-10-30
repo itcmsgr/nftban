@@ -89,7 +89,7 @@ echo "=== AUTH-1: real ddos penalty add routes via IPC, direct only under emerge
 check "real code calls nft_ipc_add_element in penalty path" \
   "grep -q 'nft_ipc_add_element \"\${table_fam}\" \"\${target_set}\"' '$DDOS'"
 check "direct nft add is guarded by NFTBAN_EMERGENCY_MODE" \
-  "grep -A4 'NFTBAN_EMERGENCY_MODE:-0' '$DDOS' | grep -q 'nft add element'"
+  "grep -A4 'NFTBAN_EMERGENCY_MODE:-0' '$DDOS' | grep -qE '(^|[^_a-z])(nft|nftban_nft_write) add element'"
 check "skip-log present when IPC down + emergency off" \
   "grep -q 'NFTBAN_EMERGENCY_MODE=0' '$DDOS'"
 

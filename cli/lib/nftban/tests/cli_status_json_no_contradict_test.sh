@@ -150,8 +150,11 @@ fi
 # --- host isolation guard (TEST-HARNESS-MUTATES-LIVE-HOST-STATE-WHEN-RUN-AS-ROOT) ---
 if [[ "$(_hg_state "${_HG_PATHS[@]}")" == "$_HG_BEFORE" ]]; then ok "HOST-GUARD host config paths unchanged (${_HG_PATHS[*]})"
 else no "HOST-GUARD host config CHANGED by this test" "$(_hg_state "${_HG_PATHS[@]}" | tr '\n' ';')"; fi
-if [[ -e "$_HI/data/state/ssh_port_active.state" ]]; then ok "HOST-GUARD ssh_port_active.state landed in the sandbox"
-else no "HOST-GUARD ssh_port_active.state not in the sandbox" "redirection lost?"; fi
+# v1.236 D3: `status` is a read and writes no SSH-port state any more, so the file that
+# once proved the sandbox redirection is never written; the host-path check above is the
+# guard. Its absence here is the D3 contract (a write would also show up as a host change).
+if [[ ! -e "$_HI/data/state/ssh_port_active.state" ]]; then ok "HOST-GUARD status wrote no ssh_port_active.state (a read writes nothing, v1.236 D3)"
+else no "HOST-GUARD status wrote ssh_port_active.state" "a read must not write SSH-port state (v1.236 D3)"; fi
 echo "=========================================================="
 echo "RESULTS: PASS=$PASS FAIL=$FAIL"
 if (( FAIL > 0 )); then

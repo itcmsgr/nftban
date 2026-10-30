@@ -31,6 +31,10 @@
 
 [[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
 
+# v1.236: emergency direct nft writes go through the write boundary.
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+source "${BASH_SOURCE[0]%/*}/../lib/nft_writers.sh"
+
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
@@ -244,13 +248,20 @@ nftban_whitelist_add_ip() {
     # v1.39.0: Check both blacklist_manual_* (hash) and blacklist_* (interval) sets
     # v1.39.0: Use nftban-core unban to remove from BOTH nft sets AND blacklist conf files
     #          (nft-only delete was insufficient — daemon reconciliation re-adds from conf)
-    local _bl_set _is_banned=false
+    # v1.236 F3b: an interval set answers `get element` with the element that CONTAINS the
+    # address. Only the address itself (or its /32, /128) is "its ban"; a covering network
+    # stays banned (the whitelist exempts the address) and is reported as such.
+    local _bl_set _is_banned=false _got _cover="" _exact=true
     for _bl_set in "$blacklist_manual_set" "$blacklist_set"; do
-        if nft get element ${table} ${_bl_set} "{ $ip }" &>/dev/null; then
+        if _got=$(nft get element ${table} ${_bl_set} "{ $ip }" 2>/dev/null); then
             _is_banned=true
+            [[ "$_got" =~ elements\ =\ \{\ ([^\ ,\}]+) ]] && _cover="${BASH_REMATCH[1]}"
             break
         fi
     done
+    if [[ -n "$_cover" && "$_cover" != "$ip" && "$_cover" != "$ip/32" && "$_cover" != "$ip/128" ]]; then
+        _exact=false
+    fi
     # v1.235 audit K11 (owner 2026-10-08): the meaning is kept: a whitelisted IP loses its
     # NFTBan-managed ban (exact IP; a CIDR or feed entry covering other IPs is never rewritten,
     # the whitelist exempts it). ORDER: the whitelist is added and CONFIRMED in the kernel
@@ -259,10 +270,15 @@ nftban_whitelist_add_ip() {
     if [[ $ipc_mode -eq 0 ]]; then
         if nft_ipc_add_element "$table" "$set_name" "$ip" 2>/dev/null; then
             if nft get element ${table} ${set_name} "{ $ip }" &>/dev/null; then _wl_state="confirmed"; else _wl_state="unconfirmed"; fi
+        elif nft get element ${table} ${set_name} "{ $ip }" &>/dev/null; then
+            # v1.236 F3: the IPC client reports "outcome unknown" (rc 1) when the daemon's
+            # answer is empty or late, although the add may have been applied. The kernel
+            # decides: the entry is there, so it was applied.
+            _wl_state="confirmed"
         fi
     else
         # Emergency direct nft access
-        if nft add element ${table} ${set_name} "{ $ip }" 2>/dev/null \
+        if nftban_nft_write add element ${table} ${set_name} "{ $ip }" 2>/dev/null \
            && nft get element ${table} ${set_name} "{ $ip }" &>/dev/null; then _wl_state="confirmed"; fi
     fi
     if [[ "$_wl_state" == "failed" ]]; then
@@ -277,6 +293,10 @@ nftban_whitelist_add_ip() {
     if [[ "$_is_banned" == "true" ]]; then
         if [[ "$_wl_state" != "confirmed" ]]; then
             echo "  Ban KEPT: the whitelist entry could not be confirmed in the kernel, so the existing ban was not removed." >&2
+            return 0
+        fi
+        if [[ "$_exact" != "true" ]]; then
+            echo "  $ip lies inside the banned network $_cover: the whitelist exempts $ip; the ban on $_cover stays (remove it with 'nftban unban $_cover')."
             return 0
         fi
         local _core_bin="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
@@ -348,7 +368,7 @@ nftban_whitelist_remove_ip() {
         fi
     else
         # Emergency direct nft access
-        if nft delete element ${table} ${set_name} "{ $ip }" 2>/dev/null; then
+        if nftban_nft_write delete element ${table} ${set_name} "{ $ip }" 2>/dev/null; then
             echo "Removed $ip from $family whitelist (emergency direct access)"
             return 0
         else

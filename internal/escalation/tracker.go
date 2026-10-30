@@ -39,6 +39,17 @@ type BanEntry struct {
 	Jail      string // BLC-1 SOURCE field
 	Reason    string
 	Status    string // BLC-1 STATUS field (BANNED/UNBANNED/RESYNC)
+	BanID     string // BLC-1 BAN_ID field ("" for rows written by LogTempBan)
+}
+
+// escalationEchoReasonPrefix marks the rows LogTempBan wrote for the escalation paths
+// before v1.236: reason "temp ban from <source>" with no BAN_ID. Each echoed a ban
+// whose own BANNED row was already in the log (BUG-ESCALATION-TEMP-BAN-WRITES-TWO-BANNED-ROWS).
+const escalationEchoReasonPrefix = "temp ban from "
+
+// isEscalationEcho reports a pre-v1.236 echo row, which is not a ban of its own.
+func isEscalationEcho(e *BanEntry) bool {
+	return e.BanID == "" && strings.HasPrefix(e.Reason, escalationEchoReasonPrefix)
 }
 
 // LogTempBan logs a temporary ban to the tracking file for escalation tracking.
@@ -71,6 +82,11 @@ type BanEntry struct {
 // the convergence is the whole point).
 //
 // (Scope: AUDIT_190_LIFECYCLE/V127_FULL_UX_CORRECTION_UMBRELLA_SCOPE.md UX-3 item 2.4)
+//
+// ⛔ v1.236: NO escalation path may call this. Both former callers wrote a SECOND
+// BANNED row for a ban that already had one, which halved the persistent-offender
+// threshold (BUG-ESCALATION-TEMP-BAN-WRITES-TWO-BANNED-ROWS); CountRecentBans now
+// skips such rows. A ban is logged once, by the code that applied it.
 func LogTempBan(logPath, ip, jail, reason string) error {
 	_ = logPath // intentionally unused; banlog.LogBanFull routes to canonical path
 	// Map jail -> banlog source via banlog.normalizeSource (called inside
@@ -109,7 +125,9 @@ func CountRecentBans(logPath, ip string, period time.Duration) (int, error) {
 		// Count only BANNED events for this IP after the cutoff time.
 		// (BLC-1 also logs UNBANNED/RESYNC rows for the same IP — those are
 		// not bans and must not inflate the repeat-offender count.)
-		if entry.IP == ip && entry.Status == banlog.StatusBanned && entry.Timestamp.After(cutoff) {
+		// v1.236: pre-v1.236 escalation echo rows are skipped too, so history written
+		// before the upgrade does not keep the threshold halved for one period.
+		if entry.IP == ip && entry.Status == banlog.StatusBanned && entry.Timestamp.After(cutoff) && !isEscalationEcho(entry) {
 			count++
 		}
 	}
@@ -141,9 +159,12 @@ func parseBanEntry(line string) (*BanEntry, error) {
 		return nil, fmt.Errorf("invalid BLC-1 timestamp %q %q: %w", fields[0], fields[1], err)
 	}
 
-	reason := ""
+	reason, banID := "", ""
 	if len(fields) > 6 {
 		reason = fields[6]
+	}
+	if len(fields) > 7 {
+		banID = fields[7]
 	}
 
 	return &BanEntry{
@@ -152,6 +173,7 @@ func parseBanEntry(line string) (*BanEntry, error) {
 		Jail:      fields[2],
 		Reason:    reason,
 		Status:    fields[5],
+		BanID:     banID,
 	}, nil
 }
 

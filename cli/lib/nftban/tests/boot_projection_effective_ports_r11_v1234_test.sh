@@ -180,7 +180,8 @@ echo "== B4  wiring: rebuild refreshes after the atomic load; failure is never s
 CORE=$(awk '/^_firewall_rebuild_core\(\) \{/,/^\}/' "$CMD")
 # First matching line number, read in full (no early-closing consumer in a pipe).
 first_line(){ awk -v re="$1" '$0 ~ re { print NR; exit }' <<<"$CORE"; }
-l_load=$(first_line 'if ! nft[[:space:]]+-f "[$]load_conf"')
+# v1.236: the step-5 load is the one-transaction _fw_atomic_load (it was `if ! nft -f`).
+l_load=$(first_line '(if ! nft[[:space:]]+-f|_fw_atomic_load) "[$]load_conf"')
 l_ref=$(first_line '_firewall_rebuild_refresh_boot_projection ')
 l_post=$(first_line 'post_state=[$][(]_rebuild_get_validator_state[)]')
 l_gate=$(first_line '_boot_proj_state:-}" != "refreshed"')

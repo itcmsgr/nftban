@@ -43,6 +43,10 @@ echo "=== v1.235 A1: scoped firewall restore ==="
 [[ -f "$FW" ]] || { echo "  NOT_EXECUTED: subject not found: $FW"; echo "RESULT: NOT_EXECUTED"; exit 3; }
 
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
+# v1.236: the extracted code writes through the write boundary; load the real helper, sandboxed.
+export NFTBAN_RUN_DIR="$WORK/run"
+# shellcheck source=/dev/null
+source "$(dirname "$FW")/../lib/nft_writers.sh"
 
 # ---- extract the REAL functions (whole bodies, by brace-free top-level markers) ----
 FNS="$WORK/fns.sh"

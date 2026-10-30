@@ -55,6 +55,9 @@ source "$ROOT/cli/lib/nftban/lib/nft_fragment.sh" || { bad "SOURCE nft_fragment.
 # production functions (no fixture copies of their output).
 # ---------------------------------------------------------------------------
 echo "--- STAGE 1: render through production generators ---"
+# v1.236: the BotGuard sets renderer declares only the sets the kernel lacks. Report every
+# set absent so the full fragment renders on any host (CI has no nft; a lab host has them all).
+nft() { return 1; }
 RENDERED=()
 for fn in nft_fragment_render_ddos_classic nft_fragment_render_ddos_prefix \
           nft_fragment_render_http_botguard_sets nft_fragment_render_http_botguard; do
@@ -66,6 +69,7 @@ for fn in nft_fragment_render_ddos_classic nft_fragment_render_ddos_prefix \
         bad "RENDER FAILED: $fn"
     fi
 done
+unset -f nft   # STAGE 3 parses under the real nft
 
 # ---------------------------------------------------------------------------
 # Assertion helpers operate on a FILE so the discrimination control below can

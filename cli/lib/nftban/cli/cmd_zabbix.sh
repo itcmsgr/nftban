@@ -28,6 +28,10 @@
 
 set -Eeuo pipefail
 
+# v1.236: nft rule writes go through the write boundary.
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+source "${BASH_SOURCE[0]%/*}/../lib/nft_writers.sh"
+
 # =============================================================================
 # CONFIGURATION LOADING (standard pattern)
 # =============================================================================
@@ -163,12 +167,12 @@ _zabbix_firewall_allow() {
 
     # Add outbound rule to nftban output chain
     # Use handle-based insertion for proper priority
-    if nft add rule ${NFTBAN_TABLE_IPV4} output ip daddr "$server_ip" tcp dport "$port" accept comment \"zabbix-export\" 2>/dev/null; then
+    if nftban_nft_write add rule ${NFTBAN_TABLE_IPV4} output ip daddr "$server_ip" tcp dport "$port" accept comment \"zabbix-export\" 2>/dev/null; then
         return 0
     fi
 
     # Fallback: Try ip family if inet doesn't exist
-    if nft add rule ip nftban output ip daddr "$server_ip" tcp dport "$port" accept comment \"zabbix-export\" 2>/dev/null; then
+    if nftban_nft_write add rule ip nftban output ip daddr "$server_ip" tcp dport "$port" accept comment \"zabbix-export\" 2>/dev/null; then
         return 0
     fi
 
@@ -190,19 +194,24 @@ _zabbix_firewall_remove() {
 
     [[ -z "$server_ip" ]] && return 1
 
-    # Find and delete rule with zabbix-export comment
+    # Find and delete rule with zabbix-export comment. v1.236: the handle read and the delete
+    # run in ONE write-boundary section, so a replacement cannot renumber handles in between.
     local handle
+    nftban_writers_acquire || return 1
     handle=$(nft -a list chain "${NFTBAN_TABLE_IPV4}" output 2>/dev/null | grep "zabbix-export" | grep -oP 'handle \K\d+')
 
-    if [[ -n "$handle" ]]; then
-        nft delete rule "${NFTBAN_TABLE_IPV4}" output handle "$handle" 2>/dev/null && return 0
+    if [[ -n "$handle" ]] && nft delete rule "${NFTBAN_TABLE_IPV4}" output handle "$handle" 2>/dev/null; then # nftban:held
+        nftban_writers_release
+        return 0
     fi
 
     # Try ip family
     handle=$(nft -a list chain ip nftban output 2>/dev/null | grep "zabbix-export" | grep -oP 'handle \K\d+')
-    if [[ -n "$handle" ]]; then
-        nft delete rule ip nftban output handle "$handle" 2>/dev/null && return 0
+    if [[ -n "$handle" ]] && nft delete rule ip nftban output handle "$handle" 2>/dev/null; then # nftban:held
+        nftban_writers_release
+        return 0
     fi
+    nftban_writers_release
 
     return 1
 }

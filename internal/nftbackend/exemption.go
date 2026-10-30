@@ -32,6 +32,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/itcmsgr/nftban/internal/netutil"
 	"github.com/itcmsgr/nftban/internal/safety"
 	"github.com/itcmsgr/nftban/internal/whitelist"
 )
@@ -52,6 +53,12 @@ type exemptResolver struct {
 	loadedAt time.Time
 	exact    map[string]struct{} // canonical single-IP strings
 	prefixes []netip.Prefix      // CIDR ranges (incl. loopback)
+
+	// sourceErr: the errors the latest Refresh's required sources returned (whitelist
+	// load, system-IP detection); "" = that refresh read every required source. Published
+	// with the snapshot under mu. A valid empty source is not an error. Only AdmitPrefix
+	// reads it: IsExempt, SubtractExempt and the per-IP paths keep their fail-safe.
+	sourceErr string
 }
 
 func newExemptResolver(configDir, scannerFile string) *exemptResolver {
@@ -66,6 +73,23 @@ func newExemptResolver(configDir, scannerFile string) *exemptResolver {
 		ttl:         30 * time.Second,
 		exact:       map[string]struct{}{},
 	}
+}
+
+// Exemption is the never-ban authority (the same resolver Ban() consults) for code that
+// has no Backend: v1.236 `nftban-core ruleset content`, which renders the set contents of
+// a reload/rebuild without the daemon.
+type Exemption interface {
+	IsExempt(ip string) (bool, string)
+	SubtractExempt(cidrs []string) (kept []string, removed int, omitted []string)
+}
+
+// NewExemption returns a loaded never-ban authority for configDir. Unlike the daemon's
+// resolver it is refreshed once, up front (a one-shot command has no startup path to
+// protect), and publishes no scanner file.
+func NewExemption(configDir string) Exemption {
+	r := newExemptResolver(configDir, "")
+	r.Refresh()
+	return r
 }
 
 // canonPrefix returns p in the SAME canonical identity form the exact keys use.
@@ -197,22 +221,7 @@ func (r *exemptResolver) SubtractExempt(cidrs []string) (kept []string, removed 
 	if r == nil || len(cidrs) == 0 {
 		return cidrs, 0, nil
 	}
-	r.maybeRefresh()
-
-	r.mu.RLock()
-	loaded := r.loaded
-	holes := make([]netip.Prefix, 0, len(r.exact)+len(r.prefixes))
-	for ip := range r.exact {
-		a, err := netip.ParseAddr(ip)
-		if err != nil {
-			continue
-		}
-		a = a.Unmap()
-		holes = append(holes, netip.PrefixFrom(a, a.BitLen()))
-	}
-	holes = append(holes, r.prefixes...)
-	r.mu.RUnlock()
-
+	holes, loaded, _ := r.holes() // source errors do not change the feed path's fail-safe
 	if !loaded || len(holes) == 0 {
 		return cidrs, 0, nil
 	}
@@ -242,6 +251,55 @@ func (r *exemptResolver) SubtractExempt(cidrs []string) (kept []string, removed 
 		}
 	}
 	return kept, removed, omitted
+}
+
+// holes is the exempt snapshot as prefixes (each exact address as a host prefix), whether
+// it has loaded, and the source errors of the refresh that published it (read together,
+// under one lock). Shared by SubtractExempt and AdmitPrefix: one snapshot, one shape.
+func (r *exemptResolver) holes() ([]netip.Prefix, bool, string) {
+	r.maybeRefresh()
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	holes := make([]netip.Prefix, 0, len(r.exact)+len(r.prefixes))
+	for ip := range r.exact {
+		a, err := netip.ParseAddr(ip)
+		if err != nil {
+			continue
+		}
+		a = a.Unmap()
+		holes = append(holes, netip.PrefixFrom(a, a.BitLen()))
+	}
+	return append(holes, r.prefixes...), r.loaded, r.sourceErr
+}
+
+// AdmitPrefix is SubtractExempt's question with a different remedy, for an AUTOMATIC prefix
+// escalation (BotScan HTTP campaign): a prefix that touches exempt space is refused WHOLE
+// instead of split; an unloaded snapshot, or one whose latest refresh could not read a
+// required source, refuses instead of passing through.
+func (r *exemptResolver) AdmitPrefix(raw string) (bool, string) {
+	p, _, ok := parseElementPrefix(raw)
+	if !ok {
+		return false, "unparseable"
+	}
+	p = p.Masked()
+	if reject, why := netutil.EnforcementClassReject(p.Addr().String()); reject {
+		return false, "non-bannable-class:" + why
+	}
+	if r == nil {
+		return false, "exemption-unavailable"
+	}
+	holes, loaded, sourceErr := r.holes()
+	if !loaded {
+		return false, "exemption-unavailable"
+	}
+	if sourceErr != "" {
+		return false, "exemption-incomplete: " + sourceErr
+	}
+	if anyHoleCovers(p, holes) || anyHoleInside(p, holes) {
+		return false, "overlaps-exempt"
+	}
+	return true, ""
 }
 
 // parseElementPrefix canonicalises one set element into the identity form the
@@ -392,6 +450,8 @@ func (r *exemptResolver) Refresh() {
 		}
 	}
 
+	var sourceErrs []string // errors the required sources returned in this refresh
+
 	// 1. whitelist.d (operator 99-manual, live-session 00-session, system 00-system) — CIDR-aware.
 	if r.configDir != "" {
 		if v4, v6, err := whitelist.LoadAllWhitelistsTyped(r.configDir); err == nil {
@@ -400,11 +460,17 @@ func (r *exemptResolver) Refresh() {
 					addEntry(e.Value, e.IsCIDR)
 				}
 			}
+		} else {
+			sourceErrs = append(sourceErrs, "whitelist: "+err.Error())
 		}
 	}
 
 	// 2. System IPs that must never be blocked (server/gateway/dns/loopback/current-SSH).
-	if sys, err := safety.DetectSystemIPs(); err == nil && sys != nil {
+	sys, err := safety.DetectSystemIPs()
+	if err != nil {
+		sourceErrs = append(sourceErrs, "system-ips: "+err.Error())
+	}
+	if err == nil && sys != nil {
 		for _, ip := range sys.ServerIPs {
 			addIP(ip)
 		}
@@ -451,6 +517,9 @@ func (r *exemptResolver) Refresh() {
 	} else {
 		r.loadedAt = time.Now() // defer next retry by ttl; keep old snapshot
 	}
+	// Set on EVERY refresh: a failure is not cleared by older entries remaining in use,
+	// and only a refresh that read every required source clears it.
+	r.sourceErr = strings.Join(sourceErrs, "; ")
 	snapExact := r.exact
 	snapPrefixes := r.prefixes
 	r.mu.Unlock()

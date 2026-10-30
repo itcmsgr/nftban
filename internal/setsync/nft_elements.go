@@ -35,6 +35,12 @@ import (
 
 // addSetElementsBatch adds a single batch of IPs or CIDRs
 func (m *NFTManager) addSetElementsBatch(set *nftables.Set, ips []string) error {
+	release, err := BeginWrite()
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {
@@ -146,6 +152,12 @@ func (m *NFTManager) addSetElementsBatch(set *nftables.Set, ips []string) error 
 // The netlink library doesn't properly handle interval markers for single IPs,
 // which can cause corrupted ranges like "1.2.3.4-255.255.255.255".
 func (m *NFTManager) AddIPWithTimeout(set *nftables.Set, ipStr string, timeout time.Duration) error {
+	release, err := BeginWrite()
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {
@@ -241,6 +253,182 @@ func (m *NFTManager) AddIPWithTimeout(set *nftables.Set, ipStr string, timeout t
 	return nil
 }
 
+// upsertConn is the subset of *nftables.Conn the permanent upsert commit uses, so its
+// single-transaction semantics are unit-testable with a recording fake (no kernel, no root).
+type upsertConn interface {
+	SetDeleteElements(s *nftables.Set, vals []nftables.SetElement) error
+	SetAddElements(s *nftables.Set, vals []nftables.SetElement) error
+	Flush() error
+}
+
+// upsertMaxCommits bounds UpsertPermanentElements: the first commit, plus one corrective commit
+// when the verification read shows another writer changed some of the elements meanwhile.
+const upsertMaxCommits = 2
+
+// planPermanentUpsert compares the wanted canonical keys with the set's current elements:
+// absent -> add; present WITH a timeout -> replace (audit H11: a plain add keeps the timeout);
+// present and permanent -> unchanged. Pure, so the decision is unit-tested on its own.
+func planPermanentUpsert(current []nftables.SetElement, want [][]byte) (add, replace [][]byte, unchanged int) {
+	timed := make(map[string]bool, len(current))
+	for _, e := range current {
+		if e.IntervalEnd {
+			continue
+		}
+		timed[string(e.Key)] = e.Timeout > 0 || e.Expires > 0
+	}
+	for _, k := range want {
+		isTimed, present := timed[string(k)]
+		switch {
+		case !present:
+			add = append(add, k)
+		case isTimed:
+			replace = append(replace, k)
+		default:
+			unchanged++
+		}
+	}
+	return add, replace, unchanged
+}
+
+// commitPermanentUpsert applies one plan in ONE transaction on conn: the timed elements are
+// deleted and every add/replace key is added permanent, all queued in replaceAddBatch batches
+// (queueInBatches, shared with ReplaceSetElements) and committed by a single Flush. The kernel
+// applies all of it or none of it: a replaced element is never absent, and no element is
+// committed unless the whole plan is.
+func commitPermanentUpsert(conn upsertConn, set *nftables.Set, add, replace [][]byte) error {
+	els := func(keys [][]byte) []nftables.SetElement {
+		out := make([]nftables.SetElement, len(keys))
+		for i, k := range keys {
+			out[i] = nftables.SetElement{Key: k}
+		}
+		return out
+	}
+	if start, end, err := queueInBatches(set, els(replace), conn.SetDeleteElements); err != nil {
+		return fmt.Errorf("upsert %s: queue delete batch [%d:%d]: %w", set.Name, start, end, err)
+	}
+	if start, end, err := queueInBatches(set, els(append(append([][]byte{}, replace...), add...)), conn.SetAddElements); err != nil {
+		return fmt.Errorf("upsert %s: queue add batch [%d:%d]: %w", set.Name, start, end, err)
+	}
+	if err := conn.Flush(); err != nil {
+		return fmt.Errorf("upsert %s: commit transaction: %w", set.Name, err)
+	}
+	return nil
+}
+
+// UpsertPermanentElements makes every single IP in values a PERMANENT element of the hash set,
+// keeping every OTHER element (it is additive: unlike ReplaceSetElements it never flushes the
+// set, so runtime timed and kernel-only bans survive). v1.236 safety lane stage 1: it replaces the
+// sync's per-IP AddIPWithTimeout(ip, 0) loop (2-3 transactions per IP; ~3200 bans took 15-30 s).
+//
+// Rules shared with ReplaceSetElements: hashSetIsV4 (interval sets refused, family from KeyType)
+// and canonicalHashKey; batching via queueInBatches. Per element, the effect equals
+// AddIPWithTimeout(ip, 0): absent -> added; timed -> replaced in the same transaction (H11);
+// permanent -> unchanged.
+//
+// Each plan commits atomically (commitPermanentUpsert). A verification read follows every commit.
+// If another writer changed wanted elements meanwhile (a timed ban added after our read, an
+// expiry, an unban), one corrective plan is committed; durable blacklist.d intent wins over a
+// concurrent timed ban. A commit the kernel rejects (ENOENT: a timed element expired before the
+// commit; EEXIST) applied NOTHING, so it is re-planned from a fresh read within the same bound.
+//
+// Accounting follows ACKNOWLEDGED commits only, each key counted once, so a retry never counts
+// twice. Converged reports whether the final read showed every wanted key present and permanent;
+// Converged=false with a nil error means "applied, not verified converged" (another writer kept
+// changing them). NOT solved here (stage 2 snapshot boundary): a concurrent unban of a key that
+// is still in blacklist.d is re-added by this sync, exactly as the per-IP loop did.
+func (m *NFTManager) UpsertPermanentElements(set *nftables.Set, values []string) (*SyncStats, error) {
+	release, err := BeginWrite()
+	if err != nil {
+		return &SyncStats{SetName: set.Name, TotalDesired: len(values), Error: err}, err
+	}
+	defer release()
+	return upsertPermanentElements(set, values,
+		func() (setReader, error) { return m.readConn() },
+		func() (upsertConn, error) { return m.txConn() })
+}
+
+// setReader is the subset of *nftables.Conn the upsert reads with (unit-testable).
+type setReader interface {
+	GetSetElements(s *nftables.Set) ([]nftables.SetElement, error)
+}
+
+func upsertPermanentElements(set *nftables.Set, values []string,
+	read func() (setReader, error), tx func() (upsertConn, error)) (*SyncStats, error) {
+	started := time.Now()
+	stats := &SyncStats{SetName: set.Name, TotalDesired: len(values)}
+	done := func(err error) (*SyncStats, error) {
+		stats.Error = err
+		stats.Duration = time.Since(started)
+		return stats, err
+	}
+	isV4, err := hashSetIsV4(set)
+	if err != nil {
+		return done(fmt.Errorf("upsert %s: %w", set.Name, err))
+	}
+	want := make([][]byte, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, v := range values {
+		key, kerr := canonicalHashKey(strings.TrimSpace(v), isV4)
+		if kerr != nil {
+			stats.IPsInvalid++
+			continue
+		}
+		if _, dup := seen[string(key)]; dup {
+			continue
+		}
+		seen[string(key)] = struct{}{}
+		want = append(want, key)
+	}
+
+	counted := make(map[string]struct{}, len(want)) // keys already counted as Added/Replaced
+	commits := 0
+	for first := true; ; first = false {
+		rconn, err := read()
+		if err != nil {
+			return done(err)
+		}
+		current, err := rconn.GetSetElements(set)
+		if err != nil {
+			return done(fmt.Errorf("upsert %s: read set: %w", set.Name, err))
+		}
+		add, replace, unchanged := planPermanentUpsert(current, want)
+		if first {
+			stats.TotalCurrent = len(current)
+			stats.IPsUnchanged = unchanged
+		}
+		if len(add)+len(replace) == 0 {
+			stats.Converged = true
+			return done(nil)
+		}
+		if commits == upsertMaxCommits {
+			return done(nil) // applied what the kernel acknowledged; not verified converged
+		}
+		conn, err := tx()
+		if err != nil {
+			return done(err)
+		}
+		commits++
+		if err := commitPermanentUpsert(conn, set, add, replace); err != nil {
+			if errors.Is(err, os.ErrNotExist) || errors.Is(err, os.ErrExist) {
+				continue // rejected as a whole: nothing applied, re-plan from a fresh read
+			}
+			return done(err)
+		}
+		for _, k := range add {
+			if _, c := counted[string(k)]; !c {
+				counted[string(k)] = struct{}{}
+				stats.IPsAdded++
+			}
+		}
+		for _, k := range replace {
+			if _, c := counted[string(k)]; !c {
+				counted[string(k)] = struct{}{}
+				stats.IPsReplaced++
+			}
+		}
+	}
+}
+
 // addIPWithTimeoutCLI adds a single IP to an interval set using nft CLI
 // This avoids the corrupted interval range bug in netlink library
 func (m *NFTManager) addIPWithTimeoutCLI(set *nftables.Set, ipStr string, timeout time.Duration) error {
@@ -263,7 +451,7 @@ func (m *NFTManager) addIPWithTimeoutCLI(set *nftables.Set, ipStr string, timeou
 	if timeout == 0 {
 		script := fmt.Sprintf("delete element %s %s %s %s\nadd element %s %s %s %s\n",
 			family, set.Table.Name, set.Name, elementStr, family, set.Table.Name, set.Name, elementStr)
-		tmp, err := os.CreateTemp("", "nftban-elemrepl-*.nft")
+		tmp, err := os.CreateTemp(scriptTempDir, "nftban-elemrepl-*.nft")
 		if err != nil {
 			return fmt.Errorf("failed to create temp file: %w", err)
 		}
@@ -290,6 +478,12 @@ func (m *NFTManager) addIPWithTimeoutCLI(set *nftables.Set, ipStr string, timeou
 
 // DeleteSetElements removes IPs from a set (batch operation)
 func (m *NFTManager) DeleteSetElements(set *nftables.Set, ips []string) error {
+	release, err := BeginWrite()
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {
@@ -378,6 +572,12 @@ func (m *NFTManager) GetPortSet(table *nftables.Table, setName string) (*nftable
 // GetOrCreatePortSet creates or gets an existing port set for TCP or UDP
 // Port sets use TypeInetService (uint16) for port numbers
 func (m *NFTManager) GetOrCreatePortSet(table *nftables.Table, setName string) (*nftables.Set, error) {
+	release, err := BeginWrite()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {
@@ -415,6 +615,12 @@ func (m *NFTManager) GetOrCreatePortSet(table *nftables.Table, setName string) (
 
 // AddPortElements adds port numbers to a port set
 func (m *NFTManager) AddPortElements(set *nftables.Set, ports []int) error {
+	release, err := BeginWrite()
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {
@@ -452,6 +658,12 @@ func (m *NFTManager) AddPortElements(set *nftables.Set, ports []int) error {
 // DeletePortElements removes port numbers from a port set
 // Returns nil for "no such file" errors (idempotent - element already doesn't exist)
 func (m *NFTManager) DeletePortElements(set *nftables.Set, ports []int) error {
+	release, err := BeginWrite()
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {
@@ -493,6 +705,16 @@ func (m *NFTManager) AddCIDRElements(set *nftables.Set, cidrs []string) error {
 	return err
 }
 
+// DeleteSetElementExact removes one element; an element that is not in the set is
+// os.ErrNotExist (v1.236 F7, the unban path). Interval sets and CIDRs go through the nft CLI
+// without the bulk path's "ignore not found".
+func (m *NFTManager) DeleteSetElementExact(set *nftables.Set, element string) error {
+	if !set.Interval && !strings.Contains(element, "/") {
+		return m.DeleteSetElements(set, []string{element})
+	}
+	return nftDeleteElementExact(nftFamily(set.Table.Family == nftables.TableFamilyIPv4), set.Table.Name, set.Name, element)
+}
+
 // AddCIDRElementsWithStats adds CIDR elements to an interval set and returns merge statistics
 func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string) (*MergeStats, error) {
 	if len(cidrs) == 0 {
@@ -510,6 +732,49 @@ func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string)
 		return nil, fmt.Errorf("unsupported table family: %v", set.Table.Family)
 	}
 
+	canonicalCIDRs, stats, err := CanonicalCIDRElements(cidrs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Atomically replace the set contents: flush + add in ONE `nft -f`
+	// transaction (V-NFT-SET-REFRESH-ATOMICITY). Previously this flushed via a
+	// standalone `nft flush set` and repopulated in a SEPARATE `nft -f`, leaving
+	// the shared blacklist_* set transiently EMPTY between transactions — the
+	// F-FEED / F-GEO fail-open window where banned IPs were admitted during the
+	// daily feed / weekly geoban refresh. The single-transaction replace closes
+	// it; on nft failure the transaction rolls back and the prior (blocked)
+	// contents are retained (fail-CLOSED).
+	if err := replaceSetElementsViaFile(family, set.Table.Name, set.Name, canonicalCIDRs); err != nil {
+		return nil, err
+	}
+
+	return stats, nil
+}
+
+// ReplaceCIDRUnion replaces an interval blacklist set with exactly these elements — the
+// canonical durable union (CanonicalCIDRElements) plus carried elements already rendered
+// as "<key> timeout <n>s" — in ONE `nft -f` transaction (v1.236, F5/F6). Unlike
+// AddCIDRElementsWithStats it also runs for an empty list: the caller has established that
+// the union is complete, so nothing durable left means the set keeps only what is carried.
+func (m *NFTManager) ReplaceCIDRUnion(set *nftables.Set, elements []string) error {
+	var family string
+	switch set.Table.Family {
+	case nftables.TableFamilyIPv4:
+		family = "ip"
+	case nftables.TableFamilyIPv6:
+		family = "ip6"
+	default:
+		return fmt.Errorf("unsupported table family: %v", set.Table.Family)
+	}
+	return replaceSetElementsViaFile(family, set.Table.Name, set.Name, elements)
+}
+
+// CanonicalCIDRElements validates, deduplicates and merges CIDRs into the element
+// list an interval blacklist set receives (MergeCIDRsSafe also filters bogon and
+// oversized ranges). v1.236: shared by the daemon's set replace above and the
+// ruleset content renderer (internal/ruleset), so both load the same elements.
+func CanonicalCIDRElements(cidrs []string) ([]string, *MergeStats, error) {
 	// Step 1: Validate and deduplicate CIDRs
 	inputCount := len(cidrs)
 	seen := make(map[string]bool, len(cidrs))
@@ -536,7 +801,7 @@ func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string)
 	// MergeCIDRsSafe automatically filters problematic CIDRs (bogon ranges, oversized)
 	canonicalCIDRs, stats, filterStats, err := MergeCIDRsSafe(validCIDRs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to merge CIDRs: %w", err)
+		return nil, nil, fmt.Errorf("failed to merge CIDRs: %w", err)
 	}
 
 	// Log if any CIDRs were filtered (important for troubleshooting feed issues)
@@ -557,19 +822,7 @@ func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string)
 		stats.ReductionPct = float64(stats.OverlapsMerged) / float64(inputCount) * 100.0
 	}
 
-	// Atomically replace the set contents: flush + add in ONE `nft -f`
-	// transaction (V-NFT-SET-REFRESH-ATOMICITY). Previously this flushed via a
-	// standalone `nft flush set` and repopulated in a SEPARATE `nft -f`, leaving
-	// the shared blacklist_* set transiently EMPTY between transactions — the
-	// F-FEED / F-GEO fail-open window where banned IPs were admitted during the
-	// daily feed / weekly geoban refresh. The single-transaction replace closes
-	// it; on nft failure the transaction rolls back and the prior (blocked)
-	// contents are retained (fail-CLOSED).
-	if err := replaceSetElementsViaFile(family, set.Table.Name, set.Name, canonicalCIDRs); err != nil {
-		return nil, err
-	}
-
-	return stats, nil
+	return canonicalCIDRs, stats, nil
 }
 
 // =============================================================================
@@ -579,6 +832,12 @@ func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string)
 // GetOrCreateConcatSet creates or retrieves a concat set (IP . port) for per-IP port access.
 // The set type is ipv4_addr . inet_service (or ipv6_addr) with timeout flag.
 func (m *NFTManager) GetOrCreateConcatSet(table *nftables.Table, setName string, ipv4 bool) (*nftables.Set, error) {
+	release, err := BeginWrite()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {
@@ -623,6 +882,12 @@ func (m *NFTManager) GetOrCreateConcatSet(table *nftables.Table, setName string,
 // AddConcatIPPort adds an IP+port element to a concat set.
 // The key is concatenated as [IP bytes][port bytes (big-endian)].
 func (m *NFTManager) AddConcatIPPort(set *nftables.Set, ipStr string, port int, timeout time.Duration) error {
+	release, err := BeginWrite()
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {
@@ -673,6 +938,12 @@ func (m *NFTManager) AddConcatIPPort(set *nftables.Set, ipStr string, port int, 
 
 // DeleteConcatIPPort removes an IP+port element from a concat set.
 func (m *NFTManager) DeleteConcatIPPort(set *nftables.Set, ipStr string, port int) error {
+	release, err := BeginWrite()
+	if err != nil {
+		return err
+	}
+	defer release()
+
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {

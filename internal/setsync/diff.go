@@ -245,12 +245,18 @@ func SyncWhitelistSetToNFT(nft *NFTManager, set *nftables.Set, desiredIPs []stri
 	return stats, nil
 }
 
-// SyncStats holds statistics about a sync operation
+// SyncStats holds statistics about a sync operation.
+//
+// The counts are EFFECTS acknowledged by the kernel, not intentions (v1.236 safety lane: the
+// execution state is Error/Converged, the effect is the counts).
 type SyncStats struct {
 	SetName      string
 	IPsAdded     int
 	IPsRemoved   int
 	IPsUnchanged int
+	IPsReplaced  int  // UpsertPermanentElements: timed element made permanent (audit H11)
+	IPsInvalid   int  // UpsertPermanentElements: not a single IP of the set's family (skipped)
+	Converged    bool // UpsertPermanentElements: the final read showed every wanted key permanent
 	TotalDesired int
 	TotalCurrent int
 	Duration     time.Duration

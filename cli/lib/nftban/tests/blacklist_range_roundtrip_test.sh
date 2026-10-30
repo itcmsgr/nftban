@@ -33,6 +33,10 @@ bad() { echo "  [FAIL] $1"; FAIL=$((FAIL+1)); }
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/bin"; printf '#!/bin/sh\nexit 0\n' > "$T/bin/nft"; chmod +x "$T/bin/nft"
 export PATH="$T/bin:$PATH"
+# v1.236: the extracted code writes through the write boundary; load the real helper, sandboxed.
+export NFTBAN_RUN_DIR="$T/run"
+# shellcheck source=/dev/null
+source "${LIB_DIR}/lib/nft_writers.sh"
 
 # Extract ONLY the function under test from the real CLI, so the test binds to
 # shipped code without executing the rest of the command surface.

@@ -114,7 +114,7 @@ _cleanup_stats() {
     local request='{"method":"permanent_ban_stats","params":{}}'
     local response
 
-    response=$(echo "$request" | socat - UNIX-CONNECT:"$socket_path" 2>/dev/null)
+    response=$(echo "$request" | timeout "${NFTBAN_IPC_TIMEOUT:-30}" socat -t "${NFTBAN_IPC_TIMEOUT:-30}" - UNIX-CONNECT:"$socket_path" 2>/dev/null)
 
     if [[ -z "$response" ]]; then
         cmd_error "Failed to communicate with daemon" "$json_mode"
@@ -165,7 +165,7 @@ _cleanup_dry_run() {
     local request="{\"method\":\"get_evictable_bans\",\"params\":{\"count\":$count}}"
     local response
 
-    response=$(echo "$request" | socat - UNIX-CONNECT:"$socket_path" 2>/dev/null)
+    response=$(echo "$request" | timeout "${NFTBAN_IPC_TIMEOUT:-30}" socat -t "${NFTBAN_IPC_TIMEOUT:-30}" - UNIX-CONNECT:"$socket_path" 2>/dev/null)
 
     if [[ -z "$response" ]]; then
         cmd_error "Failed to communicate with daemon" "$json_mode"
@@ -245,7 +245,7 @@ _cleanup_execute() {
     local request="{\"method\":\"evict_old_bans\",\"params\":{\"count\":$count}}"
     local response
 
-    response=$(echo "$request" | socat - UNIX-CONNECT:"$socket_path" 2>/dev/null)
+    response=$(echo "$request" | timeout "${NFTBAN_IPC_TIMEOUT:-30}" socat -t "${NFTBAN_IPC_TIMEOUT:-30}" - UNIX-CONNECT:"$socket_path" 2>/dev/null)
 
     if [[ -z "$response" ]]; then
         cmd_error "Failed to communicate with daemon" "$json_mode"

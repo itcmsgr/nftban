@@ -122,61 +122,57 @@ func cmdFeeds(action string, cfg *nftbanconf.Config) error {
 		}
 		feedName := os.Args[3]
 		return cmdFeedsEnable(feedsConfig, feedName, false)
+	case "effective":
+		return cmdFeedsEffective(cfg)
+	case "resolve":
+		// v1.236 (design §7): records the operator's master decision. Called by
+		// `nftban feeds enable|disable` without a feed name, after the switch is set.
+		if len(os.Args) < 4 || (os.Args[3] != "enabled" && os.Args[3] != "disabled") {
+			return fmt.Errorf("usage: nftban-core feeds resolve <enabled|disabled>")
+		}
+		state := feeds.StateResolvedEnabled
+		if os.Args[3] == "disabled" {
+			state = feeds.StateResolvedDisabled
+		}
+		return feeds.WriteState(cfg.DataDir, state, "", time.Now())
 	case "sync":
 		return cmdFeedsSync(feedsDir, feedsConfig, cfg)
 	case "update":
 		return cmdFeedsUpdate(feedsDir, feedsConfig, cfg)
 	default:
-		return fmt.Errorf("unknown feeds action: %s\nUsage: nftban-core feeds [list|load|stats|update|enable|disable|sync] [FEED_NAME]", action)
+		return fmt.Errorf("unknown feeds action: %s\nUsage: nftban-core feeds [list|load|stats|update|enable|disable|sync|effective] [FEED_NAME]", action)
 	}
 }
 
 // getFeedsEnabledStatus reads the feeds config and returns a map of feed name -> enabled status
 // Config loading order (last wins): feeds.conf → feeds.conf.local → nftban.conf.local (central)
-func getFeedsEnabledStatus(configPath string) map[string]bool {
-	enabledMap := make(map[string]bool)
-
-	// Central config architecture: module config first, then central override last (highest priority)
-	configDir := filepath.Dir(filepath.Dir(configPath)) // conf.d/feeds.conf → /etc/nftban
-	configFiles := []string{configPath, configPath + ".local", configDir + "/nftban.conf.local"}
-
-	for _, cf := range configFiles {
-		content, err := os.ReadFile(cf)
-		if err != nil {
-			continue // Skip if file doesn't exist
-		}
-
-		lines := strings.Split(string(content), "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-
-			// Look for FEED_*_ENABLED="true" or "false"
-			if strings.HasPrefix(line, "FEED_") && strings.Contains(line, "_ENABLED=") {
-				// Extract feed name and enabled status
-				// Format: FEED_BLOCKLISTDE_SSH_ENABLED="true"
-				parts := strings.SplitN(line, "=", 2)
-				if len(parts) != 2 {
-					continue
-				}
-
-				// Extract feed name from FEED_<NAME>_ENABLED
-				varName := parts[0]
-				if !strings.HasSuffix(varName, "_ENABLED") {
-					continue
-				}
-				feedName := strings.TrimPrefix(varName, "FEED_")
-				feedName = strings.TrimSuffix(feedName, "_ENABLED")
-
-				// Extract enabled value (handles trailing comments)
-				value := extractConfigValue(parts[1])
-				enabled := (value == "true")
-
-				enabledMap[feedName] = enabled
-			}
-		}
+// cmdFeedsEffective prints the feed authority (design §7) as JSON, read-only: it never
+// records state. An undecidable authority is an error (nonzero exit), never a guess.
+func cmdFeedsEffective(cfg *nftbanconf.Config) error {
+	d, err := feeds.Evaluate(cfg.ConfigDir, cfg.DataDir, cfg.FeedsEnabled)
+	if err != nil {
+		return fmt.Errorf("feed authority undecidable: %w", err)
 	}
+	out := map[string]interface{}{
+		"master":      d.Master,
+		"state":       d.State,
+		"recorded":    d.Recorded,
+		"enforced":    d.Enforced,
+		"not_enabled": d.NotEnabled,
+		"reasons":     d.Reasons,
+		"texts":       d.Texts,
+	}
+	data, err := json.Marshal(out)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
+}
 
-	return enabledMap
+// v1.236: one reader, shared with the feed authority (internal/feeds.EnabledStatus).
+func getFeedsEnabledStatus(configPath string) map[string]bool {
+	return feeds.EnabledStatus(filepath.Dir(filepath.Dir(configPath))) // conf.d/feeds.conf → /etc/nftban
 }
 
 func cmdFeedsList(feedsDir string, cfg *nftbanconf.Config) error {

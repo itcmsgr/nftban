@@ -77,6 +77,7 @@ func runNftWithTimeout(timeout time.Duration, args ...string) ([]byte, error) {
 	defer cancel()
 
 	cmd := procenv.CommandContext(ctx, "nft", args...)
+	defer AttachSectionLock(cmd)()
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -96,6 +97,11 @@ func runNftFile(path string) ([]byte, error) {
 			return nil, err
 		}
 	}
+	release, err := BeginWrite()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	return runNft("-f", path)
 }
 
@@ -119,6 +125,11 @@ func runNftIgnoring(ignorePatterns []string, args ...string) error {
 			return err
 		}
 	}
+	release, err := BeginWrite()
+	if err != nil {
+		return err
+	}
+	defer release()
 	output, err := runNft(args...)
 	if err != nil {
 		if isIgnorableNftError(string(output), ignorePatterns...) {
@@ -154,6 +165,30 @@ func nftDeleteElement(family, table, setName, elements string) error {
 	return runNftIgnoring([]string{ErrElementNotExist, ErrNoSuchFile}, args...)
 }
 
+// nftDeleteElementExact deletes one element and reports an element that is not in the set
+// as os.ErrNotExist (v1.236 F7). nftDeleteElement ignores "does not exist", which suits bulk
+// deletes, but an unban must know whether it removed anything.
+func nftDeleteElementExact(family, table, setName, element string) error {
+	if WriteGate != nil {
+		if err := WriteGate(); err != nil {
+			return err
+		}
+	}
+	release, err := BeginWrite()
+	if err != nil {
+		return err
+	}
+	defer release()
+	output, err := runNft("delete", "element", family, table, setName, "{ "+element+" }")
+	if err != nil {
+		if isIgnorableNftError(string(output), ErrElementNotExist, ErrNoSuchFile) {
+			return os.ErrNotExist
+		}
+		return err
+	}
+	return nil
+}
+
 // replaceSetElementsViaFile atomically replaces the full contents of a set by
 // emitting `flush set` followed by batched `add element` into ONE `nft -f`
 // transaction. The flush is the FIRST statement inside the loaded file — never a
@@ -169,8 +204,15 @@ func nftDeleteElement(family, table, setName, elements string) error {
 // On `nft -f` failure the whole transaction rolls back, so the set retains its
 // prior (blocked) contents — fail-CLOSED, never fail-open. Elements must already
 // be canonicalized / non-overlapping by the caller.
+// scriptTempDir holds the nft scripts this package writes (v1.236). Not /tmp: nftband runs
+// with PrivateTmp and, on SELinux hosts, as nftband_t, which may not create files in tmp_t —
+// on Rocky 10 Enforcing every unified set replace failed ("open /tmp/nftban-setrepl-*.nft:
+// permission denied", no AVC logged) and the sync still reported OK. nftband_t manages files
+// in /run/nftban (nftban_var_run_t). A variable so hermetic tests can point it elsewhere.
+var scriptTempDir = "/run/nftban"
+
 func replaceSetElementsViaFile(family, table, setName string, elements []string) error {
-	tmpfile, err := os.CreateTemp("", "nftban-setrepl-*.nft")
+	tmpfile, err := os.CreateTemp(scriptTempDir, "nftban-setrepl-*.nft")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}

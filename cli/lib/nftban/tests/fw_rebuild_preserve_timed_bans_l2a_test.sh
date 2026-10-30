@@ -48,6 +48,10 @@ no() { FAIL=$((FAIL+1)); echo "  ✗ $1${2:+ — $2}"; }
 
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 CAP="$WORK/nft_capture.txt"; : > "$CAP"
+# v1.236: the extracted code writes through the write boundary; load the real helper, sandboxed.
+export NFTBAN_RUN_DIR="$WORK/run"
+# shellcheck source=/dev/null
+source "$(dirname "$SRC")/../lib/nft_writers.sh"
 
 # Extract the REAL _fw_restore_timed_set() verbatim from the shipped source.
 FN="$WORK/fn.sh"

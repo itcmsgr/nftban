@@ -109,6 +109,12 @@ type Module struct {
 	sharedEdges         *sharedEdgeSet
 	sharedEdgesOnce     sync.Once
 	sharedEdgesWarnOnce sync.Once
+
+	// BotScan HTTP campaign consumer (campaign.go): kernel/never-ban side injected by the
+	// daemon, and the bounded per-target expiry history used for recurrence decisions.
+	campaignKernel  CampaignKernel
+	campaignMu      sync.Mutex
+	campaignHistory map[string]campaignRecord
 }
 
 // New creates a new bot guard module.
@@ -940,7 +946,19 @@ func (m *Module) consumeSignalFile(path string) error {
 
 	toManual := !m.config.Enabled
 	applied := 0
+	// BotScan HTTP campaign signals: one path for BotGuard enabled and disabled; never the
+	// per-IP routes below (no EventBan, so no persistent-offender escalation).
+	var campaign []BatchSignal
 	for i := range fresh {
+		if isCampaignSignal(&fresh[i]) {
+			campaign = append(campaign, fresh[i])
+		}
+	}
+	applied += m.applyCampaignSignals(campaign)
+	for i := range fresh {
+		if isCampaignSignal(&fresh[i]) {
+			continue
+		}
 		if toManual {
 			if m.applyBotscanBanSignal(&fresh[i]) {
 				applied++

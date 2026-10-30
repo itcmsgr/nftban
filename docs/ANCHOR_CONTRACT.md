@@ -39,7 +39,12 @@ Present in both `ip nftban` and `ip6 nftban` input chains (14 markers total).
 | portscan_detection | portscan_detection | ANCHOR_DETECT | 4 |
 | ddos_protection | ddos_protection | ANCHOR_SERVICE | 5 |
 | ddos_prefix | ddos_prefix | ANCHOR_SERVICE | 5 |
-| http_bot_guard | http_bot_guard | ANCHOR_SERVICE | 5 |
+| http_bot_guard | http_bot_guard | ANCHOR_DETECT | 4 |
+
+As of v1.236, `http_bot_guard` is inserted before `ANCHOR_DETECT`, not `ANCHOR_SERVICE`. The base rule
+"SYN rate OK — service ports only" between the two accepts every new connection to a service port, so at
+`ANCHOR_SERVICE` the BotGuard ban, emergency and grey sets never applied to new HTTP(S) connections. The chain's
+pass verdicts are `return`, so allowed and in-rate sources still go through the phase-5 checks.
 
 A module's jump rule MUST have a lower nftables handle than its anchor.
 

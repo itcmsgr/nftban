@@ -174,12 +174,17 @@ func (sc *SetCounters) Add(setName string, delta int64) {
 }
 
 // SetReconciled marks when a set was last reconciled against the kernel
+// (logged only when the count changed: the v1.236 light recount runs every exporter interval)
 func (sc *SetCounters) SetReconciled(setName string, count int64) {
+	old := sc.Get(setName)
 	sc.Set(setName, count)
 	sc.mu.Lock()
+	_, seen := sc.lastSync[setName]
 	sc.lastSync[setName] = time.Now()
 	sc.mu.Unlock()
-	log.Printf("[set_counters] Reconciled %s: count=%d", setName, count)
+	if !seen || old != count {
+		log.Printf("[set_counters] Reconciled %s: count=%d", setName, count)
+	}
 }
 
 // Scale returns the scale level for a set

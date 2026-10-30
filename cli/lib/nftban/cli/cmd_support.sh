@@ -1285,7 +1285,8 @@ _collect_daemon_status() {
         echo "=== Daemon Connectivity Test ==="
         if [[ -S "${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock" ]]; then
             if command -v socat &>/dev/null; then
-                echo '{"action":"ping"}' | timeout 5 socat - "UNIX-CONNECT:${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock" 2>&1 || echo "ping failed"
+                # v1.236: the request key is "method" ({"action":...} was answered "unknown method"); -t keeps the answer.
+                echo '{"method":"ping"}' | timeout 5 socat -t 5 - "UNIX-CONNECT:${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock" 2>&1 || echo "ping failed"
             else
                 echo "socat not available for connectivity test"
             fi
@@ -2032,15 +2033,21 @@ _collect_ipc_test() {
         systemctl is-active nftband.service 2>/dev/null && echo "nftband.service: active" || echo "nftband.service: inactive"
         echo ""
 
-        echo "=== IPC Quick Sync Test ==="
-        if command -v nftban &>/dev/null; then
-            if timeout 10s nftban sync --quick 2>&1; then
-                echo "IPC sync: OK"
+        # v1.236 BUG-SUPPORT-BUNDLE-RUNS-SYNC-QUICK (D2): this ran `nftban sync --quick`,
+        # a REAL sync that writes the kernel sets, from a diagnostic collector. The
+        # connectivity question is answered by a ping, which changes nothing.
+        echo "=== IPC Ping Test (read-only) ==="
+        local _ipc_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_ipc.sh" _ping_out _ping_rc=0
+        if [[ -r "$_ipc_lib" ]]; then
+            _ping_out="$(timeout 10s bash -c 'source "$1" && nft_ipc_request ping' _ "$_ipc_lib" 2>&1)" || _ping_rc=$?
+            echo "$_ping_out"
+            if [[ "$_ping_rc" -eq 0 && "$_ping_out" == *'"success":true'* ]]; then
+                echo "IPC ping: OK"
             else
-                echo "IPC sync: FAILED (exit $?)"
+                echo "IPC ping: FAILED (exit $_ping_rc)"
             fi
         else
-            echo "nftban not in PATH"
+            echo "IPC library not found: $_ipc_lib"
         fi
 
     } > "$ipc_dir/ipc-test.txt"

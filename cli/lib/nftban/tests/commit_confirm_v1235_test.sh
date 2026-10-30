@@ -103,7 +103,7 @@ fresh(){
 cc(){  # snippet with the REAL engine loaded
     local rc=0
     env -i PATH="$STUB:/usr/bin:/bin" SBX="$SB" HOME="$SB" \
-        NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_LIB_DIR="$LIBDIR" \
+        NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_RUN_DIR="$SB/run" NFTBAN_LIB_DIR="$LIBDIR" \
         bash -c 'set -Eeuo pipefail; source "$1"; shift
             # The publication authority (cmd_firewall.sh _firewall_publish_conf) is loaded wherever
             # the engine runs in the product; here it is a recording stand-in (audit K1, D31).
@@ -156,6 +156,18 @@ else ko "D5 change set: $(cut -f1 "$CS" 2>/dev/null | tr '\n' ' ')"; fi
 rc=0; cc 'cc_apply_begin 120' || rc=$?
 if [[ $rc -ne 0 ]] && has "$SB/cc.out" "still pending"; then ok "D6 a second apply is refused while one is pending"
 else ko "D6 pending refusal (rc=$rc)"; fi
+
+# v1.236: a rules.d fragment RENDERED by nftban is regenerated (new timestamp) by every apply,
+# so it is not configuration and is not in the change set; a hand-written rules.d file is.
+fresh; mkdir -p "$SB/etc/rules.d"
+printf '#!/usr/sbin/nft -f\n# NFTBan X\n# Generated: T1\n# Managed by nftband - DO NOT EDIT MANUALLY\nadd chain ip nftban x\n' > "$SB/etc/rules.d/15-rendered.nft"
+echo 'add chain ip nftban custom' > "$SB/etc/rules.d/50-custom.nft"
+cc 'cc_record_applied_baseline "'"$SB"'/loaded.nft"' || true
+sed -i 's/T1/T2/' "$SB/etc/rules.d/15-rendered.nft"; echo '# edited' >> "$SB/etc/rules.d/50-custom.nft"
+cc 'cc_apply_begin 120' || true
+if ! has "$CS" "rules.d/15-rendered.nft" && has "$CS" "./rules.d/50-custom.nft"; then
+    ok "D5b rendered rules.d fragment not in the change set; a hand-written rules.d file is"
+else ko "D5b rendered fragment filter: $(cut -f1 "$CS" 2>/dev/null | tr '\n' ' ')"; fi
 
 fresh; cc 'cc_record_applied_baseline "'"$SB"'/loaded.nft"' || true; echo 1 > "$SB/sdrun_rc"; : > "$SB/calls.log"
 rc=0; cc 'cc_apply_begin 120' || rc=$?
@@ -320,7 +332,7 @@ fresh; stage_pending 120; ID=$(get apply_id); echo 1 > "$SB/nft_f_rc"
 cc "cc_rollback $ID --auto" >/dev/null 2>&1 || true
 : > "$SB/calls.log"; cp -p "$REC" "$SB/rec.before"; rc=0
 env -i PATH="$STUB:/usr/bin:/bin" SBX="$SB" HOME="$SB" \
-    NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_LIB_DIR="$LIBDIR" \
+    NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_RUN_DIR="$SB/run" NFTBAN_LIB_DIR="$LIBDIR" \
     bash -c 'source "$1/cli/cmd_firewall.sh" >/dev/null 2>&1; nftban_cmd_firewall rollback --boot' _ "$LIBDIR" > "$SB/cc.out" 2>&1 || rc=$?
 if grep -qxF 'ExecStart=/usr/sbin/nftban firewall rollback --boot' "$UNIT" \
    && [[ -e "$SB/data/state/commit-confirm.rollback-failed" && "$(get status)" == "rollback-failed" ]] \
@@ -374,7 +386,7 @@ else ko "D32 projection republish failure (rc=$rc status=$(get status) marker=$(
 fwbase(){  # loaded_file
     local rc=0
     env -i PATH="$STUB:/usr/bin:/bin" SBX="$SB" HOME="$SB" \
-        NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_LIB_DIR="$LIBDIR" \
+        NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_RUN_DIR="$SB/run" NFTBAN_LIB_DIR="$LIBDIR" \
         bash -c 'source "$1/cli/cmd_firewall.sh" >/dev/null 2>&1; _firewall_rebuild_record_baseline "$2"' _ "$LIBDIR" "$1" > "$SB/fw.out" 2>&1 || rc=$?
     return "$rc"
 }

@@ -70,7 +70,9 @@ if [[ "$DELAY" -eq 0 ]]; then
         elif command -v nft >/dev/null 2>&1; then
             # Boot-time fallback: daemon not ready yet, use direct nft
             # This is safe because we're loading our own snapshot
-            nft -f /var/lib/nftban/snapshots/last.nft 2>/dev/null || true
+            # v1.236: the write boundary, inline (the library may not be loaded at boot).
+            mkdir -p /run/nftban 2>/dev/null || true
+            flock -w 60 /run/nftban/nft_writers.lock nft -f /var/lib/nftban/snapshots/last.nft 2>/dev/null || true
         fi
     fi
 fi

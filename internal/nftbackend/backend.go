@@ -48,6 +48,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/itcmsgr/nftban/internal/constants"
 	"github.com/itcmsgr/nftban/internal/netutil"
 	"github.com/itcmsgr/nftban/internal/procenv"
 	nftsync "github.com/itcmsgr/nftban/internal/setsync"
@@ -369,6 +370,23 @@ func (b *Backend) Ban(ctx context.Context, req BanRequest) (*BanResult, error) {
 				Message: fmt.Sprintf("not banned: never-ban exempt (%s)", reason),
 			}, nil
 		}
+		// F2: IsExempt answers for one address and is false for every CIDR, so a prefix
+		// covering a protected address passed here (manual `nftban ban <CIDR>`, loginmon
+		// subnet bans and their permanent escalation). A CIDR is admitted whole or refused
+		// whole by the same authority the campaign path uses; an incomplete snapshot
+		// refuses. Called under b.mu: the resolver directly, not Backend.AdmitPrefix.
+		if strings.Contains(req.IP, "/") {
+			if ok, reason := b.exempt.AdmitPrefix(req.IP); !ok {
+				b.stats.ExemptSkips++
+				log.Printf("[BAN] REFUSED (prefix not admitted: %s) cidr=%s source=%s — a prefix that touches never-ban space (or with incomplete protection data) is NOT added to blacklist", reason, req.IP, req.Source)
+				return &BanResult{
+					Success: true,
+					IP:      req.IP,
+					Exempt:  true,
+					Message: fmt.Sprintf("not banned: prefix not admitted (%s)", reason),
+				}, nil
+			}
+		}
 	}
 
 	// Ensure netlink connection
@@ -424,6 +442,9 @@ type UnbanResult struct {
 	IP      string
 	Set     string
 	Message string
+	// Removed reports whether an element was actually deleted (v1.236 F7): Success alone
+	// is also true for "was not in the blocklist".
+	Removed bool
 }
 
 // Unban removes an IP from all blacklist sets (hash + interval)
@@ -473,7 +494,9 @@ func (b *Backend) Unban(ctx context.Context, req UnbanRequest) (*UnbanResult, er
 	} else {
 		manualSet = b.setBlacklistManualIPv4
 	}
-	if manualSet != nil {
+	// The manual sets are hash sets of single addresses; a CIDR lives only in the interval
+	// set (v1.236 F7: a CIDR sent to the hash set could fail before the interval set was tried).
+	if manualSet != nil && ip != nil {
 		err := b.nft.DeleteSetElements(manualSet, []string{req.IP})
 		if err == nil {
 			if isIPv6 {
@@ -496,7 +519,9 @@ func (b *Backend) Unban(ctx context.Context, req UnbanRequest) (*UnbanResult, er
 		intervalSet = b.setBlacklistIPv4
 	}
 	if intervalSet != nil {
-		err := b.nft.DeleteSetElements(intervalSet, []string{req.IP})
+		// v1.236 F7: exact delete — the bulk path ignores "does not exist", so an absent
+		// element was reported as removed.
+		err := b.nft.DeleteSetElementExact(intervalSet, req.IP)
 		if err == nil {
 			if removedFrom == "" {
 				if isIPv6 {
@@ -537,6 +562,7 @@ func (b *Backend) Unban(ctx context.Context, req UnbanRequest) (*UnbanResult, er
 		IP:      req.IP,
 		Set:     removedFrom,
 		Message: fmt.Sprintf("removed from %s %s", tableName, removedFrom),
+		Removed: true,
 	}, nil
 }
 
@@ -603,6 +629,8 @@ var enforcementSets = map[string]bool{
 	"blacklist_manual_ipv4": true,
 	"blacklist_manual_ipv6": true,
 	"ddos_blocked":          true,
+	// BotScan HTTP campaign prefixes: an add must pass whole-prefix admission (AdmitPrefix)
+	"campaign_prefix_ipv4": true,
 }
 
 // IsEnforcementSet reports whether set is a drop/block set subject to the never-ban
@@ -660,6 +688,23 @@ func (b *Backend) SubtractExempt(cidrs []string) (kept []string, removed int, om
 	return kept, removed, omitted
 }
 
+// AdmitPrefix is the never-ban decision for an AUTOMATIC prefix escalation (BotScan HTTP
+// campaign, campaign_prefix_ipv4): the whole prefix is admitted or refused, through the same
+// snapshot as Ban/SubtractExempt. Unlike SubtractExempt it fails CLOSED: no backend, no
+// resolver or an incomplete snapshot refuses (exemptResolver.AdmitPrefix).
+func (b *Backend) AdmitPrefix(prefix string) (bool, string) {
+	if b == nil {
+		return false, "exemption-unavailable"
+	}
+	b.mu.Lock()
+	r := b.exempt
+	b.mu.Unlock()
+	if r == nil {
+		return false, "exemption-unavailable"
+	}
+	return r.AdmitPrefix(prefix)
+}
+
 // exemptAddRejection reports whether adding element to set must be refused by the
 // never-ban invariant: enforcement set AND a single exempt IP. Pure (no nft I/O), so the
 // decision is unit-testable without netlink/root. IsExempt returns false for CIDR/range
@@ -673,6 +718,17 @@ func (b *Backend) exemptAddRejection(set, element string) (bool, string) {
 	// multicast + non-public classes can never enter a drop set via AddElement either.
 	if reject, reason := netutil.EnforcementClassReject(element); reject {
 		return true, "non-bannable-class:" + reason
+	}
+	// A campaign prefix is admitted whole or not at all, failing closed (the IPC add_element
+	// verb reaches this set too). Called under b.mu: the resolver directly, not AdmitPrefix.
+	if set == constants.CampaignPrefixSetIPv4 {
+		if b.exempt == nil {
+			return true, "exemption-unavailable"
+		}
+		if ok, why := b.exempt.AdmitPrefix(element); !ok {
+			return true, why
+		}
+		return false, ""
 	}
 	if b.exempt == nil {
 		return false, ""
@@ -922,7 +978,14 @@ func (b *Backend) ApplyRuleset(ctx context.Context, req ApplyRulesetRequest) err
 				return err
 			}
 		}
+		// v1.236 §9.1a: the load is a daemon write — inside the write boundary.
+		release, err := nftsync.BeginWrite()
+		if err != nil {
+			return err
+		}
+		defer release()
 		cmd = procenv.CommandContext(ctx, "nft", "-f", req.FilePath)
+		defer nftsync.AttachSectionLock(cmd)()
 	}
 
 	output, err := cmd.CombinedOutput()

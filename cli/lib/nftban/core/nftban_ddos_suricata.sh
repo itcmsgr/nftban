@@ -516,6 +516,64 @@ _nftban_ddos_suricata_process_alerts() {
 # PUBLIC API
 # =============================================================================
 
+# _nftban_ddos_suricata_block_rule <table> <set> place|remove   (v1.236)
+# place:  exactly one "DDoS Suricata blocked" drop rule over <set>, before ANCHOR_BAN.
+# remove: none left.
+# The rule used to be appended (`add rule`), i.e. after ANCHOR_FINAL where it never matched,
+# and its presence check grepped "@set drop", which never matches the listed form
+# ("@set counter packets N bytes M drop"), so every enable/reload added another copy.
+# Deletes and insert go through IPC as ONE fragment.
+_nftban_ddos_suricata_block_rule() {
+    local table="$1" set="$2" action="$3"
+    local comment="DDoS Suricata blocked" listing handles anchor_h rule_line anchor_line frag rc=0
+
+    # shellcheck disable=SC2086 # table is "<family> <name>"
+    local nerr
+    nerr=$(mktemp) || return 1
+    if ! listing=$(timeout 10s nft -a list chain $table input 2>"$nerr"); then
+        # Only nft's own "No such file or directory" (no table/chain) means there is no rule
+        # to remove; any other failure is UNKNOWN and refused (nft parser contract).
+        if [[ "$action" == "remove" ]] && grep -q "No such file or directory" "$nerr"; then
+            rm -f "$nerr"
+            return 0
+        fi
+        echo "  ERROR: cannot read ${table} input: $(head -c 200 "$nerr")" >&2
+        rm -f "$nerr"
+        return 1
+    fi
+    rm -f "$nerr"
+    handles=$(awk -v c="comment \"${comment}\"" 'index($0, c) {print $NF}' <<<"$listing")
+    anchor_h=$(awk '/NFTBAN_ANCHOR:ANCHOR_BAN"/ {print $NF; exit}' <<<"$listing")
+
+    if [[ "$action" == "place" ]]; then
+        if [[ -z "$anchor_h" ]]; then
+            echo "  ERROR: ANCHOR_BAN not found in ${table} input — run: nftban firewall rebuild" >&2
+            return 1
+        fi
+        if [[ -n "$handles" && "$handles" != *$'\n'* ]]; then
+            rule_line=$(awk -v c="comment \"${comment}\"" 'index($0, c) {print NR; exit}' <<<"$listing")
+            anchor_line=$(awk '/NFTBAN_ANCHOR:ANCHOR_BAN"/ {print NR; exit}' <<<"$listing")
+            (( rule_line < anchor_line )) && return 0
+        fi
+    elif [[ -z "$handles" ]]; then
+        return 0
+    fi
+
+    frag="${NFTBAN_CONFIG_DIR:-/etc/nftban}/rules.d/ddos-suricata-rule-$$.nft"
+    {
+        local h
+        for h in $handles; do
+            echo "delete rule ${table} input handle ${h}"
+        done
+        if [[ "$action" == "place" ]]; then
+            echo "insert rule ${table} input position ${anchor_h} ip saddr @${set} counter drop comment \"${comment}\""
+        fi
+    } > "${frag}.tmp" && mv -f "${frag}.tmp" "$frag" || return 1
+    nft_ipc_apply_ruleset "$frag" || rc=1
+    rm -f "$frag" 2>/dev/null
+    return "$rc"
+}
+
 nftban_ddos_suricata_enable() {
     _nftban_ddos_suricata_load_config
 
@@ -583,17 +641,11 @@ nftban_ddos_suricata_enable() {
         rm -f "$set_fragment" 2>/dev/null
     fi
 
-    # Add drop rule for blocked set (via IPC fragment)
-    if ! nft list chain $table input 2>/dev/null | grep -q "@$set drop"; then
-        local rule_fragment="${NFTBAN_CONFIG_DIR:-/etc/nftban}/rules.d/ddos-suricata-rule-$$.nft"
-        echo "add rule $table input ip saddr @$set counter drop comment \"DDoS Suricata blocked\"" > "${rule_fragment}.tmp" && mv -f "${rule_fragment}.tmp" "$rule_fragment"
-        if ! nft_ipc_apply_ruleset "$rule_fragment"; then
-            rm -f "$rule_fragment" 2>/dev/null
-            echo "  ERROR: failed to add the Suricata block-set drop rule via IPC." >&2
-            _nftban_ddos_suricata_log "ERROR" "block-set drop rule apply failed"
-            return 1
-        fi
-        rm -f "$rule_fragment" 2>/dev/null
+    # Drop rule for the block set: exactly one, before ANCHOR_BAN (v1.236).
+    if ! _nftban_ddos_suricata_block_rule "$table" "$set" place; then
+        echo "  ERROR: failed to place the Suricata block-set drop rule." >&2
+        _nftban_ddos_suricata_log "ERROR" "block-set drop rule apply failed"
+        return 1
     fi
 
     echo ""
@@ -638,8 +690,14 @@ nftban_ddos_suricata_disable() {
     #   ABSENT      -> nothing to flush (the requested end state), no write
     #   PRESENT     -> flushed through IPC; a failed flush FAILS the disable
     #   CANNOT_READ -> REFUSE (rc 1): absent != unobservable
-    # The shared drop rule over this set is left in place, as before: over an
-    # empty set it matches nothing (the transaction verifies the set is empty).
+    # The set stays (it is shared with classic); its drop rule is Suricata's own and is
+    # removed FIRST (v1.236: it used to stay, one copy per earlier enable/reload), so a
+    # failed flush cannot leave the set's bans enforced in the other mode.
+    if ! _nftban_ddos_suricata_block_rule "$table" "$set" remove; then
+        echo "  ERROR: removing the Suricata block-set drop rule FAILED." >&2
+        _nftban_ddos_suricata_log "ERROR" "block-set drop rule removal failed"
+        return 1
+    fi
     if ! declare -F nftban_nft_probe_set >/dev/null 2>&1; then
         echo "  ERROR: typed set probe unavailable — cannot establish whether ${set} must be flushed." >&2
         return 1

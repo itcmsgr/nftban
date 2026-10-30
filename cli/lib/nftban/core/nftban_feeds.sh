@@ -416,15 +416,23 @@ nftban_feeds_disable() {
         echo "✓ Removed $removed_files cached feed file(s)"
     fi
 
-    # v1.18.1 FIX: Trigger IPC flush_source to remove feed IPs from nftables immediately
-    # This uses sourceIndex-based removal (not set flush) to preserve other sources
-    if [[ -S "${NFTBAN_SOCKET:-/run/nftban/nftband.sock}" ]]; then
-        if echo '{"action":"flush_source","params":{"source":"feeds"}}' | \
-            socat - UNIX-CONNECT:"${NFTBAN_SOCKET:-/run/nftban/nftband.sock}" >/dev/null 2>&1; then
-            nftban_feeds_log INFO "IPC flush_source triggered for feeds"
-            echo "✓ Feed IPs removal queued via IPC"
+    # v1.236 BUG-FEED-DISABLE-IPC-REQUEST-MALFORMED-FALSE-SUCCESS: this sent
+    # {"action":"flush_source",...}; the daemon reads "method", answered "unknown method",
+    # and the output was discarded, so "✓ Feed IPs removal queued via IPC" was printed for
+    # a request that never ran (lab2 2026-10-23). A working flush_source would also be
+    # wrong here: it removes EVERY feed-sourced element until a later re-sync. The daemon's
+    # full sync rebuilds the feed/geoban/CIDR union from the remaining files in ONE
+    # transaction, so the disabled feed's addresses go and the others never leave.
+    if declare -F nft_ipc_sync >/dev/null 2>&1 \
+       || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_ipc.sh" 2>/dev/null; then
+        local _fs_rc=0
+        nft_ipc_sync 1 >/dev/null 2>&1 || _fs_rc=$?
+        if [[ $_fs_rc -eq 0 ]]; then
+            nftban_feeds_log INFO "full sync applied after disabling $feed_name"
+            echo "✓ Feed addresses removed from the firewall (full sync completed)"
         else
-            nftban_feeds_log WARN "IPC flush_source failed, queuing for timer"
+            nftban_feeds_log WARN "full sync after disabling $feed_name did not complete (rc=$_fs_rc); queued for the timer"
+            echo "⚠ Firewall not updated yet (sync rc=$_fs_rc); the queued sync will remove the feed's addresses"
         fi
     fi
 
@@ -434,8 +442,8 @@ nftban_feeds_disable() {
     fi
 
     echo ""
-    echo "✅ Feed disabled successfully"
-    echo "   Config: disabled, Cache: cleared, NFT: removal queued"
+    echo "✅ Feed disabled"
+    echo "   Config: disabled, Cache: cleared (firewall: see the sync line above)"
     echo ""
 
     return 0

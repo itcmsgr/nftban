@@ -17,7 +17,7 @@
 # journalctl_exec_t / systemd_systemctl_exec_t which EL8 refpolicy 3.14.3 lacks;
 # wrap in optional_policy() if EL8 is ever in scope).
 
-policy_module(nftban, 1.2.0)
+policy_module(nftban, 1.2.2)
 
 ########################################
 # External type requires
@@ -279,6 +279,15 @@ miscfiles_read_generic_certs(nftband_t)
 logging_read_generic_logs(nftband_t)
 init_use_fds(nftband_t)
 init_read_state(nftband_t)
+# v1.236: live SSH sessions for the never-ban exemption come from utmp
+# (internal/safety/detect_noexec.go); without this read the daemon logged
+# "utmp unreadable: open /var/run/utmp: permission denied" on Enforcing hosts.
+init_read_utmp(nftband_t)
+# v1.236: the daemon runs the module shell code (portscan, ddos) in this domain, and its
+# Suricata fallback uses pgrep, which stats every /proc/<pid>: each process of another domain
+# was denied and audited (~600 AVC/min on Rocky 10 Enforcing, the audit log rotating every
+# ~12 min) and pgrep could not see Suricata. Read-only process state.
+domain_read_all_domains_state(nftband_t)
 init_status(nftband_t)
 
 # v1.234 BUG-SELINUX-NFTBAND-DENIED-SEARCH-SYSCTL-NET (read-only grants).

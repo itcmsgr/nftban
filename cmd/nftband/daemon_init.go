@@ -22,10 +22,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -51,6 +53,11 @@ import (
 	"github.com/itcmsgr/nftban/internal/watchdog"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
+
+// detectorBanBusyRetries bounds the retries of a module ban refused busy by the write
+// boundary (each attempt waits up to NFTBAN_NFT_WRITE_WAIT): 3 retries = about 2 minutes
+// at the default. After that the ban is reported NOT applied (never dropped silently).
+const detectorBanBusyRetries = 3
 
 // Run starts the daemon and blocks until shutdown
 func (d *Daemon) Run() error {
@@ -140,6 +147,7 @@ func (d *Daemon) Run() error {
 	if bgMod, ok := d.registry.Get(botguard.ModuleName); ok {
 		if bg, ok := bgMod.(*botguard.Module); ok && d.opQueue != nil {
 			bg.InitEnforcer(d.opQueue)
+			bg.SetCampaignKernel(campaignKernel{backend: d.backend})
 		}
 	}
 
@@ -175,7 +183,7 @@ func (d *Daemon) Run() error {
 		}
 
 		// Execute the ban via nftables backend
-		result, err := d.backend.Ban(d.ctx, nftbackend.BanRequest{
+		banReq := nftbackend.BanRequest{
 			IP:      e.IP,
 			Timeout: timeout,
 			Reason:  reason,
@@ -184,60 +192,83 @@ func (d *Daemon) Run() error {
 			// DETECTOR MODULE, so the producer context is known here and must not be
 			// re-derived downstream from the label. e.Source stays as provenance.
 			Origin: bansource.OriginDetector,
-		})
-		switch {
-		case err != nil:
-			log.Printf("[BAN] Failed to ban %s: %v", e.IP, err)
-			metrics.RecordBanError(e.Source, "nft_error")
-		case result != nil && result.Exempt:
-			// v1.209.x F2: the never-ban guard refused this ban (admin/management/
-			// whitelist/system/live-SSH IP). Not an error, not a ban — log honestly.
-			log.Printf("[BAN] Exempt (not banned) %s (source=%s): %s", e.IP, e.Source, result.Message)
-		default:
-			log.Printf("[BAN] Successfully banned %s (timeout=%ds, source=%s)", e.IP, timeout, e.Source)
-			// Record in stats collector
-			d.stats.RecordBan()
-			// Record Prometheus metric
-			family := "ipv4"
-			if strings.Contains(e.IP, ":") {
-				family = "ipv6"
-			}
-			metrics.RecordBanWithIP(e.Source, family, e.IP)
-			// Log to bans.log with GeoIP country lookup
-			banSource := banlog.SourceManual
+		}
+		// finish records the outcome of this module ban.
+		finish := func(result *nftbackend.BanResult, err error) {
+			defer d.noteSetWrite()
 			switch {
-			case strings.Contains(e.Source, "portscan"):
-				banSource = banlog.SourcePortscan
-			case strings.Contains(e.Source, "login"):
-				banSource = banlog.SourceLogin
-			case strings.Contains(e.Source, "ddos"):
-				banSource = banlog.SourceDDoS
-			case strings.Contains(e.Source, "feed"):
-				banSource = banlog.SourceFeeds
-			case strings.Contains(e.Source, "suricata"):
-				banSource = banlog.SourceSuricata
-			case strings.Contains(e.Source, "botguard"):
-				banSource = banlog.SourceDDoS // Bot guard bans categorized as DDoS
-			}
-			country := lookupCountry(e.IP)
-			// v1.41.0: Generate ban correlation ID to link BAN→UNBAN entries
-			banID := banlog.GenerateBanID()
-			d.banIDMap.Store(e.IP, banID)
-			// BLC-1: determine ban class from event data
-			banClass := banlog.ClassTemp
-			if timeout == 0 {
-				banClass = banlog.ClassPermanent
-			} else if timeout > 900 { // > 15m default = escalated
-				banClass = banlog.ClassEscalated
-			}
-			_ = banlog.LogBanFull(e.IP, banSource, country, reason, banID, timeout, banClass)
+			case errors.Is(err, nftlock.ErrBusy):
+				log.Printf("[BAN] NOT applied %s (source=%s): write boundary still busy after %d retries", e.IP, e.Source, detectorBanBusyRetries)
+				metrics.RecordBanError(e.Source, "busy")
+			case err != nil:
+				log.Printf("[BAN] Failed to ban %s: %v", e.IP, err)
+				metrics.RecordBanError(e.Source, "nft_error")
+			case result != nil && result.Exempt:
+				// v1.209.x F2: the never-ban guard refused this ban (admin/management/
+				// whitelist/system/live-SSH IP). Not an error, not a ban — log honestly.
+				log.Printf("[BAN] Exempt (not banned) %s (source=%s): %s", e.IP, e.Source, result.Message)
+			default:
+				log.Printf("[BAN] Successfully banned %s (timeout=%ds, source=%s)", e.IP, timeout, e.Source)
+				// Record in stats collector
+				d.stats.RecordBan()
+				// Record Prometheus metric
+				family := "ipv4"
+				if strings.Contains(e.IP, ":") {
+					family = "ipv6"
+				}
+				metrics.RecordBanWithIP(e.Source, family, e.IP)
+				// Log to bans.log with GeoIP country lookup
+				banSource := banlog.SourceManual
+				switch {
+				case strings.Contains(e.Source, "portscan"):
+					banSource = banlog.SourcePortscan
+				case strings.Contains(e.Source, "login"):
+					banSource = banlog.SourceLogin
+				case strings.Contains(e.Source, "ddos"):
+					banSource = banlog.SourceDDoS
+				case strings.Contains(e.Source, "feed"):
+					banSource = banlog.SourceFeeds
+				case strings.Contains(e.Source, "suricata"):
+					banSource = banlog.SourceSuricata
+				case strings.Contains(e.Source, "botguard"):
+					banSource = banlog.SourceDDoS // Bot guard bans categorized as DDoS
+				}
+				country := lookupCountry(e.IP)
+				// v1.41.0: Generate ban correlation ID to link BAN→UNBAN entries
+				banID := banlog.GenerateBanID()
+				d.banIDMap.Store(e.IP, banID)
+				// BLC-1: determine ban class from event data
+				banClass := banlog.ClassTemp
+				if timeout == 0 {
+					banClass = banlog.ClassPermanent
+				} else if timeout > 900 { // > 15m default = escalated
+					banClass = banlog.ClassEscalated
+				}
+				_ = banlog.LogBanFull(e.IP, banSource, country, reason, banID, timeout, banClass)
 
-			// Check persistent offender escalation for temp bans
-			// If this IP has been temp-banned too many times, escalate to permanent
-			if timeout > 0 {
-				go d.checkAndEscalate(e.IP, e.Source, country)
+				// Check persistent offender escalation for temp bans
+				// If this IP has been temp-banned too many times, escalate to permanent
+				if timeout > 0 {
+					go d.checkAndEscalate(e.IP, e.Source, country)
+				}
 			}
 		}
+
+		result, err := d.backend.Ban(d.ctx, banReq)
+		if errors.Is(err, nftlock.ErrBusy) {
+			// v1.236 (design §2.2): a firewall replacement held the write boundary for the
+			// whole wait. A detector ban must not be dropped for that: retry, bounded, off the
+			// event bus (each attempt can wait the full boundary wait again).
+			go func() {
+				for i := 1; i <= detectorBanBusyRetries && errors.Is(err, nftlock.ErrBusy); i++ {
+					log.Printf("[BAN] %s (source=%s): write boundary busy, retry %d/%d", e.IP, e.Source, i, detectorBanBusyRetries)
+					result, err = d.backend.Ban(d.ctx, banReq)
+				}
+				finish(result, err)
+			}()
+			return
+		}
+		finish(result, err)
 	})
 
 	// v1.41.0: Subscribe attack rate tracker to ban/ddos/portscan events
@@ -379,7 +410,12 @@ func (d *Daemon) Run() error {
 		}
 
 		log.Println("[AUTO-SYNC] Running scheduled full sync (feeds + geoban)...")
-		resp := d.handleSyncRequest(map[string]any{"quick": false})
+		// v1.236: through the sync coordinator, so a full sync requested by a client in
+		// the meantime is joined instead of run twice. No deadline: this goroutine waits
+		// for its run (or for shutdown).
+		c := d.syncCoordinator()
+		s, gen := c.submit(true)
+		resp := c.await(s, true, gen, time.Time{})
 		if resp.Success {
 			if data, ok := resp.Data.(map[string]any); ok {
 				feedsV4 := data["feeds_ipv4_loaded"]
@@ -549,9 +585,15 @@ func (d *Daemon) initOpQueue() error {
 		return false, ""
 	})
 
+	// BotScan HTTP campaign: re-decide every campaign_prefix_ipv4 add at application time
+	// (disable, a removed rule or a new never-ban overlap while it was queued refuses it).
+	_, _, campaignDataDir, _ := getDaemonPaths()
+	d.opQueue.SetApplyGuard(campaignKernel{backend: d.backend}.applyGuard(filepath.Join(campaignDataDir, constants.CampaignEnabledMarker)))
+
 	// v1.32.0: Initialize set element counters for huge set management
 	runDir, _, _, _ := getDaemonPaths()
 	d.setCounters = stats.NewSetCounters(runDir)
+	d.countRefresh = make(chan struct{}, 1)
 
 	// Wire OpQueue flush callback to update set counters
 	d.opQueue.SetOnFlush(func(setName string, applied int, opType string) {
@@ -565,6 +607,7 @@ func (d *Daemon) initOpQueue() error {
 		case "flush":
 			d.setCounters.Set(setName, 0)
 		}
+		d.noteSetWrite()
 	})
 
 	// Create SourceIndex for tracking element sources
@@ -598,7 +641,10 @@ func (d *Daemon) initOpQueue() error {
 		d.sourceIndex.ReconcileWithBackend(wrapper)
 
 		// v1.32.0: Reconcile set counters from kernel on startup (one-time full count)
-		d.reconcileSetCountersFromKernel(wrapper)
+		d.reconcileSetCountersFromKernel(wrapper, true)
+
+		// v1.236: keep the active counts in step between reconciliations
+		go d.startCountRefresh(wrapper)
 
 		// v1.34.0: Start periodic reconciliation after initial startup
 		d.startPeriodicReconciliation(wrapper)
@@ -610,64 +656,67 @@ func (d *Daemon) initOpQueue() error {
 	return nil
 }
 
-// reconcileSetCountersFromKernel counts elements in all nftban sets
-// and initializes the in-memory counters. Called once on startup. (v1.32.0)
-func (d *Daemon) reconcileSetCountersFromKernel(wrapper *opqueue.NFTBackendWrapper) {
-	log.Println("[set_counters] Reconciling set counts from kernel state...")
+// reconcileSetCountersFromKernel counts elements in all nftban sets and sets the in-memory
+// counters. full: the startup and periodic reconciliation (every set, logged, cache written).
+// Not full: the light recount of startCountRefresh (v1.236) — quiet, and sets already at
+// HUGE scale are left to the full reconciliation (GetSetCount reads every element; those are
+// feed sets, written by replace with an exact count). (v1.32.0)
+func (d *Daemon) reconcileSetCountersFromKernel(wrapper *opqueue.NFTBackendWrapper, full bool) {
+	if full {
+		log.Println("[set_counters] Reconciling set counts from kernel state...")
+	}
+
+	recount := func(setName string, logSkip bool) {
+		if !full && d.setCounters.Get(setName) >= stats.ThresholdHuge {
+			return
+		}
+		// Use GetSetCount instead of GetSetElements to avoid keeping all elements
+		// in memory. On a 500K+ interval set, GetSetElements causes 1GB+ heap spike.
+		count, err := wrapper.GetSetCount("nftban", setName)
+		if err != nil {
+			if full && logSkip {
+				// Set might not exist yet (e.g. IPv6 not configured)
+				log.Printf("[set_counters] %s: skipped (%v)", setName, err)
+			}
+			return
+		}
+		// v1.236 (COUNT-MECH-RECONCILE-SKIPS-ZERO): a successful read of 0 is a count.
+		d.setCounters.SetReconciled(setName, int64(count))
+		if full && count > 0 {
+			log.Printf("[set_counters] %s: %d elements [%s]", setName, count, d.setCounters.Scale(setName))
+		}
+	}
 
 	// Known set names in the nftban schema
-	setNames := []string{
+	for _, setName := range []string{
 		"blacklist_ipv4", "blacklist_ipv6",
 		"blacklist_manual_ipv4", "blacklist_manual_ipv6", // v1.34.0: hash sets
 		"whitelist_ipv4", "whitelist_ipv6",
 		"tcp_ports_in", "tcp_ports_out",
 		"udp_ports_in", "udp_ports_out",
 		"ssh_ports", // v1.171 §3.6: was omitted → ssh_ports counter never seeded from kernel on startup
+	} {
+		recount(setName, true)
 	}
 
-	for _, setName := range setNames {
-		// Use GetSetCount instead of GetSetElements to avoid loading all elements
-		// into memory. On a 500K+ interval set, GetSetElements causes 1GB+ heap spike.
-		count, err := wrapper.GetSetCount("nftban", setName)
-		if err != nil {
-			// Set might not exist yet (e.g. IPv6 not configured)
-			log.Printf("[set_counters] %s: skipped (%v)", setName, err)
-			continue
-		}
-		d.setCounters.SetReconciled(setName, int64(count))
-		if count > 0 {
-			log.Printf("[set_counters] %s: %d elements [%s]", setName, count, d.setCounters.Scale(setName))
-		}
-	}
-
-	// v1.41.0: Also check port_allow concat sets
-	portAllowSets := []string{
+	// v1.41.0: port_allow concat sets (may not exist on older schemas), and the botguard
+	// sets (may not exist; GetSetCount never creates one)
+	for _, setName := range []string{
 		"port_allow_tcp_ipv4", "port_allow_udp_ipv4",
 		"port_allow_tcp_ipv6", "port_allow_udp_ipv6",
-	}
-	for _, setName := range portAllowSets {
-		count, err := wrapper.GetSetCount("nftban", setName)
-		if err != nil {
-			continue // Port allow sets may not exist on older schemas
-		}
-		if count > 0 {
-			d.setCounters.SetReconciled(setName, int64(count))
-		}
-	}
-
-	// Also check botguard sets if they exist
-	botguardSets := []string{
 		"http_bot_suspect", "http_bot_pending", "http_bot_allow",
 		"http_bot_grey", "http_bot_ban", "http_bot_emergency",
+		// v1.236: the IPv6 BotGuard sets were never counted
+		"http_bot_suspect6", "http_bot_pending6", "http_bot_allow6",
+		"http_bot_grey6", "http_bot_ban6", "http_bot_emergency6",
+		// HTTP campaign prefixes (absent on a ruleset rendered before the set existed)
+		"campaign_prefix_ipv4",
+	} {
+		recount(setName, false)
 	}
-	for _, setName := range botguardSets {
-		count, err := wrapper.GetSetCount("nftban", setName)
-		if err != nil {
-			continue // Botguard sets may not exist
-		}
-		if count > 0 {
-			d.setCounters.SetReconciled(setName, int64(count))
-		}
+
+	if !full {
+		return // the cache writer loop publishes the change within 10 s
 	}
 
 	// Force immediate cache file write
