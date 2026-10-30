@@ -46,7 +46,9 @@ permissions:
 jobs:
   architecture-check:
     name: Policy Gates
-    runs-on: ubuntu-latest
+    # v1.236: pinned. ubuntu-latest moved to 26.04 (uutils coreutils); four ci-bash tests fail there (GNU/uutils
+    # compatibility unconfirmed, tracked separately). The pin is the CI environment only.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:

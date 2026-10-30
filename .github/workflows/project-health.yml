@@ -18,7 +18,8 @@ permissions:
 
 jobs:
   health:
-    runs-on: ubuntu-latest
+    # v1.236: pinned to the image main last passed on (ubuntu-latest = 26.04 brings shellcheck 0.11 / SC2319).
+    runs-on: ubuntu-24.04
     permissions:
       contents: write # Required for auto-commit of STATUS.md on main branch
 
