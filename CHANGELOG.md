@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v1.236.0] - 2026-10-29 — Firewall replacement without enforcement gaps; BotGuard enforcement
+## [v1.236.0] - 2026-10-30 — Firewall replacement without enforcement gaps; BotGuard enforcement
 
 As of v1.236.0. Verified on Ubuntu 24.04 (DEB), Rocky 9 (EL9 RPM) and Rocky 10 (EL10 RPM) as an upgrade from
 v1.235.1 with DDoS, PortScan and BotGuard enabled.
