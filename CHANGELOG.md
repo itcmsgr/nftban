@@ -126,6 +126,10 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
 
 ### Security
 
+- Firewall reload and rebuild render the new ruleset, and load it as root, from a private directory (root, mode
+  0700) inside `/var/lib/nftban`. Earlier v1.236 candidates used `/run/nftban`, a directory owned by the
+  `nftban` service account, which could have replaced the file between rendering and loading.
+
 - **Go 1.26.10 and `golang.org/x/net` v0.62.0**: fixes GO-2026-6809 (`crypto/x509`, reachable from NFTBan
   code) and GO-2026-6866 / GO-2026-6860 (`golang.org/x/net`, not called by NFTBan).
 
@@ -141,6 +145,9 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
 - Adding an address to the session whitelist removes it from ban sets; the ban does not return when the entry
   expires.
 - Suricata mode's `ddos_blocked` set is IPv4 only (IPv6 Suricata blocks use the daemon ban path).
+- The nft write lock (`/run/nftban/nft_writers.lock`) and its intent file are in a directory owned by the `nftban`
+  service account, so the lock's integrity depends on that account not being compromised. Moving them to a
+  root-owned location is planned for v1.237.
 - **Hosts whose core utilities are uutils (the Rust coreutils, default on Ubuntu 26.04):** compatibility is not
   confirmed. NFTBan is tested with GNU coreutils, and its CI runs on Ubuntu 24.04. On an Ubuntu 26.04 CI runner,
   four of NFTBan's shell tests failed. One of them was a product bug, fixed in this release (see Fixed —
