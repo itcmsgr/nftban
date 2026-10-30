@@ -3158,9 +3158,15 @@ _rebuild_snapshot_full() {
 _fw_atomic_load() {
     local schema="$1" quiet="${2:-true}"
     local core="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
-    local out nonce crc=0 rc=0 marker readable
+    local work out err nonce crc=0 rc=0 marker readable
 
-    out="$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/atomic-load.XXXXXX")" || return 3
+    # The rendered ruleset is written, then loaded by root, from a PRIVATE directory (root, 0700) inside the
+    # root-owned data dir (fhs-spec: /var/lib/nftban 0750 root:nftban). Never under /run/nftban: that directory
+    # belongs to the nftban service user, which could replace the file between render and load
+    # (SEC-WRITE-BOUNDARY-LOCK-IN-NFTBAN-OWNED-RUN-DIR, part A). A directory left behind by a killed run stays
+    # root-only and is never read again (unique name).
+    work="$(mktemp -d "${NFTBAN_DATA_DIR:-/var/lib/nftban}/.atomic-load.XXXXXX")" || return 3
+    out="$work/ruleset.nft"; err="$work/ruleset.err"
     nonce="$(date +%s%N)-$$"
     # Step B (design §2.1): the live objects of the ENABLED modules are carried into the load.
     # Enablement comes from the module authority, decided here, before the boundary (config
@@ -3171,7 +3177,7 @@ _fw_atomic_load() {
         source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" 2>/dev/null || true
     fi
     if ! declare -F nftban_module_effective_enabled >/dev/null 2>&1; then
-        rm -f "$out"
+        rm -rf -- "$work"
         echo "ERROR: module authority unavailable — cannot decide which module objects to keep; NOTHING applied" >&2
         return 3
     fi
@@ -3187,7 +3193,7 @@ _fw_atomic_load() {
     # finished (drain). Nothing here calls the daemon. If this shell dies, its nft child keeps
     # the lock until it exits; a stale intent (dead pid) is ignored by the daemon.
     if ! nftban_writers_acquire; then
-        rm -f "$out"
+        rm -rf -- "$work"
         echo "ERROR: daemon writes did not drain within ${NFTBAN_BOUNDARY_WAIT:-60}s — NOTHING applied, the existing ruleset is untouched" >&2
         return 3
     fi
@@ -3195,21 +3201,21 @@ _fw_atomic_load() {
     if [[ -x "$core" ]]; then
         # One render: schema + marker + carried module objects (+ jumps at their anchors) +
         # set contents, read from the kernel under the boundary.
-        "$core" ruleset content --schema "$schema" --nonce "$nonce" --modules "$_mods" > "$out" 2> "$out.err" || crc=$?
+        "$core" ruleset content --schema "$schema" --nonce "$nonce" --modules "$_mods" > "$out" 2> "$err" || crc=$?
     else
         crc=1
-        echo "nftban-core not found at $core" > "$out.err"
+        echo "nftban-core not found at $core" > "$err"
     fi
     if [[ $crc -ne 0 ]]; then
         nftban_writers_release
-        echo "ERROR: ruleset content not rendered (rc=$crc): $(tail -1 "$out.err" 2>/dev/null) — NOTHING applied, the existing ruleset is untouched" >&2
-        rm -f "$out" "$out.err"
+        echo "ERROR: ruleset content not rendered (rc=$crc): $(tail -1 "$err" 2>/dev/null) — NOTHING applied, the existing ruleset is untouched" >&2
+        rm -rf -- "$work"
         return 3
     fi
-    [[ "$quiet" == "false" ]] && echo "    $(grep -m1 '^RULESET_CONTENT' "$out.err" 2>/dev/null)" && grep '^RULESET_MODULES' "$out.err" 2>/dev/null | sed 's/^/    /'
+    [[ "$quiet" == "false" ]] && echo "    $(grep -m1 '^RULESET_CONTENT' "$err" 2>/dev/null)" && grep '^RULESET_MODULES' "$err" 2>/dev/null | sed 's/^/    /'
 
     nft -f "$out" 2>&1 || rc=$? # nftban:held
-    rm -f "$out" "$out.err"
+    rm -rf -- "$work"
 
     readable=0
     marker="$(nft -j list table ip nftban 2>/dev/null | jq -r '.nftables[] | .table? | select(.) | .comment // ""' 2>/dev/null)" && readable=1
