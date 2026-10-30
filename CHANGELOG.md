@@ -118,6 +118,12 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
 - **The installer reported `FAILED_SSH_UNKNOWN` instead of `FAILED_CONFIG_INVALID`** for an invalid master
   switch on a host where SSH detection fails. The switch is now checked first.
 
+### Fixed — BotScan on uutils
+
+- A BotScan scan of an explicitly named log file (and the fallback reader) used `tail -1000 -- FILE`, which uutils
+  coreutils rejects: the scan read no lines and BotScan health showed `DEGRADED_INPUT_BLIND`. It now uses
+  `tail -n 1000 -- FILE` (same last 1,000 lines with GNU coreutils).
+
 ### Security
 
 - **Go 1.26.10 and `golang.org/x/net` v0.62.0**: fixes GO-2026-6809 (`crypto/x509`, reachable from NFTBan
@@ -137,9 +143,9 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
 - Suricata mode's `ddos_blocked` set is IPv4 only (IPv6 Suricata blocks use the daemon ban path).
 - **Hosts whose core utilities are uutils (the Rust coreutils, default on Ubuntu 26.04):** compatibility is not
   confirmed. NFTBan is tested with GNU coreutils, and its CI runs on Ubuntu 24.04. On an Ubuntu 26.04 CI runner,
-  four of NFTBan's shell tests failed. One product failure is confirmed under uutils 0.10.0: a BotScan scan of
-  an explicitly named log file reads nothing, because uutils rejects the `tail -1000 -- FILE` form. The
-  scheduled BotScan scan reads logs through a different path that has not been tested under uutils. This is neither a statement of full support
+  four of NFTBan's shell tests failed. One of them was a product bug, fixed in this release (see Fixed —
+  BotScan below); the cause of the other three is not established. The scheduled BotScan scan reads logs
+  through a path that has not been tested under uutils. This is neither a statement of full support
   nor of general incompatibility; compatibility work is planned for a later release.
 - **BotScan HTTP campaign** (only with `BOTSCAN_CAMPAIGN_ENABLED=true`):
   - The first ban after enabling takes at least 2 minutes (re-enable grace) plus up to one BotScan cycle.

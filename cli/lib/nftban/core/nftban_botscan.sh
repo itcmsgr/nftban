@@ -2870,7 +2870,7 @@ nftban_botscan_process_logs() {
             processed=$((processed + 1))
         done < <(
             {
-                if [[ -n "$log_file" ]]; then tail -1000 -- "$f" 2>/dev/null
+                if [[ -n "$log_file" ]]; then tail -n 1000 -- "$f" 2>/dev/null
                 elif declare -F nftban_http_read_incremental >/dev/null 2>&1; then
                     # v1.229.10: when reading a SPOOL subject the reader must use the
                     # SAME canonical cursor identity the reaper uses. Two independent
@@ -2885,7 +2885,7 @@ nftban_botscan_process_logs() {
                     else
                         nftban_http_read_incremental "$f"
                     fi
-                else tail -1000 -- "$f" 2>/dev/null; fi
+                else tail -n 1000 -- "$f" 2>/dev/null; fi
             } | { if [[ -n "$_bs_pf_bin" ]]; then "$_bs_pf_bin" --filter "$_pf" 2>/dev/null || cat; else cat; fi; }
         )
             _bs_pass=$(( _bs_pass + 1 ))
