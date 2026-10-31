@@ -124,11 +124,33 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
   coreutils rejects: the scan read no lines and BotScan health showed `DEGRADED_INPUT_BLIND`. It now uses
   `tail -n 1000 -- FILE` (same last 1,000 lines with GNU coreutils).
 
+### Fixed — FHS generator
+
+- `build/generate-fhs-outputs.sh` generates `fhs-permissions.sh` on mikefarah yq v4 (it used to stop with an
+  error and leave the script truncated), writes it only when complete, and `--check` now compares it.
+
+### Upgrade notes
+
+- If you enabled trust providers (`nftban trust enable …`), run `nftban trust update` once after upgrading: the
+  caches are rebuilt in their new location.
+
 ### Security
 
 - Firewall reload and rebuild render the new ruleset, and load it as root, from a private directory (root, mode
   0700) inside `/var/lib/nftban`. Earlier v1.236 candidates used `/run/nftban`, a directory owned by the
   `nftban` service account, which could have replaced the file between rendering and loading.
+- The nft write boundary (`nft_writers.lock`, `nft_writers.intent`) is in the new root-only `/run/nftban-writers`
+  (declared in the FHS spec, created by tmpfiles, SELinux `nftban_var_run_t`), no longer in `/run/nftban`, where
+  the `nftban` service account could replace the lock and split the boundary.
+- `/var/lib/nftban/feeds` is root-owned (`0750 root:nftban`). The feed downloader runs as root and writes a
+  `.tmp` file before renaming it; with the directory owned by the `nftban` account, that account could have
+  planted the `.tmp` name as a symlink and made root overwrite another file.
+- The trust provider caches moved from `/var/cache/nftban/trust` (under a directory the `nftban` account owns)
+  to `/var/lib/nftban/trust/cache` (`0750 root:nftban`). A `trust.conf` that still names the old location is
+  mapped to the new one.
+- The daemon's IPC socket restricts the `nftban` service account (the account BotScan, health, the queue and the
+  exporter run as) to read-only methods and `sync`; root and operators in the `nftban` group keep every method.
+  A refused call is answered with an error and logged.
 
 - **Go 1.26.10 and `golang.org/x/net` v0.62.0**: fixes GO-2026-6809 (`crypto/x509`, reachable from NFTBan
   code) and GO-2026-6866 / GO-2026-6860 (`golang.org/x/net`, not called by NFTBan).
@@ -145,9 +167,6 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
 - Adding an address to the session whitelist removes it from ban sets; the ban does not return when the entry
   expires.
 - Suricata mode's `ddos_blocked` set is IPv4 only (IPv6 Suricata blocks use the daemon ban path).
-- The nft write lock (`/run/nftban/nft_writers.lock`) and its intent file are in a directory owned by the `nftban`
-  service account, so the lock's integrity depends on that account not being compromised. Moving them to a
-  root-owned location is planned for v1.237.
 - **Hosts whose core utilities are uutils (the Rust coreutils, default on Ubuntu 26.04):** compatibility is not
   confirmed. NFTBan is tested with GNU coreutils, and its CI runs on Ubuntu 24.04. On an Ubuntu 26.04 CI runner,
   four of NFTBan's shell tests failed. One of them was a product bug, fixed in this release (see Fixed —
