@@ -9,13 +9,13 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-10-23"
-# meta:description="v1.236 (design V1236_STAGE2_DESIGN_DRAFT.md §3). The shell side of the inner write boundary /run/nftban/nft_writers.lock. nftband holds it SHARED for each kernel transaction; every nft write made outside the daemon holds it EXCLUSIVE, so it can never land between a firewall replacement's kernel read and its commit, nor inside a daemon transaction. One implementation for the replacement (_fw_atomic_load) and for every direct writer. Changes no shell options: safe to source from any script."
+# meta:description="v1.236 (design V1236_STAGE2_DESIGN_DRAFT.md §3). The shell side of the inner write boundary /run/nftban-writers/nft_writers.lock (root-owned, fhs-spec). nftband holds it SHARED for each kernel transaction; every nft write made outside the daemon holds it EXCLUSIVE, so it can never land between a firewall replacement's kernel read and its commit, nor inside a daemon transaction. One implementation for the replacement (_fw_atomic_load) and for every direct writer. Changes no shell options: safe to source from any script."
 # meta:input="nft arguments"
 # meta:output="nft output; rc of nft, or 75 when the boundary was busy (NOT applied)"
 # meta:depends="bash,flock,nft"
-# meta:inventory.files="/run/nftban/nft_writers.lock, /run/nftban/nft_writers.intent"
+# meta:inventory.files="/run/nftban-writers/nft_writers.lock, /run/nftban-writers/nft_writers.intent"
 # meta:inventory.binaries="flock, nft"
-# meta:inventory.env_vars="NFTBAN_RUN_DIR, NFTBAN_BOUNDARY_WAIT"
+# meta:inventory.env_vars="NFTBAN_WRITERS_DIR, NFTBAN_BOUNDARY_WAIT"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
@@ -34,12 +34,12 @@ _NFTBAN_WRITERS_FD=""
 # The descriptor is not close-on-exec: children (nft) keep the lock if this shell dies.
 # Rules while held: no daemon IPC, no daemon start/restart, no long-lived child.
 nftban_writers_acquire() {
-    local dir="${NFTBAN_RUN_DIR:-/run/nftban}" fd=""
+    local dir="${NFTBAN_WRITERS_DIR:-/run/nftban-writers}" fd=""
     if [[ -n "$_NFTBAN_WRITERS_FD" ]]; then
         echo "nftban: write boundary already held by this shell (nested acquire refused)" >&2
         return 75
     fi
-    mkdir -p "$dir" 2>/dev/null || true
+    mkdir -p -m 0700 "$dir" 2>/dev/null || true
     if ! { exec {fd}>>"$dir/nft_writers.lock"; } 2>/dev/null; then
         echo "nftban: cannot open $dir/nft_writers.lock — nft write NOT applied" >&2
         return 75
@@ -61,7 +61,7 @@ nftban_writers_release() {
     [[ -n "$_NFTBAN_WRITERS_FD" ]] || return 0
     exec {_NFTBAN_WRITERS_FD}>&-
     _NFTBAN_WRITERS_FD=""
-    _nftban_writers_drop_intent "${NFTBAN_RUN_DIR:-/run/nftban}"
+    _nftban_writers_drop_intent "${NFTBAN_WRITERS_DIR:-/run/nftban-writers}"
 }
 
 # Remove the intent only if it is still ours (a later waiter may have replaced it).

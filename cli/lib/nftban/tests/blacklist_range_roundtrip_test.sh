@@ -34,7 +34,7 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/bin"; printf '#!/bin/sh\nexit 0\n' > "$T/bin/nft"; chmod +x "$T/bin/nft"
 export PATH="$T/bin:$PATH"
 # v1.236: the extracted code writes through the write boundary; load the real helper, sandboxed.
-export NFTBAN_RUN_DIR="$T/run"
+export NFTBAN_RUN_DIR="$T/run" NFTBAN_WRITERS_DIR="$T/run"
 # shellcheck source=/dev/null
 source "${LIB_DIR}/lib/nft_writers.sh"
 

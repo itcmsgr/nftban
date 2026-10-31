@@ -44,7 +44,7 @@ echo "=== v1.235 A1: scoped firewall restore ==="
 
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 # v1.236: the extracted code writes through the write boundary; load the real helper, sandboxed.
-export NFTBAN_RUN_DIR="$WORK/run"
+export NFTBAN_RUN_DIR="$WORK/run" NFTBAN_WRITERS_DIR="$WORK/run"
 # shellcheck source=/dev/null
 source "$(dirname "$FW")/../lib/nft_writers.sh"
 

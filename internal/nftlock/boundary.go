@@ -9,7 +9,7 @@
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-10-23"
 // meta:description="Inner write-boundary lock (design V1236_STAGE2_DESIGN_DRAFT.md §9.1a): every daemon kernel transaction holds LOCK_SH on nft_writers.lock; a ruleset replacement holds LOCK_EX from its kernel read to its commit readback, after publishing an intent record so new daemon writes wait instead of starving it"
-// meta:inventory.files="/run/nftban/nft_writers.lock,/run/nftban/nft_writers.intent"
+// meta:inventory.files="/run/nftban-writers/nft_writers.lock,/run/nftban-writers/nft_writers.intent"
 // meta:inventory.privileges="root"
 //
 // Lock order (design §9.1a): nft_operations.lock (outer, lane vs lane) before
@@ -41,12 +41,13 @@ import (
 	"time"
 )
 
-// BoundaryPath is the inner write-boundary lock file (shell: flock on the same file).
-const BoundaryPath = "/run/nftban/nft_writers.lock"
+// BoundaryPath is the inner write-boundary lock file (shell: flock on the same file). It lives
+// in the root-owned /run/nftban-writers (fhs-spec.yaml), not in the service-owned /run/nftban.
+const BoundaryPath = "/run/nftban-writers/nft_writers.lock"
 
 // IntentPath is written by a replacement before it waits for LOCK_EX:
 // "pid=<pid> boot=<boot_id>".
-const IntentPath = "/run/nftban/nft_writers.intent"
+const IntentPath = "/run/nftban-writers/nft_writers.intent"
 
 // ErrBusy: a firewall replacement held the write boundary for longer than the wait.
 var ErrBusy = errors.New("nft writes paused by a firewall replacement (busy)")
@@ -146,7 +147,7 @@ func (b *Boundary) ChildLock() *os.File {
 }
 
 func (b *Boundary) tryShared() (*os.File, error) {
-	if err := os.MkdirAll(filepath.Dir(b.LockPath), 0750); err != nil { // #nosec G301
+	if err := os.MkdirAll(filepath.Dir(b.LockPath), 0700); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", filepath.Dir(b.LockPath), err)
 	}
 	f, err := os.OpenFile(b.LockPath, os.O_CREATE|os.O_RDWR, 0640) // #nosec G302 G304 -- fixed path

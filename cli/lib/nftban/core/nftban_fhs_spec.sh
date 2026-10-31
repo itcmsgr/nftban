@@ -176,6 +176,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/run/nftban"]="0755|nftban|nftban|Runtime data (PID files, sockets)"
     NFTBAN_FHS_DIRECTORIES["/run/nftban/botscan"]="0750|nftban|nftban|BotScan read-authority spool (v1.178-A): nftban:nftban access-log lines written by nftban-botscan-collector.service (CAP_DAC_READ_SEARCH) and read by the unprivileged nftban-botscan.service scanner. tmpfs/ephemeral."
     NFTBAN_FHS_DIRECTORIES["/run/nftban-firewall-validate"]="2750|root|nftban|nftban-firewall-validate.service handoff dir (last.json, root:nftban 0640): root writes, the nftban group reads; setgid makes the wrapper's file inherit group nftban without CAP_CHOWN"
+    NFTBAN_FHS_DIRECTORIES["/run/nftban-writers"]="0700|root|root|nft write boundary (v1.236): nft_writers.lock and nft_writers.intent. nftband holds the lock SHARED for each kernel transaction; every other nft writer (root shell paths, the boot helper) holds it EXCLUSIVE. Root only."
 
     # Shared Directories
     NFTBAN_FHS_DIRECTORIES["/usr/share/nftban"]="0755|root|root|Shared application data"

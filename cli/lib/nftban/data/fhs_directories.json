@@ -980,6 +980,14 @@
         "group": "nftban",
         "description": "nftban-firewall-validate.service handoff dir (last.json, root:nftban 0640): root writes, the nftban group reads; setgid makes the wrapper's file inherit group nftban without CAP_CHOWN",
         "created_by": "tmpfiles"
+      },
+      {
+        "path": "/run/nftban-writers",
+        "mode": "0700",
+        "owner": "root",
+        "group": "root",
+        "description": "nft write boundary (v1.236): nft_writers.lock and nft_writers.intent. nftband holds the lock SHARED for each kernel transaction; every other nft writer (root shell paths, the boot helper) holds it EXCLUSIVE. Root only.",
+        "created_by": "tmpfiles"
       }
     ],
     "shared": [

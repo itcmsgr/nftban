@@ -33,7 +33,7 @@ ok()  { PASS=$((PASS+1)); echo "  [PASS] $1"; }
 bad() { FAIL=$((FAIL+1)); echo "  [FAIL] $1"; }
 
 SBX="$(mktemp -d)"; trap 'rm -rf "$SBX"' EXIT
-export NFTBAN_RUN_DIR="$SBX/run"; mkdir -p "$NFTBAN_RUN_DIR"
+export NFTBAN_RUN_DIR="$SBX/run" NFTBAN_WRITERS_DIR="$SBX/run"; mkdir -p "$NFTBAN_RUN_DIR"
 STUB_LOG="$SBX/ipc.log"; : > "$STUB_LOG"
 # ⛔ THE PRE-FIX BASELINE IS SYNTHESISED FROM THE LIVE LIBRARY BY A DECLARED
 #    INVERSION — it is NOT read from a git ref.

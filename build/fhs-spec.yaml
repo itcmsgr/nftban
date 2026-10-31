@@ -1240,6 +1240,23 @@ directories:
         `+`ExecStartPre install -d is removed. The old path is no longer created; on an upgraded
         host it disappears at the next reboot (tmpfs).
 
+    - path: /run/nftban-writers
+      artifact_class: runtime
+      mode: "0700"
+      owner: root
+      group: root
+      description: "nft write boundary (v1.236): nft_writers.lock and nft_writers.intent. nftband holds the lock SHARED for each kernel transaction; every other nft writer (root shell paths, the boot helper) holds it EXCLUSIVE. Root only."
+      created_by: tmpfiles
+      tmpfiles_reconcile: "z"
+      note: |
+        v1.236 (owner 2026-10-31): the boundary files live here, not in /run/nftban. /run/nftban
+        belongs to the nftban service account (0755, socket discovery); its owner could unlink and
+        recreate a lock file there, so the daemon and a shell writer would lock different inodes and
+        the boundary would no longer exclude them. Same rule as /run/nftban-firewall-validate
+        (v1.235): a file root relies on for integrity does not live in a directory the service
+        account owns; the parent is the root-owned /run. tmpfiles is the single creator (boot and
+        package install, before any service starts), so units listing it in ReadWritePaths always
+        find it. v1.235.1 had no write boundary, so no released version used the old location.
   # ---------------------------------------------------------------------------
   # Shared Data (root:root, 755) - Read-only application data
   # ---------------------------------------------------------------------------
