@@ -594,11 +594,18 @@ directories:
       artifact_class: state
       retention_mode: unclassified
       mode: "0750"
-      owner: nftban
+      owner: root
       group: nftban
       description: "Threat feed data"
       created_by: tmpfiles
       tmpfiles_reconcile: "z"
+      note: |
+        v1.236 (owner 2026-10-31): root-owned. The writer is root (nftban-core feeds update in the
+        root nftban-core-feeds.service), which writes <feed>.txt.tmp and renames it; with the
+        directory owned by the nftban service account, that account could pre-plant the .tmp name
+        as a symlink and make root overwrite any file. The nftban group keeps read + search, which
+        is all its readers need (the exporter reads the files; cmd_feeds.go setFeedFileOwnership).
+        tmpfiles z and the installer's canonical pass re-own the directory on upgrade.
 
     - path: /var/lib/nftban/reports
       artifact_class: state

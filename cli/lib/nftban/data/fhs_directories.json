@@ -508,7 +508,7 @@
       {
         "path": "/var/lib/nftban/feeds",
         "mode": "0750",
-        "owner": "nftban",
+        "owner": "root",
         "group": "nftban",
         "description": "Threat feed data",
         "created_by": "tmpfiles"
