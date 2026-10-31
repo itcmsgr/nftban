@@ -2054,8 +2054,17 @@ nft_fragment_render_http_botguard_sets() {
             else
                 name="${base}6" table="$table_ipv6" type="ipv6_addr"
             fi
-            # shellcheck disable=SC2086 # table is "<family> <name>"
-            nft list set ${table} "$name" &>/dev/null && continue
+            # Typed presence probe: only a verified PRESENT skips the declaration; a set that
+            # cannot be observed refuses the render instead of being read as absent.
+            if ! _nft_fragment_obs_probe_ready || ! declare -F nftban_nft_probe_set >/dev/null 2>&1; then
+                echo "ERROR: typed set probe unavailable — BotGuard sets NOT rendered" >&2
+                return 1
+            fi
+            if ! nftban_nft_probe_set "${table%% *}" "${table#* }" "$name" botguard_sets; then
+                echo "ERROR: cannot observe ${table} ${name} (${NFTBAN_NFT_PROBE_CLASS:-UNKNOWN}) — BotGuard sets NOT rendered" >&2
+                return 1
+            fi
+            [[ "${NFTBAN_NFT_PROBE_VERDICT:-}" == "PRESENT" ]] && continue
             adds+="add set ${table} ${name} { type ${type}; flags timeout; comment \"${comment}\"; }"$'\n'
         done
     done
