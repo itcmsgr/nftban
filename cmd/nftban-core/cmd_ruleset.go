@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/itcmsgr/nftban/internal/nftbackend"
+	"github.com/itcmsgr/nftban/internal/exemption"
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
 	"github.com/itcmsgr/nftban/internal/ruleset"
 )
@@ -150,7 +150,7 @@ func cmdRuleset(cfg *nftbanconf.Config) error {
 		}
 	}
 
-	res, err := ruleset.Render(opts, ruleset.NftSetReader, nftbackend.NewExemption(cfg.ConfigDir))
+	res, err := ruleset.Render(opts, ruleset.NftSetReader, exemption.NewExemption(cfg.ConfigDir))
 	if errors.Is(err, ruleset.ErrOversized) {
 		return &rulesetExit{rulesetExitRefused, "refused before any change: " + err.Error() + " (existing ruleset untouched; see NFTBAN_RULESET_MAX_ELEMENTS)"}
 	}

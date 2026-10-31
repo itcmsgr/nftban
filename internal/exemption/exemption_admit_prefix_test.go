@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 
-package nftbackend
+package exemption
 
 import (
 	"net/netip"
@@ -14,7 +14,7 @@ import (
 // Fixtures are routable, non-documentation ranges so the overlap rule, not the address-class
 // rule, decides each case.
 func TestAdmitPrefixWholePrefixRefusal(t *testing.T) {
-	r := &exemptResolver{ttl: time.Hour, loaded: true, loadedAt: time.Now(), exact: map[string]struct{}{
+	r := &Resolver{ttl: time.Hour, loaded: true, loadedAt: time.Now(), exact: map[string]struct{}{
 		"185.220.101.7": {}, // an exempt single address
 	}}
 	r.prefixes = []netip.Prefix{
@@ -51,15 +51,9 @@ func TestAdmitPrefixWholePrefixRefusal(t *testing.T) {
 
 // No resolver or no backend refuses: a /24 drop without the never-ban authority is never safe.
 func TestAdmitPrefixFailsClosed(t *testing.T) {
-	var nilR *exemptResolver
+	var nilR *Resolver
 	if ok, _ := nilR.AdmitPrefix("45.33.32.0/24"); ok {
 		t.Fatal("nil resolver admitted a prefix")
 	}
-	var nilB *Backend
-	if ok, _ := nilB.AdmitPrefix("45.33.32.0/24"); ok {
-		t.Fatal("nil backend admitted a prefix")
-	}
-	if ok, _ := (&Backend{}).AdmitPrefix("45.33.32.0/24"); ok {
-		t.Fatal("backend without a resolver admitted a prefix")
-	}
+	// The nil-Backend / no-resolver arms live in internal/nftbackend (exemption_backend_test.go).
 }

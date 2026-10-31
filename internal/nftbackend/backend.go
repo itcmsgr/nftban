@@ -35,6 +35,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/itcmsgr/nftban/internal/bansource"
+	"github.com/itcmsgr/nftban/internal/exemption"
 	"log"
 	"net"
 	"os"
@@ -88,7 +89,7 @@ type Backend struct {
 	// v1.209.x F2: authoritative never-ban exemption guard (admin/management/whitelist/
 	// system/live-SSH). Consulted by Ban() before any drop-set write. nil = disabled
 	// (guard not wired) → bans proceed unguarded (pre-existing rule-order behavior).
-	exempt *exemptResolver
+	exempt *exemption.Resolver
 
 	// Statistics
 	stats Stats
@@ -111,7 +112,7 @@ type Stats struct {
 	// of the prefix-aware authority shows up here as a stat that stops moving.
 	BlacklistExemptSubtractions int64
 	// v1.235 (owner 2026-10-08): bulk inputs NOT loaded at all because splitting them
-	// around exempt addresses would exceed maxSplitPerPrefix (exemption_split_limit).
+	// around exempt addresses would exceed exemption.MaxSplitPerPrefix (exemption_split_limit).
 	// Their non-exempt addresses are unprotected: counted apart from the ordinary
 	// splits above so the gap can never read as a successful split.
 	BlacklistExemptSplitLimitOmissions int64
@@ -123,7 +124,7 @@ type Stats struct {
 // list is published to for the unprivileged BotScan scanner ("" to skip publishing).
 // Safe to call once at daemon init. Idempotent.
 func (b *Backend) EnableExemptionGuard(configDir, scannerFile string) {
-	r := newExemptResolver(configDir, scannerFile)
+	r := exemption.NewResolver(configDir, scannerFile)
 	b.mu.Lock()
 	b.exempt = r
 	b.mu.Unlock()
@@ -655,7 +656,7 @@ func (b *Backend) IsExempt(ip string) (bool, string) {
 // This is the PREFIX-shaped counterpart to IsExempt, for the bulk producers —
 // feeds, geoban, blacklist.d CIDRs, the load_cidrs verb — that emit prefixes and
 // which IsExempt therefore cannot answer for (see the note above
-// exemptResolver.SubtractExempt). It resolves through the SAME snapshot as Ban,
+// exemption.Resolver.SubtractExempt). It resolves through the SAME snapshot as Ban,
 // AddElement and the opqueue; there is no second exemption source.
 //
 // Remedy is SUBTRACTION, not refusal: a wide prefix containing one admin address is
@@ -677,7 +678,7 @@ func (b *Backend) SubtractExempt(cidrs []string) (kept []string, removed int, om
 	}
 	kept, removed, omitted = r.SubtractExempt(cidrs)
 	for _, p := range omitted {
-		log.Printf("[NEVER-BAN] exemption_split_limit: %s NOT loaded (splitting it around never-ban addresses would exceed %d prefixes); its non-exempt addresses are UNPROTECTED until the exempt set or the feed changes", p, maxSplitPerPrefix)
+		log.Printf("[NEVER-BAN] exemption_split_limit: %s NOT loaded (splitting it around never-ban addresses would exceed %d prefixes); its non-exempt addresses are UNPROTECTED until the exempt set or the feed changes", p, exemption.MaxSplitPerPrefix)
 	}
 	if removed > 0 || len(omitted) > 0 {
 		b.mu.Lock()
@@ -691,7 +692,7 @@ func (b *Backend) SubtractExempt(cidrs []string) (kept []string, removed int, om
 // AdmitPrefix is the never-ban decision for an AUTOMATIC prefix escalation (BotScan HTTP
 // campaign, campaign_prefix_ipv4): the whole prefix is admitted or refused, through the same
 // snapshot as Ban/SubtractExempt. Unlike SubtractExempt it fails CLOSED: no backend, no
-// resolver or an incomplete snapshot refuses (exemptResolver.AdmitPrefix).
+// resolver or an incomplete snapshot refuses (exemption.Resolver.AdmitPrefix).
 func (b *Backend) AdmitPrefix(prefix string) (bool, string) {
 	if b == nil {
 		return false, "exemption-unavailable"

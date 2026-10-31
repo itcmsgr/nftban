@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 //
-// meta:name="nftbackend_exemption"
+// meta:name="exemption"
 // meta:type="core"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-06-29"
@@ -17,7 +17,7 @@
 // meta:inventory.privileges="root"
 // =============================================================================
 
-package nftbackend
+package exemption
 
 import (
 	"bufio"
@@ -37,13 +37,13 @@ import (
 	"github.com/itcmsgr/nftban/internal/whitelist"
 )
 
-// exemptResolver holds the never-ban exemption snapshot and refreshes it on a TTL.
+// Resolver holds the never-ban exemption snapshot and refreshes it on a TTL.
 // IsExempt reads the snapshot under an RLock; a stale snapshot triggers one refresh.
 // Fail-safe: on any source error a previously-good snapshot is kept; if nothing has
 // ever loaded the snapshot is simply empty (so bans proceed — a broken resolver must
 // NEVER block legitimate bans; admin safety then degrades to the pre-existing rule
 // order, not worse than before).
-type exemptResolver struct {
+type Resolver struct {
 	mu          sync.RWMutex
 	configDir   string
 	scannerFile string
@@ -61,13 +61,13 @@ type exemptResolver struct {
 	sourceErr string
 }
 
-func newExemptResolver(configDir, scannerFile string) *exemptResolver {
+func NewResolver(configDir, scannerFile string) *Resolver {
 	// NOTE: does NOT Refresh here — the initial load must stay OFF the daemon startup
 	// path (Refresh touches /proc, files, and host detection; it must never gate the
 	// daemon reaching READY). EnableExemptionGuard warms it in a goroutine; IsExempt
 	// also lazily refreshes on first use. Until first load, IsExempt returns
 	// NOT-exempt (fail-safe: bans proceed; rule order still protects).
-	return &exemptResolver{
+	return &Resolver{
 		configDir:   configDir,
 		scannerFile: scannerFile,
 		ttl:         30 * time.Second,
@@ -87,7 +87,7 @@ type Exemption interface {
 // resolver it is refreshed once, up front (a one-shot command has no startup path to
 // protect), and publishes no scanner file.
 func NewExemption(configDir string) Exemption {
-	r := newExemptResolver(configDir, "")
+	r := NewResolver(configDir, "")
 	r.Refresh()
 	return r
 }
@@ -110,7 +110,7 @@ func canonPrefix(p netip.Prefix) netip.Prefix {
 // short reason. Returns false for non-single-IP inputs (CIDR ban requests are not the
 // admin/session class this guard protects). Range-aware, v4+v6, and IPv4-mapped-IPv6
 // aware: the input is canonicalized before any membership comparison.
-func (r *exemptResolver) IsExempt(ipStr string) (bool, string) {
+func (r *Resolver) IsExempt(ipStr string) (bool, string) {
 	addr, err := netip.ParseAddr(strings.TrimSpace(ipStr))
 	if err != nil {
 		return false, ""
@@ -177,14 +177,14 @@ func (r *exemptResolver) IsExempt(ipStr string) (bool, string) {
 // its TTL, its canonicalisation and its fail-safe semantics are shared with
 // IsExempt — there is exactly ONE exemption source.
 
-// maxSplitPerPrefix bounds the output of a single subtraction. Splitting a prefix
+// MaxSplitPerPrefix bounds the output of a single subtraction. Splitting a prefix
 // around k holes costs O(k * prefixlen) output prefixes, so a pathological input
 // (a very wide IPv6 prefix riddled with exempt singletons) could otherwise
 // allocate without bound on a path that already accepts up to 1M feed CIDRs.
 // Exceeding the bound DROPS the input prefix rather than emitting it: the
 // invariant that nothing covering an exempt address reaches a drop set is
 // absolute, and the bound is far above anything a real exempt snapshot produces.
-const maxSplitPerPrefix = 4096
+const MaxSplitPerPrefix = 4096
 
 // SubtractExempt removes never-ban-exempt address space from a list of elements
 // destined for an enforcement (drop) set.
@@ -201,7 +201,7 @@ const maxSplitPerPrefix = 4096
 // output prefixes; it is the count a silent regression would drive to zero.
 //
 // omitted lists the inputs dropped WHOLE because splitting them around the exempt
-// addresses would exceed maxSplitPerPrefix (reason "exemption_split_limit"). Their
+// addresses would exceed MaxSplitPerPrefix (reason "exemption_split_limit"). Their
 // NON-exempt addresses are then NOT loaded: a protection gap. It is returned (never
 // folded into removed alone) so every caller can log it, count it and report the
 // operation as degraded (owner 2026-10-08: no silent omission, no false success).
@@ -217,7 +217,7 @@ const maxSplitPerPrefix = 4096
 // canonPrefix the snapshot is stored with — but a mapped input that gets split is
 // re-emitted in mapped form, because the caller has already routed it to the v6
 // set and rewriting its family there would corrupt the element.
-func (r *exemptResolver) SubtractExempt(cidrs []string) (kept []string, removed int, omitted []string) {
+func (r *Resolver) SubtractExempt(cidrs []string) (kept []string, removed int, omitted []string) {
 	if r == nil || len(cidrs) == 0 {
 		return cidrs, 0, nil
 	}
@@ -242,7 +242,7 @@ func (r *exemptResolver) SubtractExempt(cidrs []string) (kept []string, removed 
 		removed++
 		var out []netip.Prefix
 		subtractPrefix(p, holes, &out)
-		if len(out) > maxSplitPerPrefix {
+		if len(out) > MaxSplitPerPrefix {
 			omitted = append(omitted, raw)
 			continue
 		}
@@ -256,7 +256,7 @@ func (r *exemptResolver) SubtractExempt(cidrs []string) (kept []string, removed 
 // holes is the exempt snapshot as prefixes (each exact address as a host prefix), whether
 // it has loaded, and the source errors of the refresh that published it (read together,
 // under one lock). Shared by SubtractExempt and AdmitPrefix: one snapshot, one shape.
-func (r *exemptResolver) holes() ([]netip.Prefix, bool, string) {
+func (r *Resolver) holes() ([]netip.Prefix, bool, string) {
 	r.maybeRefresh()
 
 	r.mu.RLock()
@@ -277,7 +277,7 @@ func (r *exemptResolver) holes() ([]netip.Prefix, bool, string) {
 // escalation (BotScan HTTP campaign): a prefix that touches exempt space is refused WHOLE
 // instead of split; an unloaded snapshot, or one whose latest refresh could not read a
 // required source, refuses instead of passing through.
-func (r *exemptResolver) AdmitPrefix(raw string) (bool, string) {
+func (r *Resolver) AdmitPrefix(raw string) (bool, string) {
 	p, _, ok := parseElementPrefix(raw)
 	if !ok {
 		return false, "unparseable"
@@ -410,7 +410,7 @@ func splitPrefix(p netip.Prefix) (netip.Prefix, netip.Prefix, bool) {
 	return lo, hi, true
 }
 
-func (r *exemptResolver) maybeRefresh() {
+func (r *Resolver) maybeRefresh() {
 	r.mu.RLock()
 	fresh := r.loaded && time.Since(r.loadedAt) <= r.ttl
 	r.mu.RUnlock()
@@ -422,7 +422,7 @@ func (r *exemptResolver) maybeRefresh() {
 // Refresh rebuilds the exemption snapshot from all sources. Each source is best-effort;
 // a source error contributes nothing and never aborts the rebuild. The snapshot is
 // swapped atomically; the scanner file is then published best-effort.
-func (r *exemptResolver) Refresh() {
+func (r *Resolver) Refresh() {
 	exact := make(map[string]struct{})
 	var prefixes []netip.Prefix
 
@@ -530,7 +530,7 @@ func (r *exemptResolver) Refresh() {
 // writeScannerFile publishes the resolved exempt list (one CIDR/IP per line) to a
 // 0640 nftban-readable file so the unprivileged BotScan scanner can suppress signals
 // without needing nft read. Best-effort; never fatal.
-func (r *exemptResolver) writeScannerFile(exact map[string]struct{}, prefixes []netip.Prefix) {
+func (r *Resolver) writeScannerFile(exact map[string]struct{}, prefixes []netip.Prefix) {
 	if r.scannerFile == "" {
 		return
 	}

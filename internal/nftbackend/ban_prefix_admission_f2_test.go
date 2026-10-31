@@ -5,6 +5,7 @@ package nftbackend
 
 import (
 	"context"
+	"github.com/itcmsgr/nftban/internal/exemption"
 	"testing"
 )
 
@@ -14,7 +15,7 @@ import (
 // Ban consults, because an admitted ban proceeds to netlink, which needs root.
 func TestBanPrefixAdmission_F2(t *testing.T) {
 	b := &Backend{}
-	b.exempt = snapshot([]string{"185.220.101.7"}, []string{"23.129.97.128/26"})
+	b.exempt = exemption.NewSnapshot([]string{"185.220.101.7"}, []string{"23.129.97.128/26"})
 
 	refusedByBan := func(ip string) bool {
 		t.Helper()
@@ -44,7 +45,7 @@ func TestBanPrefixAdmission_F2(t *testing.T) {
 	}
 
 	// Incomplete protection data: CIDRs refused (fail closed); single addresses unaffected.
-	b.exempt.sourceErr = "whitelist: unreadable"
+	b.exempt.SetSourceError("whitelist: unreadable")
 	if !refusedByBan("45.33.32.0/24") {
 		t.Error("a CIDR was admitted while protection data is incomplete")
 	}

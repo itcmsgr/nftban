@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 
-package nftbackend
+package exemption
 
 import (
 	"os"
@@ -40,7 +40,7 @@ func TestAdmitPrefixSourceCompleteness(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	r := newExemptResolver(cfg, "")
+	r := NewResolver(cfg, "")
 	r.ttl = time.Hour // refreshes below are explicit
 
 	// 1. Initial failure: never admitted.
@@ -82,7 +82,7 @@ func TestAdmitPrefixSourceCompleteness(t *testing.T) {
 	r.Refresh()
 
 	// 5. A valid empty source is complete: no whitelist.conf, no whitelist.d at all.
-	empty := newExemptResolver(t.TempDir(), "")
+	empty := NewResolver(t.TempDir(), "")
 	empty.ttl = time.Hour
 	empty.Refresh()
 	if ok, why := empty.AdmitPrefix("45.33.32.0/24"); !ok {

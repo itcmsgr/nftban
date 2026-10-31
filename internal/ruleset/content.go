@@ -62,7 +62,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/util"
 )
 
-// Exemption is the never-ban authority (nftbackend.NewExemption).
+// Exemption is the never-ban authority (exemption.NewExemption).
 type Exemption interface {
 	IsExempt(ip string) (bool, string)
 	SubtractExempt(cidrs []string) (kept []string, removed int, omitted []string)
