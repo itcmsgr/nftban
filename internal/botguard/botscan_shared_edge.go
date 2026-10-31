@@ -47,11 +47,11 @@ import (
 func DefaultSharedEdgeFiles() []string {
 	return []string{
 		"/usr/lib/nftban/data/botscan_shared_edges.tsv",
-		"/var/cache/nftban/trust/cloudflare-ipv4.txt",
-		"/var/cache/nftban/trust/cloudflare-ipv6.txt",
-		"/var/cache/nftban/trust/fastly-ipv4.txt",
-		"/var/cache/nftban/trust/fastly-ipv6.txt",
-		"/var/cache/nftban/trust/quiccloud-ipv4.txt",
+		"/var/lib/nftban/trust/cache/cloudflare-ipv4.txt",
+		"/var/lib/nftban/trust/cache/cloudflare-ipv6.txt",
+		"/var/lib/nftban/trust/cache/fastly-ipv4.txt",
+		"/var/lib/nftban/trust/cache/fastly-ipv6.txt",
+		"/var/lib/nftban/trust/cache/quiccloud-ipv4.txt",
 	}
 }
 

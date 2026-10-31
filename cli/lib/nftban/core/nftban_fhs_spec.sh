@@ -114,6 +114,8 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/banned"]="0750|nftban|nftban|Banned IP state files"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/whitelist"]="0750|nftban|nftban|Whitelist state files"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/feeds"]="0750|root|nftban|Threat feed data"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/trust"]="0750|root|nftban|Trust (CDN / cloud provider) ranges downloaded by nftban trust: the Go loader's <name>.txt files"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/trust/cache"]="0750|root|nftban|Trust provider caches written by the shell trust module (<provider>-ipv4/ipv6.txt); read by BotScan and the BotGuard shared-edge list"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/reports"]="0750|nftban|nftban|Generated reports"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/reports/baseline"]="0750|nftban|nftban|Baseline reports"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/reports/watchdog"]="0750|nftban|nftban|Watchdog system reports"

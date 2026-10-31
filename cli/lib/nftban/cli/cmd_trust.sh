@@ -258,7 +258,7 @@ _nftban_trust_config() {
                 --arg enabled "${TRUST_ENABLED:-true}" \
                 --arg auto_update "${TRUST_AUTO_UPDATE:-true}" \
                 --arg update_interval "${TRUST_AUTO_UPDATE_INTERVAL:-24}" \
-                --arg cache_dir "${TRUST_CACHE_DIR:-/var/cache/nftban/trust}" \
+                --arg cache_dir "${TRUST_CACHE_DIR:-/var/lib/nftban/trust/cache}" \
                 --arg log_file "${TRUST_LOG_FILE:-/var/log/nftban/trust.log}" \
                 '{
                     config_file: $config_file,
@@ -293,7 +293,7 @@ _nftban_trust_config() {
     echo "  Module Enabled:   ${TRUST_ENABLED:-true}"
     echo "  Auto-Update:      ${TRUST_AUTO_UPDATE:-true}"
     echo "  Update Interval:  ${TRUST_AUTO_UPDATE_INTERVAL:-24} hours"
-    echo "  Cache Directory:  ${TRUST_CACHE_DIR:-/var/cache/nftban/trust}"
+    echo "  Cache Directory:  ${TRUST_CACHE_DIR:-/var/lib/nftban/trust/cache}"
     echo "  Log File:         ${TRUST_LOG_FILE:-/var/log/nftban/trust.log}"
     echo "  Min Ranges:       ${TRUST_MIN_RANGES:-5}"
     echo "  Max Ranges:       ${TRUST_MAX_RANGES:-50000}"
@@ -304,7 +304,7 @@ _nftban_trust_config() {
 
 _nftban_trust_stats() {
     # Show trust module statistics
-    local cache_dir="${TRUST_CACHE_DIR:-/var/cache/nftban/trust}"
+    local cache_dir="${TRUST_CACHE_DIR:-/var/lib/nftban/trust/cache}"
     local total_ipv4=0
     local total_ipv6=0
     local enabled_count=0
@@ -393,7 +393,7 @@ _nftban_trust_test() {
     fi
 
     # Test 3: Cache directory writable
-    local cache_dir="${TRUST_CACHE_DIR:-/var/cache/nftban/trust}"
+    local cache_dir="${TRUST_CACHE_DIR:-/var/lib/nftban/trust/cache}"
     if [[ -d "$cache_dir" ]] && [[ -w "$cache_dir" ]]; then
         echo "  [PASS] Cache directory writable: $cache_dir"
     elif [[ -d "$cache_dir" ]]; then
@@ -527,7 +527,7 @@ WHY USE TRUSTED PROVIDERS?
     - Auto-update keeps your whitelist current
 
 FILES:
-    Cache: /var/cache/nftban/trust/
+    Cache: /var/lib/nftban/trust/cache/
     Whitelist: /etc/nftban/whitelist.d/30-trust-*.conf
     Logs: ${NFTBAN_LOG_DIR}/trust.log
 

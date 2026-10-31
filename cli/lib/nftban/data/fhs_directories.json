@@ -514,6 +514,22 @@
         "created_by": "tmpfiles"
       },
       {
+        "path": "/var/lib/nftban/trust",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "Trust (CDN / cloud provider) ranges downloaded by nftban trust: the Go loader's <name>.txt files",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/trust/cache",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "Trust provider caches written by the shell trust module (<provider>-ipv4/ipv6.txt); read by BotScan and the BotGuard shared-edge list",
+        "created_by": "tmpfiles"
+      },
+      {
         "path": "/var/lib/nftban/reports",
         "mode": "0750",
         "owner": "nftban",

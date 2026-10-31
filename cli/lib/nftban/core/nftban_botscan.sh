@@ -2457,7 +2457,7 @@ nftban_botscan_load_shared_edges() {
         done < "$snap"
         _BS_EDGE_SOURCES+="snapshot:${snap} "
     fi
-    local tdir="${BOTSCAN_TRUST_CACHE_DIR-/var/cache/nftban/trust}" f p fam
+    local tdir="${BOTSCAN_TRUST_CACHE_DIR-/var/lib/nftban/trust/cache}" f p fam
     if [[ -n "$tdir" && -d "$tdir" ]]; then
         for p in cloudflare fastly quiccloud; do
             for fam in ipv4 ipv6; do

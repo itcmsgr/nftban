@@ -607,6 +607,37 @@ directories:
         is all its readers need (the exporter reads the files; cmd_feeds.go setFeedFileOwnership).
         tmpfiles z and the installer's canonical pass re-own the directory on upgrade.
 
+    - path: /var/lib/nftban/trust
+      artifact_class: state
+      retention_mode: unclassified
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Trust (CDN / cloud provider) ranges downloaded by nftban trust: the Go loader's <name>.txt files"
+      created_by: tmpfiles
+      tmpfiles_reconcile: "z"
+      note: |
+        v1.236 (owner 2026-10-31): declared (it was created on first use by root, undeclared).
+        Root writes it; the ruleset render reads <data>/trust/*.txt as whitelist prefixes, so it
+        stays root-owned; the nftban group reads.
+
+    - path: /var/lib/nftban/trust/cache
+      artifact_class: state
+      retention_mode: unclassified
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Trust provider caches written by the shell trust module (<provider>-ipv4/ipv6.txt); read by BotScan and the BotGuard shared-edge list"
+      created_by: tmpfiles
+      tmpfiles_reconcile: "z"
+      note: |
+        v1.236 (owner 2026-10-31): MOVED from /var/cache/nftban/trust. /var/cache/nftban belongs to
+        the nftban service account, which could pre-create or rename the trust directory there;
+        root then downloaded (curl -o <file>.tmp) and moved files inside a directory that account
+        controls. Here the parent chain is root-owned. A subdirectory, not <data>/trust itself, so
+        the caches do not join the whitelist glob of <data>/trust/*.txt. Existing caches are not
+        migrated: providers are disabled by default and `nftban trust update` rebuilds them.
+
     - path: /var/lib/nftban/reports
       artifact_class: state
       retention_mode: unclassified
