@@ -78,11 +78,21 @@ canon() {
 #   syn_prefix_meter:ip6 — /64-aggregate SYN pressure exists only for IPv6 by
 #   design (v4 prefix pressure is handled by ddos_prefix_syn when the DDoS
 #   module is enabled); manifest row: "no v4 counterpart by design".
-PARITY_SINGLETONS='syn_prefix_meter:ip6'
+#   campaign_prefix:ip — v1.236 BotScan HTTP campaign: IPv4 enforcement is a timed /24
+#   prefix ban (campaign_prefix_ipv4, HTTP/HTTPS); IPv6 campaign bans are per address in
+#   blacklist_manual_ipv6, with no IPv6 prefix set (owner decision; CHANGELOG v1.236 known
+#   limitations). A timed interval set, not a limiter, so it has no capacity-manifest row.
+PARITY_SINGLETONS='syn_prefix_meter:ip6 campaign_prefix:ip'
 
 # --- R2a: explicit *_ipv4 <-> *_ipv6 suffix parity --------------------------
 v4suf=$(grep -oE 'set [a-z0-9_]+_ipv4' "$NFTCONF" | sed 's/set //; s/_ipv4$//' | sort -u)
 v6suf=$(grep -oE 'set [a-z0-9_]+_ipv6' "$NFTCONF" | sed 's/set //; s/_ipv6$//' | sort -u)
+# Declared singletons are left out of the suffix comparison; R2b below verifies each one
+# exists in EXACTLY its declared family, so an undeclared partner still fails there.
+for entry in $PARITY_SINGLETONS; do
+    v4suf=$(grep -vxF "${entry%%:*}" <<<"$v4suf" || true)
+    v6suf=$(grep -vxF "${entry%%:*}" <<<"$v6suf" || true)
+done
 if [[ "$v4suf" == "$v6suf" ]]; then
     echo "  [OK] *_ipv4 <-> *_ipv6 suffix sets balanced ($(echo "$v4suf" | grep -c . ) pairs)"
 else
