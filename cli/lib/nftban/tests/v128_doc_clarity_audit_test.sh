@@ -83,7 +83,7 @@ echo "==========================================================================
 hits=$(grep -rnE 'TODO:|XXX:|FIXME:' --include='*.md' "$_readme" "$_docs_dir" 2>/dev/null | wc -l)
 hits=${hits:-0}
 [[ "$hits" -eq 0 ]]
-_t_assert "A1: zero TODO/XXX/FIXME placeholder markers in README + docs/ (got: $hits)" "$?"
+_rc=$?; _t_assert "A1: zero TODO/XXX/FIXME placeholder markers in README + docs/ (got: $hits)" "$_rc"
 
 # =============================================================================
 # (B) Vague qualifier phrases — undermine operator confidence
@@ -91,7 +91,7 @@ _t_assert "A1: zero TODO/XXX/FIXME placeholder markers in README + docs/ (got: $
 hits=$(grep -rniE 'for various reasons|should work|usually works|in general,' --include='*.md' "$_readme" "$_docs_dir" 2>/dev/null | wc -l)
 hits=${hits:-0}
 [[ "$hits" -eq 0 ]]
-_t_assert "B1: zero vague qualifier phrases ('for various reasons' / 'should work' / 'usually works' / 'in general,') in README + docs/ (got: $hits)" "$?"
+_rc=$?; _t_assert "B1: zero vague qualifier phrases ('for various reasons' / 'should work' / 'usually works' / 'in general,') in README + docs/ (got: $hits)" "$_rc"
 
 # =============================================================================
 # (C) Double-negative constructions — heuristic with explicit allowlist
@@ -100,7 +100,7 @@ hits=$(grep -rniE "don'?t not|not un[a-z]+|cannot not" --include='*.md' "$_readm
        | _apply_allowlist | wc -l)
 hits=${hits:-0}
 [[ "$hits" -eq 0 ]]
-_t_assert "C1: zero double-negative constructions (allowlist: legitimate technical contrast in THREAT_MODEL.md) (got: $hits)" "$?"
+_rc=$?; _t_assert "C1: zero double-negative constructions (allowlist: legitimate technical contrast in THREAT_MODEL.md) (got: $hits)" "$_rc"
 
 # =============================================================================
 # (D) Residual sudo/root drift in operator-facing markdown
@@ -110,7 +110,7 @@ hits=$(grep -rnE 'sudo nftban |must run as root|requires root|Run with sudo|Perm
        --include='*.md' "$_readme" "$_docs_dir" 2>/dev/null | wc -l)
 hits=${hits:-0}
 [[ "$hits" -eq 0 ]]
-_t_assert "D1: zero residual sudo/root drift in README + docs/ markdown (got: $hits)" "$?"
+_rc=$?; _t_assert "D1: zero residual sudo/root drift in README + docs/ markdown (got: $hits)" "$_rc"
 
 # =============================================================================
 # (E) Scope/sanity sample counts
@@ -118,7 +118,7 @@ _t_assert "D1: zero residual sudo/root drift in README + docs/ markdown (got: $h
 md_count=$(find "$_docs_dir" -name '*.md' 2>/dev/null | wc -l)
 md_count=${md_count:-0}
 [[ "$md_count" -ge 10 ]]
-_t_assert "E1: docs/ contains at least 10 .md files audited (got: $md_count)" "$?"
+_rc=$?; _t_assert "E1: docs/ contains at least 10 .md files audited (got: $md_count)" "$_rc"
 
 # =============================================================================
 # Summary
