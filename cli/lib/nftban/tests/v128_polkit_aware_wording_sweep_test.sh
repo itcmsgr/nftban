@@ -100,31 +100,31 @@ hits=$(grep -rni 'run with sudo' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/de
        | grep -v "/tests/" \
        | _apply_allowlist | wc -l)
 hits=${hits:-0}
-[[ "$hits" -eq 0 ]]
-_rc=$?; _t_assert "A1: zero 'Run with sudo' wording in CLI surfaces (got: $hits)" "$_rc"
+_rc=0; [[ "$hits" -eq 0 ]] || _rc=1
+_t_assert "A1: zero 'Run with sudo' wording in CLI surfaces (got: $hits)" "$_rc"
 
 # A2: Zero "Permission denied (not root"
 hits=$(grep -rn 'Permission denied (not root' --include='*.sh' --include='*.go' \
        "$_cli_lib" "$_cli_sbin" "${_repo_root}/cmd" "${_repo_root}/internal" 2>/dev/null \
        | grep -v "/tests/" | _apply_allowlist | wc -l)
 hits=${hits:-0}
-[[ "$hits" -eq 0 ]]
-_rc=$?; _t_assert "A2: zero 'Permission denied (not root' (got: $hits)" "$_rc"
+_rc=0; [[ "$hits" -eq 0 ]] || _rc=1
+_t_assert "A2: zero 'Permission denied (not root' (got: $hits)" "$_rc"
 
 # A3: Zero "requires root" / "requires root privileges" in CLI surfaces
 hits=$(grep -rn 'requires root privileges\|requires root' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null \
        | grep -v "/tests/" | _apply_allowlist | wc -l)
 hits=${hits:-0}
-[[ "$hits" -eq 0 ]]
-_rc=$?; _t_assert "A3: zero 'requires root [privileges]' in CLI surfaces (got: $hits)" "$_rc"
+_rc=0; [[ "$hits" -eq 0 ]] || _rc=1
+_t_assert "A3: zero 'requires root [privileges]' in CLI surfaces (got: $hits)" "$_rc"
 
 # A4: Zero "must run as root" / "Run as root" in CLI surfaces
 hits=$(grep -rni 'must run as root\|Run as root' --include='*.sh' --include='*.go' \
        "$_cli_lib" "$_cli_sbin" "${_repo_root}/cmd" "${_repo_root}/internal" 2>/dev/null \
        | grep -v "/tests/" | _apply_allowlist | wc -l)
 hits=${hits:-0}
-[[ "$hits" -eq 0 ]]
-_rc=$?; _t_assert "A4: zero 'must run as root' / 'Run as root' in CLI surfaces (got: $hits)" "$_rc"
+_rc=0; [[ "$hits" -eq 0 ]] || _rc=1
+_t_assert "A4: zero 'must run as root' / 'Run as root' in CLI surfaces (got: $hits)" "$_rc"
 
 # A5: 'sudo nftban X' example lines — HARDENED in PR-A.2.
 # Allowed (allowlist via grep -E): 'sudo nftban-installer' (installer/bootstrap
@@ -133,15 +133,15 @@ _rc=$?; _t_assert "A4: zero 'must run as root' / 'Run as root' in CLI surfaces (
 hits=$(grep -rn 'sudo nftban ' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null \
        | grep -v "/tests/" | _apply_allowlist | wc -l)
 hits=${hits:-0}
-[[ "$hits" -eq 0 ]]
-_rc=$?; _t_assert "A5: zero 'sudo nftban X' example lines in main-CLI examples (got: $hits; 'sudo nftban-installer' allowlisted separately)" "$_rc"
+_rc=0; [[ "$hits" -eq 0 ]] || _rc=1
+_t_assert "A5: zero 'sudo nftban X' example lines in main-CLI examples (got: $hits; 'sudo nftban-installer' allowlisted separately)" "$_rc"
 
 # A5b: 'sudo nftban-installer' (installer/bootstrap) — informational count
 # (allowlisted; reported for visibility but not asserted to zero)
 hits=$(grep -rn 'sudo nftban-installer' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null | grep -v "/tests/" | wc -l)
 hits=${hits:-0}
-[[ "$hits" -ge 0 ]]  # informational
-_rc=$?; _t_assert "A5b (informational; allowlisted): 'sudo nftban-installer' installer/bootstrap references: $hits" "$_rc"
+_rc=0; [[ "$hits" -ge 0 ]] || _rc=1  # informational
+_t_assert "A5b (informational; allowlisted): 'sudo nftban-installer' installer/bootstrap references: $hits" "$_rc"
 
 # A8: PR-A.2 residual sweeps — 'root privileges' / 'NEEDS ROOT' / 'needs root'
 # in operator-facing strings (echo statements + ui_msg calls; internal
@@ -151,8 +151,8 @@ hits=$(grep -rniE 'root privileges|NEEDS ROOT' --include='*.sh' "$_cli_lib" "$_c
        | grep -v ':\s*#' \
        | wc -l)
 hits=${hits:-0}
-[[ "$hits" -eq 0 ]]
-_rc=$?; _t_assert "A8: zero 'root privileges' / 'NEEDS ROOT' in operator-facing strings, case-insensitive (got: $hits; internal # comments OK)" "$_rc"
+_rc=0; [[ "$hits" -eq 0 ]] || _rc=1
+_t_assert "A8: zero 'root privileges' / 'NEEDS ROOT' in operator-facing strings, case-insensitive (got: $hits; internal # comments OK)" "$_rc"
 
 # A9: PR-A.2 ui_msg / echo "needs root" residuals
 hits=$(grep -rniE 'needs root|need root privileges' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null \
@@ -160,8 +160,8 @@ hits=$(grep -rniE 'needs root|need root privileges' --include='*.sh' "$_cli_lib"
        | grep -v ':\s*#' \
        | wc -l)
 hits=${hits:-0}
-[[ "$hits" -eq 0 ]]
-_rc=$?; _t_assert "A9: zero 'needs root' / 'need root privileges' in operator-facing strings, case-insensitive (got: $hits)" "$_rc"
+_rc=0; [[ "$hits" -eq 0 ]] || _rc=1
+_t_assert "A9: zero 'needs root' / 'need root privileges' in operator-facing strings, case-insensitive (got: $hits)" "$_rc"
 
 # A10 (v1.133 PR-B): zero 'Must be root' framing in operator-facing strings
 # (case-insensitive). Excludes # comments and the get_live_ruleset A15 reframe,
@@ -172,15 +172,15 @@ hits=$(grep -rniE 'must be root' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/de
        | grep -v 'you must be root' \
        | wc -l)
 hits=${hits:-0}
-[[ "$hits" -eq 0 ]]
-_rc=$?; _t_assert "A10: zero 'Must be root' in operator-facing strings, case-insensitive (got: $hits; A15 strip + # comments excluded)" "$_rc"
+_rc=0; [[ "$hits" -eq 0 ]] || _rc=1
+_t_assert "A10: zero 'Must be root' in operator-facing strings, case-insensitive (got: $hits; A15 strip + # comments excluded)" "$_rc"
 
 # A6: Zero "(sudo)" parenthetical hints
 hits=$(grep -rn 'privileges (sudo)\|root/sudo' --include='*.sh' "$_cli_lib" "$_cli_sbin" 2>/dev/null \
        | grep -v "/tests/" | _apply_allowlist | wc -l)
 hits=${hits:-0}
-[[ "$hits" -eq 0 ]]
-_rc=$?; _t_assert "A6: zero 'privileges (sudo)' or 'root/sudo' parenthetical (got: $hits)" "$_rc"
+_rc=0; [[ "$hits" -eq 0 ]] || _rc=1
+_t_assert "A6: zero 'privileges (sudo)' or 'root/sudo' parenthetical (got: $hits)" "$_rc"
 
 # A7: Zero "Otherwise run as root or use the site-approved privilege method"
 # (the V127 UX-6 PR-F template that ended REQUIRES blocks with a root
@@ -189,8 +189,8 @@ _rc=$?; _t_assert "A6: zero 'privileges (sudo)' or 'root/sudo' parenthetical (go
 hits=$(grep -rn 'site-approved privilege method\|Otherwise run as root' --include='*.sh' \
        "$_cli_lib" "$_cli_sbin" 2>/dev/null | grep -v "/tests/" | wc -l)
 hits=${hits:-0}
-[[ "$hits" -eq 0 ]]
-_rc=$?; _t_assert "A7: zero 'site-approved privilege method' / 'Otherwise run as root' V127 carry-over (got: $hits)" "$_rc"
+_rc=0; [[ "$hits" -eq 0 ]] || _rc=1
+_t_assert "A7: zero 'site-approved privilege method' / 'Otherwise run as root' V127 carry-over (got: $hits)" "$_rc"
 
 # =============================================================================
 # (B) Go-side privilege wording (cmd/nftban-core/privilege.go)
@@ -235,22 +235,22 @@ _rc=$?; _t_assert "C3: cmd_flush.sh REQUIRES block uses canonical 'nftban group'
 count=$(grep -rl 'nftban group' --include='*.sh' "$_cli_lib" 2>/dev/null | grep -v "/tests/" | \
         xargs -r grep -l 'PolicyKit/polkit' 2>/dev/null | wc -l)
 count=${count:-0}
-[[ "$count" -ge 3 ]]
-_rc=$?; _t_assert "C4: at least 3 CLI files mention BOTH 'nftban group' AND 'PolicyKit/polkit' (got: $count, expected >=3)" "$_rc"
+_rc=0; [[ "$count" -ge 3 ]] || _rc=1
+_t_assert "C4: at least 3 CLI files mention BOTH 'nftban group' AND 'PolicyKit/polkit' (got: $count, expected >=3)" "$_rc"
 
 # C5: At least one CLI exit-code section uses the canonical "PolicyKit/polkit authorization failed" wording
 count=$(grep -rn 'PolicyKit/polkit authorization failed' --include='*.sh' "$_cli_lib" 2>/dev/null | grep -v "/tests/" | wc -l)
 count=${count:-0}
-[[ "$count" -ge 3 ]]
-_rc=$?; _t_assert "C5: at least 3 'PolicyKit/polkit authorization failed' exit/error strings (got: $count)" "$_rc"
+_rc=0; [[ "$count" -ge 3 ]] || _rc=1
+_t_assert "C5: at least 3 'PolicyKit/polkit authorization failed' exit/error strings (got: $count)" "$_rc"
 
 # =============================================================================
 # (D) Scope-creep guards (NOT PR-B, NOT PR-C, NOT PR-D)
 # =============================================================================
 
 # D1: No new doctest harness added (PR-B work)
-[[ ! -f "${_cli_lib}/tests/help_correlation_doctest.sh" ]]
-_rc=$?; _t_assert "D1: no PR-B doctest harness added in this PR" "$_rc"
+_rc=0; [[ ! -f "${_cli_lib}/tests/help_correlation_doctest.sh" ]] || _rc=1
+_t_assert "D1: no PR-B doctest harness added in this PR" "$_rc"
 
 # D2: No wiki edits in this PR's diff (PR-C work)
 if git diff --name-only HEAD 2>/dev/null | grep -qE '\.wiki|^WIKI/'; then

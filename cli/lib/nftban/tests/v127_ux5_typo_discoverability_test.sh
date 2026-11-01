@@ -103,32 +103,32 @@ fi
 # =============================================================================
 
 # A1: identical strings -> 0
-[[ "$(_nftban_damerau_levenshtein "ban" "ban")" == "0" ]]
-_rc=$?; _t_assert "A1: damerau_levenshtein('ban','ban') == 0" "$_rc"
+_rc=0; [[ "$(_nftban_damerau_levenshtein "ban" "ban")" == "0" ]] || _rc=1
+_t_assert "A1: damerau_levenshtein('ban','ban') == 0" "$_rc"
 
 # A2: single substitution
-[[ "$(_nftban_damerau_levenshtein "ban" "bah")" == "1" ]]
-_rc=$?; _t_assert "A2: damerau_levenshtein('ban','bah') == 1" "$_rc"
+_rc=0; [[ "$(_nftban_damerau_levenshtein "ban" "bah")" == "1" ]] || _rc=1
+_t_assert "A2: damerau_levenshtein('ban','bah') == 1" "$_rc"
 
 # A3: single insertion
-[[ "$(_nftban_damerau_levenshtein "ban" "band")" == "1" ]]
-_rc=$?; _t_assert "A3: damerau_levenshtein('ban','band') == 1" "$_rc"
+_rc=0; [[ "$(_nftban_damerau_levenshtein "ban" "band")" == "1" ]] || _rc=1
+_t_assert "A3: damerau_levenshtein('ban','band') == 1" "$_rc"
 
 # A4: single deletion
-[[ "$(_nftban_damerau_levenshtein "bann" "ban")" == "1" ]]
-_rc=$?; _t_assert "A4: damerau_levenshtein('bann','ban') == 1" "$_rc"
+_rc=0; [[ "$(_nftban_damerau_levenshtein "bann" "ban")" == "1" ]] || _rc=1
+_t_assert "A4: damerau_levenshtein('bann','ban') == 1" "$_rc"
 
 # A5: adjacent transposition (Damerau-specific; should be 1, NOT 2)
-[[ "$(_nftban_damerau_levenshtein "bna" "ban")" == "1" ]]
-_rc=$?; _t_assert "A5: damerau_levenshtein('bna','ban') == 1 (transposition)" "$_rc"
+_rc=0; [[ "$(_nftban_damerau_levenshtein "bna" "ban")" == "1" ]] || _rc=1
+_t_assert "A5: damerau_levenshtein('bna','ban') == 1 (transposition)" "$_rc"
 
 # A6: udpate <-> update is an adjacent transposition of d/p
-[[ "$(_nftban_damerau_levenshtein "udpate" "update")" == "1" ]]
-_rc=$?; _t_assert "A6: damerau_levenshtein('udpate','update') == 1 (transposition)" "$_rc"
+_rc=0; [[ "$(_nftban_damerau_levenshtein "udpate" "update")" == "1" ]] || _rc=1
+_t_assert "A6: damerau_levenshtein('udpate','update') == 1 (transposition)" "$_rc"
 
 # A7: empty string
-[[ "$(_nftban_damerau_levenshtein "" "ban")" == "3" ]]
-_rc=$?; _t_assert "A7: damerau_levenshtein('','ban') == 3" "$_rc"
+_rc=0; [[ "$(_nftban_damerau_levenshtein "" "ban")" == "3" ]] || _rc=1
+_t_assert "A7: damerau_levenshtein('','ban') == 3" "$_rc"
 
 # =============================================================================
 # (B) Positive typo suggestions (per operator scope)
@@ -269,8 +269,8 @@ done
 # already had an EXIT CODES block pre-V127; assert the V127 SEE ALSO block
 # was added but exit-code section wasn't expanded)
 _pre=$(grep -c '^EXIT CODES:$' "$_cmd_update" || true)
-[[ "$_pre" == "1" ]]
-_rc=$?; _t_assert "G2: cmd_update.sh still has exactly one EXIT CODES block (no sweep)" "$_rc"
+_rc=0; [[ "$_pre" == "1" ]] || _rc=1
+_t_assert "G2: cmd_update.sh still has exactly one EXIT CODES block (no sweep)" "$_rc"
 
 # G3: No new top-level commands added to dispatcher canonical list as
 # side-effect of UX-5.
@@ -281,8 +281,8 @@ _rc=$?; _t_assert "G2: cmd_update.sh still has exactly one EXIT CODES block (no 
 # (Level-0 subset of the canonical list). This remains a runaway-growth bound,
 # not a contract: the exact-parity assertion lives in T-D3.
 _canonical_count=$(_nftban_canonical_commands | grep -v '^$' | wc -l)
-[[ "$_canonical_count" -ge 50 ]] && [[ "$_canonical_count" -le 90 ]]
-_rc=$?; _t_assert "G3: canonical command list has $_canonical_count entries (sane bound 50-90)" "$_rc"
+_rc=0; [[ "$_canonical_count" -ge 50 ]] && [[ "$_canonical_count" -le 90 ]] || _rc=1
+_t_assert "G3: canonical command list has $_canonical_count entries (sane bound 50-90)" "$_rc"
 
 # =============================================================================
 # (H) Suricata work absent (we are PR-E, not PR-D)
