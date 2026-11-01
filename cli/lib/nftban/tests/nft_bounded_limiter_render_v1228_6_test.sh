@@ -57,7 +57,18 @@ source "$ROOT/cli/lib/nftban/lib/nft_fragment.sh" || { bad "SOURCE nft_fragment.
 echo "--- STAGE 1: render through production generators ---"
 # v1.236: the BotGuard sets renderer declares only the sets the kernel lacks. Report every
 # set absent so the full fragment renders on any host (CI has no nft; a lab host has them all).
-nft() { return 1; }
+# v1.236: the BotGuard sets render uses the typed probe (nftban_nft_probe_set). It proves a set
+# absent only from a real listing (`nft list sets <family>` exit 0, table header, no such set) and
+# refuses on any nft error (unobservable). "Every set absent" is therefore modelled as nft does it:
+# an empty listing of the nftban table; every other nft call still fails, as before.
+nft() {
+    if [[ "${1:-}" == "list" && "${2:-}" == "sets" ]]; then
+        printf 'table %s nftban {\n}\n' "${3:-ip}"
+        return 0
+    fi
+    echo "Error: No such file or directory" >&2
+    return 1
+}
 RENDERED=()
 for fn in nft_fragment_render_ddos_classic nft_fragment_render_ddos_prefix \
           nft_fragment_render_http_botguard_sets nft_fragment_render_http_botguard; do
