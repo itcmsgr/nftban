@@ -129,6 +129,13 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
 - `build/generate-fhs-outputs.sh` generates `fhs-permissions.sh` on mikefarah yq v4 (it used to stop with an
   error and leave the script truncated), writes it only when complete, and `--check` now compares it.
 
+### Changed — CLI wording
+
+- Permission errors for the permanent and management whitelists and the generic privilege check now use the
+  standard wording ("PolicyKit/polkit authorization failed or insufficient privileges …") instead of "requires
+  root". The inline re-run hint (`sudo VAR=value …/nftban <command>`) is unchanged; its warning no longer quotes
+  the anti-pattern command literally.
+
 ### Upgrade notes
 
 - If you enabled trust providers (`nftban trust enable …`), run `nftban trust update` once after upgrading: the

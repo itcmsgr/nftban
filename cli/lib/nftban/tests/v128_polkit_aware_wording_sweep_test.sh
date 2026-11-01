@@ -76,6 +76,11 @@ _ALLOWLIST_PATTERNS=(
                                                  # tooling) — root is a genuine install
                                                  # requirement, not an nftban polkit-managed
                                                  # CLI operation (v1.133 PR-B)
+    'cli/lib/nftban/lib/nft_probe\.sh:[0-9]*:.*\*"must be root"\*'
+                                                 # v1.236: a case pattern matching nft's OWN
+                                                 # stderr to classify PERMISSION_DENIED; not
+                                                 # operator-facing wording (rewording it would
+                                                 # break the classification). Scoped to that line shape.
 )
 
 # Build a grep -v pipeline filter from the allowlist

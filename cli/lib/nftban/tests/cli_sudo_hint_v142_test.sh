@@ -90,9 +90,10 @@ assert_contains_stderr "T1 root-shell form '# root shell'" "# root shell" "$LAST
 assert_contains_stderr "T1 operation name passes through" "Need root for \"ban an IP\"" "$LAST_ERR"
 assert_contains_stderr "T1 STDOUT untouched" "STDOUT_MARKER" "$LAST_OUT"
 
-# T2 — anti-pattern 'export VAR=value; sudo nftban X' is explicitly warned against
+# T2 — the anti-pattern (export first, elevate in a separate command) is explicitly warned against.
+# v1.236: worded without a literal 'sudo nftban ...' example (polkit wording sweep, v128 PR-A).
 echo "--- T2: anti-pattern warning ---"
-assert_contains_stderr "T2 anti-pattern warning text" "export VAR=value; sudo nftban X" "$LAST_ERR"
+assert_contains_stderr "T2 anti-pattern warning text" "elevate in a separate command" "$LAST_ERR"
 assert_contains_stderr "T2 anti-pattern reason explained" "export is dropped" "$LAST_ERR"
 
 # T3 — inline env preservation contract is explicit
@@ -158,11 +159,21 @@ else
 fi
 
 # T7 — anti-pattern not present elsewhere in modified files (regression guard)
-echo "--- T7: anti-pattern 'export VAR=value; sudo nftban X' not advised anywhere ---"
-ant_pat='export VAR=value; sudo nftban X'
-# Only acceptable mention is the warning text. Count occurrences in the three
-# touched files; expect exactly 3 (one per privilege-check helper that prints
-# the anti-pattern as a warning). Anything more would mean a NEW bad-advice site.
+echo "--- T7: anti-pattern not advised anywhere ---"
+# v1.236: the warning no longer quotes the anti-pattern literally (polkit wording sweep). The
+# literal must appear in NONE of the three helpers, and the warning in exactly 3 of them (one per
+# privilege-check helper). Anything else is a lost warning or a new bad-advice site.
+# grep -l exits 1 when nothing matches, which is the expected result here: a count, not an error.
+lit=$( { grep -l 'export VAR=value; sudo nftban X' \
+    "$NFTBAN_LIB_DIR/lib/cmd_common.sh" \
+    "$NFTBAN_LIB_DIR/lib/strict.sh" \
+    "$NFTBAN_LIB_DIR/core/nftban_security.sh" 2>/dev/null || true; } | wc -l)
+if [[ $lit -eq 0 ]]; then
+    ok "T7 the anti-pattern literal is not printed by any helper"
+else
+    no "T7 anti-pattern literal still printed" "in $lit helper(s)"
+fi
+ant_pat='elevate in a separate command'
 count=$(grep -l "$ant_pat" \
     "$NFTBAN_LIB_DIR/lib/cmd_common.sh" \
     "$NFTBAN_LIB_DIR/lib/strict.sh" \
