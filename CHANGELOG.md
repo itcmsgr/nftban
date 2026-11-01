@@ -129,6 +129,14 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
 - `build/generate-fhs-outputs.sh` generates `fhs-permissions.sh` on mikefarah yq v4 (it used to stop with an
   error and leave the script truncated), writes it only when complete, and `--check` now compares it.
 
+### Fixed — GeoIP update at the start of a month
+
+- DB-IP publishes each monthly database some time after the month starts. When the current month's file is not
+  published yet (HTTP 404), the update installs the previous month's file. If neither is available and a valid
+  database is already installed, it is kept and its build date and age are reported; the update no longer fails
+  (the unit failure made installs and upgrades end DEGRADED). With no valid database, or on any other download
+  error, the update still fails.
+
 ### Changed — CLI wording
 
 - Permission errors for the permanent and management whitelists and the generic privilege check now use the
