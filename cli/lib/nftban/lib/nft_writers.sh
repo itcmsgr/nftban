@@ -39,7 +39,8 @@ nftban_writers_acquire() {
         echo "nftban: write boundary already held by this shell (nested acquire refused)" >&2
         return 75
     fi
-    mkdir -p -m 0700 "$dir" 2>/dev/null || true
+    # tmpfiles creates it (fhs-spec); the parent (/run, or a test sandbox) exists, so no -p.
+    [[ -d "$dir" ]] || mkdir -m 0700 -- "$dir" 2>/dev/null || true
     if ! { exec {fd}>>"$dir/nft_writers.lock"; } 2>/dev/null; then
         echo "nftban: cannot open $dir/nft_writers.lock — nft write NOT applied" >&2
         return 75
