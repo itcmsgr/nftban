@@ -176,7 +176,8 @@ product	cli/lib/nftban/cli/cmd_report.sh	2a9a320c3fab8cc7	1	head	E	n/a	UNVERIFIE
 product	cli/lib/nftban/cli/cmd_report.sh	5d2006662629bf37	1	head	E	n/a	UNVERIFIED	fn=nftban_report_cmd_list; needs a producer-size probe on a representative host
 product	cli/lib/nftban/cli/cmd_report.sh	88d9ee78fe97f26b	1	head	A	n/a	UNVERIFIED	fn=nftban_report_cmd_status; security_or_count_surface=assign; INFERRED ~65024; depends on tree size
 product	cli/lib/nftban/cli/cmd_report.sh	e5f15077dcaece3b	1	head	E	n/a	UNVERIFIED	fn=nftban_report_generate_html; needs a producer-size probe on a representative host
-product	cli/lib/nftban/cli/cmd_search.sh	17ebcf24b9634a5b	1	head	C	n/a	UNVERIFIED	-
+product	cli/lib/nftban/cli/cmd_search.sh	2183ea315fd88318	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
+product	cli/lib/nftban/cli/cmd_search.sh	2240d165754601fd	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_search.sh	2e6493dec05ccfd4	1	head	E	n/a	UNVERIFIED	fn=_geoip_lookup; needs a producer-size probe on a representative host
 product	cli/lib/nftban/cli/cmd_search.sh	368695591dc96c5d	1	head	E	n/a	UNVERIFIED	fn=_geoip_lookup; needs a producer-size probe on a representative host
 product	cli/lib/nftban/cli/cmd_search.sh	4ee7aab4e781de7d	1	grep-q	A	n/a	UNVERIFIED	fn=_search_nftables; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
@@ -191,7 +192,6 @@ product	cli/lib/nftban/cli/cmd_search.sh	ba61c39596517508	1	head	E	n/a	UNVERIFIE
 product	cli/lib/nftban/cli/cmd_search.sh	ba9fbd28d233bd53	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_search.sh	c454a3e181fe2877	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_search.sh	cf7204a6c87a2647	1	grep-q	A	n/a	UNVERIFIED	fn=_search_nftables; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
-product	cli/lib/nftban/cli/cmd_search.sh	d695792f5a94536f	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_search.sh	d9dd4c86032892f3	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_search.sh	edb4d55389a14ecf	1	grep-q	A	n/a	UNVERIFIED	fn=_search_nftables; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
 product	cli/lib/nftban/cli/cmd_search.sh	fb05b6496d51e454	1	grep-q	E	n/a	UNVERIFIED	fn=_search_nftables; needs a producer-size probe on a representative host

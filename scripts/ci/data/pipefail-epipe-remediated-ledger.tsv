@@ -53,6 +53,8 @@
 gate	scripts/ci/check-license-metadata.sh	873a10539a70138e	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_botguard.sh	1b69ca02fba0e12c	1	grep-q	A	n/a	UNVERIFIED	fn=_botguard_kernel_set_count; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
 product	cli/lib/nftban/cli/cmd_botguard.sh	90bfd4fa961bd515	1	grep-q	A	n/a	UNVERIFIED	fn=_nftban_botguard_test; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
+product	cli/lib/nftban/cli/cmd_search.sh	17ebcf24b9634a5b	1	head	C	n/a	UNVERIFIED	-
+product	cli/lib/nftban/cli/cmd_search.sh	d695792f5a94536f	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/cli/cmd_status.sh	525ccd7a059ff104	1	grep-q	A	n/a	UNVERIFIED	fn=_nftban_prefetch_unit_states; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
 product	cli/lib/nftban/cli/cmd_status.sh	759920c145a68a79	1	grep-q	A	n/a	UNVERIFIED	fn=_nftban_prefetch_unit_states; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
 product	cli/lib/nftban/cli/cmd_status.sh	9584e0826e93c6be	1	grep-q	A	n/a	UNVERIFIED	fn=_nftban_prefetch_unit_states; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
