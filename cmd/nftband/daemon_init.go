@@ -47,6 +47,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/metrics"
 	"github.com/itcmsgr/nftban/internal/nftbackend"
 	"github.com/itcmsgr/nftban/internal/opqueue"
+	"github.com/itcmsgr/nftban/internal/persistence"
 	"github.com/itcmsgr/nftban/internal/portscan"
 	"github.com/itcmsgr/nftban/internal/safeconv"
 	"github.com/itcmsgr/nftban/internal/safety"
@@ -219,13 +220,17 @@ func (d *Daemon) Run() error {
 				metrics.RecordBanWithIP(e.Source, family, e.IP)
 				// Log to bans.log with GeoIP country lookup
 				banSource := banlog.SourceManual
+				persistKey := "persistent"
 				switch {
 				case strings.Contains(e.Source, "portscan"):
 					banSource = banlog.SourcePortscan
+					persistKey = "portscan"
 				case strings.Contains(e.Source, "login"):
 					banSource = banlog.SourceLogin
+					persistKey = "login"
 				case strings.Contains(e.Source, "ddos"):
 					banSource = banlog.SourceDDoS
+					persistKey = "ddos"
 				case strings.Contains(e.Source, "feed"):
 					banSource = banlog.SourceFeeds
 				case strings.Contains(e.Source, "suricata"):
@@ -245,6 +250,17 @@ func (d *Daemon) Run() error {
 					banClass = banlog.ClassEscalated
 				}
 				_ = banlog.LogBanFull(e.IP, banSource, country, reason, banID, timeout, banClass)
+
+				// v1.236 HANDLES:539 (reboot limb): a module's PERMANENT ban existed only in
+				// the kernel, so every reboot dropped it (lab2 11, lab4 2 LoginMon bans).
+				// Persist it through the canonical blacklist.d writer, as the escalation path
+				// does; the boot sync restores blacklist.d. Timed bans are not persisted, and
+				// `nftban unban` removes the entry (UnpersistBan), so a removed ban never returns.
+				if timeout == 0 {
+					if _, _, perr := persistence.PersistBan(d.configDir, e.IP, reason, persistKey); perr != nil {
+						log.Printf("[BAN] Warning: permanent ban %s (source=%s) NOT persisted, lost at the next reboot: %v", e.IP, e.Source, perr)
+					}
+				}
 
 				// Check persistent offender escalation for temp bans
 				// If this IP has been temp-banned too many times, escalate to permanent

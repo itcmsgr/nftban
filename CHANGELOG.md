@@ -55,6 +55,10 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
   declares only missing sets.
 - **Each re-apply briefly admitted banned sources** (the chain was flushed in a separate write). The chain is
   flushed and refilled in one transaction.
+- **After a reboot an enabled BotGuard was not enforced.** The boot ruleset carries no module chains; DDoS and
+  PortScan re-apply theirs when the daemon starts, BotGuard did not, so `http_bot_guard` and its jump were missing
+  until the next rebuild. The daemon now re-applies BotGuard at start through the same path as
+  `nftban botguard enable`.
 
 ### Fixed — DDoS (Suricata mode)
 
@@ -99,6 +103,13 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
 - **`nftban status` / `health` could rewrite the SSH port configuration.** Reads no longer write; fixes run only
   with `--auto-heal` / `--fix`.
 - **The support bundle ran a sync.**
+- **Permanent bans from detector modules were lost on reboot.** LoginMon (and any module) permanent bans existed
+  only in the kernel; reload, rebuild and upgrade keep them, a reboot dropped them. They are now written to
+  `blacklist.d` (`login-auto.conf`, `portscan-auto.conf`, `ddos-auto.conf`, otherwise
+  `30-persistent-offenders.conf`) and restored at boot. `nftban unban` removes the entry. Timed bans are not
+  written: after a reboot they are gone (unchanged).
+- **`nftban search` listed no set for a banned address** in `blacklist_manual` (the status said BANNED, the
+  "Found in nftables sets" list was empty), and read an IPv6 entry's ban type from the IPv4 table.
 - **`nftban unban <CIDR>` did nothing for a CIDR ban held only in the kernel** (for example a timed LoginMon
   subnet ban) and reported "already not banned". It now removes it. `unban` reports "Removed" and "UNBANNED"
   only when something was removed, and fails when the removal fails.
