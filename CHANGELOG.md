@@ -42,6 +42,13 @@ v1.235.1 with DDoS, PortScan and BotGuard enabled.
 - **The installer's rebuild raced the previous daemon.** A daemon still running the replaced binary is stopped
   before the rebuild.
 - **Reload exited 0 when nothing was applied.** It now exits non-zero.
+- **After a reboot, banned sources were admitted for about a minute.** The boot ruleset loaded by
+  `nftables.service` declares every ban and whitelist set empty; `blacklist.d` bans returned only with the
+  daemon's first sync, 60 s after it started, while the services were already reachable (lab2: ~62 s). The new
+  early-boot unit `nftban-boot-content.service` loads the durable whitelist, `blacklist.d` bans and feeds after
+  `nftables.service` and before `network-pre.target`, with the same renderer as reload and rebuild. It reads the
+  configuration at boot, so an unban or flush made before the reboot is reflected. Timed bans are still lost on
+  reboot.
 
 ### Fixed — BotGuard
 
