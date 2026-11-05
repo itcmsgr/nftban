@@ -26,6 +26,7 @@ import (
 	"archive/tar"
 	"bufio"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -40,6 +41,60 @@ import (
 	"github.com/itcmsgr/nftban/pkg/version"
 	"github.com/oschwald/maxminddb-golang"
 )
+
+// errGeoipNotPublished marks a 404 from the provider: the requested monthly file does not exist
+// (yet). DB-IP publishes the new month some time after it starts.
+var errGeoipNotPublished = errors.New("not published")
+
+// dbipMonths returns the DB-IP files to try: the current month, then the previous one
+// (first-of-month arithmetic, so the 31st never wraps forward).
+func dbipMonths(now time.Time) []string {
+	first := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	return []string{first.Format("2006-01"), first.AddDate(0, -1, 0).Format("2006-01")}
+}
+
+func dbipURL(month string) string {
+	return fmt.Sprintf("https://download.db-ip.com/free/dbip-country-lite-%s.mmdb.gz", month)
+}
+
+// fetchDBIP tries each month in order. It moves on to the next month only when the provider says
+// the file is not published (404); any other failure stops at once. Returns the month installed.
+func fetchDBIP(months []string, fetch func(url string) error) (string, error) {
+	var err error
+	for i, m := range months {
+		err = fetch(dbipURL(m))
+		if err == nil {
+			return m, nil
+		}
+		if !errors.Is(err, errGeoipNotPublished) {
+			return "", err
+		}
+		if i+1 < len(months) {
+			fmt.Printf("  ⚠️  %s is not published yet; trying %s\n", m, months[i+1])
+		}
+	}
+	return "", err
+}
+
+// existingGeoipBuild reports whether path holds a database that opens, and its build date.
+func existingGeoipBuild(path string) (time.Time, bool) {
+	db, err := maxminddb.Open(path)
+	if err != nil {
+		return time.Time{}, false
+	}
+	defer db.Close()
+	if db.Metadata.BuildEpoch == 0 {
+		return time.Time{}, false
+	}
+	return time.Unix(safeconv.UintToInt64OrMax(db.Metadata.BuildEpoch), 0), true
+}
+
+// keepExistingWhenNotPublished decides the outcome when no monthly file could be downloaded:
+// only a "not published" failure with a valid existing database is kept (a warning, not a
+// failure); everything else stays an error.
+func keepExistingWhenNotPublished(downloadErr error, build time.Time, valid bool) bool {
+	return errors.Is(downloadErr, errGeoipNotPublished) && valid && !build.IsZero()
+}
 
 // GeoIP provider configuration
 type geoipConfig struct {
@@ -139,8 +194,7 @@ func cmdGeoipUpdate(cfg *nftbanconf.Config) error {
 		// DB-IP Lite (default)
 		dbFile = filepath.Join(dbDir, "dbip-country-lite.mmdb")
 		dbBackup = filepath.Join(dbDir, "dbip-country-lite.mmdb.backup")
-		currentMonth := time.Now().Format("2006-01")
-		dbURL = fmt.Sprintf("https://download.db-ip.com/free/dbip-country-lite-%s.mmdb.gz", currentMonth)
+		dbURL = dbipURL(dbipMonths(time.Now())[0])
 		providerName = "DB-IP Country Lite"
 	}
 
@@ -185,7 +239,15 @@ func cmdGeoipUpdate(cfg *nftbanconf.Config) error {
 	if useMaxMind {
 		downloadErr = downloadMaxMindTarGz(dbURL, dbFile)
 	} else {
-		downloadErr = downloadAndDecompressGzip(dbURL, dbFile)
+		// v1.236: the new month can be unpublished for a while after it starts (measured
+		// 2026-11-01: 404); the previous month is the newest available file then.
+		var month string
+		month, downloadErr = fetchDBIP(dbipMonths(time.Now()), func(url string) error {
+			return downloadAndDecompressGzip(url, dbFile)
+		})
+		if downloadErr == nil && month != dbipMonths(time.Now())[0] {
+			fmt.Printf("  ⚠️  Installed the %s database (the current month is not published yet)\n", month)
+		}
 	}
 
 	if downloadErr != nil {
@@ -193,6 +255,13 @@ func cmdGeoipUpdate(cfg *nftbanconf.Config) error {
 		if _, statErr := os.Stat(dbBackup); statErr == nil {
 			fmt.Println("  ❌ Download failed, restoring backup...")
 			os.Rename(dbBackup, dbFile)
+		}
+		// A provider that has not published the file yet is not a failure while a valid database
+		// is in place: keep it and report its age. With no valid database it stays a failure.
+		if build, ok := existingGeoipBuild(dbFile); keepExistingWhenNotPublished(downloadErr, build, ok) {
+			fmt.Printf("  ⚠️  No new database published (%v); keeping the existing one, built %s (%d days old)\n",
+				downloadErr, build.Format("2006-01-02"), int(time.Since(build).Hours()/24))
+			return nil
 		}
 		return fmt.Errorf("download failed: %w", downloadErr)
 	}
@@ -508,6 +577,9 @@ func downloadAndDecompressGzip(url, destPath string) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("%w: %s", errGeoipNotPublished, resp.Status)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("bad status: %s", resp.Status)
 	}

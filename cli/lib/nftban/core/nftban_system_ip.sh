@@ -38,6 +38,9 @@ readonly NFTBAN_SYSTEM_IP_LOADED=1
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_file_ops.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/core/nftban_file_ops.sh" || return 1
 fi
+# v1.236: direct nft writes go through the write boundary.
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+source "${BASH_SOURCE[0]%/*}/../lib/nft_writers.sh"
 # v1.220.0: shared host-address inventory authority — the whitelist discovery source
 # routes through its whitelist projection (DISCOVER ONCE). No behavior change.
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_hostaddr.sh" ]]; then
@@ -262,9 +265,9 @@ HEADER
         # Fallback: direct nft if IPC failed or daemon down
         if [[ "$_nft_added" == "false" ]] && nft list tables 2>/dev/null | grep -q 'nftban'; then
             if [[ "$ip" =~ : ]]; then
-                nft add element ip6 nftban whitelist_ipv6 "{ $ip }" 2>/dev/null && _nft_added="true"
+                nftban_nft_write add element ip6 nftban whitelist_ipv6 "{ $ip }" 2>/dev/null && _nft_added="true"
             else
-                nft add element ip nftban whitelist_ipv4 "{ $ip }" 2>/dev/null && _nft_added="true"
+                nftban_nft_write add element ip nftban whitelist_ipv4 "{ $ip }" 2>/dev/null && _nft_added="true"
             fi
         fi
         # v1.59.1 BUG-6: Log warning when both IPC and direct nft paths fail

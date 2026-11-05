@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/configloader"
+	"github.com/itcmsgr/nftban/internal/feeds"
 	"github.com/itcmsgr/nftban/internal/healthresource"
 	"github.com/itcmsgr/nftban/internal/installer/authority"
 	"github.com/itcmsgr/nftban/internal/installer/deps"
@@ -245,6 +246,19 @@ func phaseDetect(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	// v1.235 row 486: stored master switch + per-boot emergency bypass, once per run.
 	resolveLifecycleMode(exec, pd, log)
 
+	// v1.235 K2/K2-c (owner 2026-10-08): an INVALID or UNKNOWN master switch is refused HERE,
+	// before any installer mutation (the package pre-install check normally stopped the
+	// transaction already; this covers a switch that became unusable after it). The later
+	// phases keep their own no-change branches as defence in depth.
+	// v1.236: refused BEFORE the detections below. It sat at the end of this phase, so on a
+	// host where SSH detection fails (no sshd listener, no state file) the run ended
+	// FAILED_SSH_UNKNOWN and the real cause, the switch, was not the reported state.
+	if pd.switchInvalid {
+		reason := pd.skipReason()
+		log.Error("preflight: %s", reason)
+		return sf.Transition(state.StateFailedConfigInvalid, state.PhaseDetect, reason)
+	}
+
 	// 1. Detect SSH port(s). v1.125 R-1: multi-port-aware — captures the
 	// full list of sshd listener ports (e.g. dns2-class hosts on :22 + :55000)
 	// and the primary port (SSH_CLIENT-aware: prefers the port the operator's
@@ -365,16 +379,6 @@ func phaseDetect(ctx context.Context, exec executor.Executor, sf *state.StateFil
 	if err := preflight.EnsureMinDiskFree(stateDir, preflight.MinDiskFreeBytes()); err != nil {
 		log.Error("preflight: %v", err)
 		return sf.Transition(state.StateFailedPreflightDiskSpace, state.PhaseDetect, err.Error())
-	}
-
-	// v1.235 K2/K2-c (owner 2026-10-08): an INVALID or UNKNOWN master switch is refused HERE,
-	// before any installer mutation (the package pre-install check normally stopped the
-	// transaction already; this covers a switch that became unusable after it). The later
-	// phases keep their own no-change branches as defence in depth.
-	if pd.switchInvalid {
-		reason := pd.skipReason()
-		log.Error("preflight: %s", reason)
-		return sf.Transition(state.StateFailedConfigInvalid, state.PhaseDetect, reason)
 	}
 
 	log.PhaseEnd("Detect")
@@ -722,6 +726,24 @@ func phaseSwitch(ctx context.Context, exec executor.Executor, sf *state.StateFil
 
 	generationBefore := switchop.ReadConvergenceGeneration(exec)
 	log.Info("effective convergence generation before rebuild: %d (-1 = not observable)", generationBefore)
+	// v1.236 upgrade handover: a pre-upgrade daemon cannot take the write boundary.
+	services.QuiesceReplacedDaemon(exec, log)
+	// v1.236 feed authority (design §7): a fresh install records CONSISTENT before the first
+	// rebuild renders feed content, so leftover feed files never enable feeds on a new host.
+	// An upgrade leaves the state absent: the migration rule applies at the first evaluation.
+	// Written through the executor (never the host directly), so tests and dry runs cannot
+	// touch the live state.
+	if sf.Mode == "install" {
+		if p := feeds.StatePath(fhs.DataDir); !exec.FileExists(p) {
+			if ferr := exec.MkdirAll(filepath.Dir(p), 0750); ferr != nil {
+				log.Warn("feed authority: fresh-install state not recorded: %v", ferr)
+			} else if ferr := exec.WriteFileAtomic(p, feeds.StateLine(feeds.StateConsistent, feeds.ReasonFreshInstall, time.Now()), 0640); ferr != nil {
+				log.Warn("feed authority: fresh-install state not recorded: %v", ferr)
+			} else {
+				log.Info("feed authority: fresh install recorded CONSISTENT")
+			}
+		}
+	}
 	rebuildStart := time.Now()
 	// v1.230.0 Gate 6R: ctx is passed so a REFUSED rebuild can be RETRIED inside the
 	// installer's EXISTING deadline. ⛔ It does NOT bound the rebuild's execution —

@@ -16,6 +16,10 @@ set -Eeuo pipefail
 [[ -n "${_NFTBAN_NFT_IPC_LOADED:-}" ]] && return 0 2>/dev/null || true
 readonly _NFTBAN_NFT_IPC_LOADED=1
 
+# v1.236: emergency direct writes go through the write boundary (nftban_nft_write).
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+source "${BASH_SOURCE[0]%/*}/nft_writers.sh"
+
 # Socket path for daemon communication
 NFTBAN_DAEMON_SOCKET="${NFTBAN_DAEMON_SOCKET:-/run/nftban/nftband.sock}"
 
@@ -189,12 +193,29 @@ nft_ipc_request() {
     fi
 
     local response
-    response=$(echo "$request" | timeout "$NFTBAN_IPC_TIMEOUT" socat - "UNIX-CONNECT:$NFTBAN_DAEMON_SOCKET" 2>/dev/null)
+    # v1.236 BUG-SHELL-IPC-CLIENT-DROPS-ANSWERS-SLOWER-THAN-HALF-SECOND: socat's default
+    # half-close timeout (-t 0.5) ended the read 0.5 s after the request was written, so
+    # every daemon answer slower than that came back EMPTY ("daemon not responding") even
+    # though the daemon had done the work (lab2: a ban that waited 2 s was applied but
+    # reported failed; a 16 s full sync was always reported failed and retried). -t gives
+    # the answer the same budget as the overall timeout.
+    local serr
+    serr="$(mktemp 2>/dev/null || echo /dev/null)"
+    response=$(echo "$request" | timeout "$NFTBAN_IPC_TIMEOUT" socat -t "$NFTBAN_IPC_TIMEOUT" - "UNIX-CONNECT:$NFTBAN_DAEMON_SOCKET" 2>"$serr")
 
     if [[ -z "$response" ]]; then
-        _nft_ipc_json_error "daemon not responding"
+        # v1.236: only a refused connection proves the request never reached the daemon.
+        # Once connected, an empty answer says nothing about the effect: a mutation may have
+        # been applied. Report it as unknown, never as "not applied".
+        if grep -q 'connect(' "$serr" 2>/dev/null; then
+            _nft_ipc_json_error "daemon not reachable — request not delivered, nothing applied"
+        else
+            _nft_ipc_json_error "no answer from daemon — outcome unknown (the request may have been applied; check before retrying)"
+        fi
+        [[ "$serr" != /dev/null ]] && rm -f "$serr"
         return 1
     fi
+    [[ "$serr" != /dev/null ]] && rm -f "$serr"
 
     echo "$response"
 }
@@ -469,11 +490,31 @@ nft_ipc_sync() {
     fi
 
     # FULL sync (quick=false). NEVER quick — quick skips feeds/geoban/whitelist.
-    local params='{"quick":false}'
-    local attempt=0 delay="${NFTBAN_SYNC_RETRY_DELAY}" response
+    #
+    # v1.236: the daemon answers within wait_seconds (kept inside the socat timeout).
+    # If the sync is still running it says so and names the generation; the next
+    # attempt JOINS that generation instead of submitting another full sync (each
+    # resubmission used to queue one more full sync behind the running one). A daemon
+    # that predates v1.236 ignores both keys and behaves as before.
+    local _wait=$(( ${NFTBAN_IPC_TIMEOUT:-30} - 3 ))
+    [[ "$_wait" -ge 1 ]] || _wait=1
+    local params='{"quick":false,"wait_seconds":'"${_wait}"'}'
+    local attempt=0 delay="${NFTBAN_SYNC_RETRY_DELAY}" response _gen=""
     while [[ "$attempt" -lt "${NFTBAN_SYNC_RETRIES}" ]]; do
         response="$(nft_ipc_request "sync" "$params")"
+        if [[ "$response" == *'"execution":"running"'* ]]; then
+            _gen="$(printf '%s' "$response" | jq -r '.data.generation // empty' 2>/dev/null)"
+            if [[ "$_gen" =~ ^[0-9a-z]+-[0-9]+-(full|quick)$ ]]; then
+                params="{\"join\":\"${_gen}\",\"wait_seconds\":${_wait}}"
+            fi
+        elif [[ "$response" == *'"execution":"unknown"'* ]]; then
+            # The joined generation is gone (daemon restarted): submit again.
+            params="{\"quick\":false,\"wait_seconds\":${_wait}}"
+        fi
         if nft_ipc_success "$response"; then
+            if [[ "$response" == *'"effect":"partial"'* ]]; then
+                echo "[NFTBan] WARNING: full sync PARTIAL: some requested state was NOT committed ($(printf '%s' "$response" | jq -r '(.data.partial_reasons // []) | join(",")' 2>/dev/null))"
+            fi
             date +%s > "$marker" 2>/dev/null || true
             rm -f "${marker}.pending" 2>/dev/null || true
             # v1.235 (owner 2026-10-08): a sync that committed everything EXCEPT inputs
@@ -648,7 +689,7 @@ nft_emergency_ban() {
     # C7 fix: $table contains space (e.g. "ip nftban"), must not be quoted as single arg
     # $table must word-split into "ip nftban" for nft syntax
     # shellcheck disable=SC2086
-    nft add element $table "$set" "$element"
+    nftban_nft_write add element $table "$set" "$element"
 }
 
 # Emergency unban - direct nft call
@@ -674,10 +715,10 @@ nft_emergency_unban() {
     # v2.1: All bans are in unified blacklist set (no separate auto/manual sets)
     if [[ "$ip" == *:* ]]; then
         # IPv6 - unified blacklist
-        nft delete element ip6 nftban blacklist_ipv6 "{ $ip }" 2>/dev/null && ((removed++)) || true
+        nftban_nft_write delete element ip6 nftban blacklist_ipv6 "{ $ip }" 2>/dev/null && ((removed++)) || true
     else
         # IPv4 - unified blacklist
-        nft delete element ip nftban blacklist_ipv4 "{ $ip }" 2>/dev/null && ((removed++)) || true
+        nftban_nft_write delete element ip nftban blacklist_ipv4 "{ $ip }" 2>/dev/null && ((removed++)) || true
     fi
 
     [[ $removed -gt 0 ]] && return 0 || return 1

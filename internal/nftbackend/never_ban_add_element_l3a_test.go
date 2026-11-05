@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 // SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
-// meta:name="nftbackend/never_ban_add_element_l3a_test" meta:type="test" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="L3a: never-ban is a target-set + element invariant, not a verb property. Proves backend.AddElement refuses a single exempt IP into an enforcement (drop) set (v4+v6, exact+CIDR-covered), that the AddElementExemptSkips counter increments, that whitelist/port/public-IP/CIDR adds are NOT blocked, and that backend.Ban still refuses exempt IPs (regression). Uses the package snapshot() helper for a fixed exempt set; the reject path returns before any netlink work, so it is hermetic (no nft/root)."
+// meta:name="nftbackend/never_ban_add_element_l3a_test" meta:type="test" meta:version="1.0.0" meta:owner="Antonios Voulvoulis <contact@nftban.com>" meta:description="L3a: never-ban is a target-set + element invariant, not a verb property. Proves backend.AddElement refuses a single exempt IP into an enforcement (drop) set (v4+v6, exact+CIDR-covered), that the AddElementExemptSkips counter increments, that whitelist/port/public-IP/CIDR adds are NOT blocked, and that backend.Ban still refuses exempt IPs (regression). Uses the package exemption.NewSnapshot() helper for a fixed exempt set; the reject path returns before any netlink work, so it is hermetic (no nft/root)."
 // meta:inventory.files=""
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
@@ -14,6 +14,7 @@ package nftbackend
 import (
 	"context"
 	"errors"
+	"github.com/itcmsgr/nftban/internal/exemption"
 	"testing"
 )
 
@@ -39,22 +40,22 @@ func TestIsEnforcementSet_L3a(t *testing.T) {
 // The core invariant: reject == (enforcement set) AND (single exempt IP). No verb involved.
 func TestExemptAddRejection_L3a(t *testing.T) {
 	b := &Backend{}
-	b.exempt = snapshot([]string{"10.0.0.5"}, []string{"2001:db8::/48"})
+	b.exempt = exemption.NewSnapshot([]string{"10.0.0.5"}, []string{"2001:db8::/48"})
 	cases := []struct {
 		set, el string
 		want    bool
 	}{
-		{"blacklist_manual_ipv4", "10.0.0.5", true},   // exact exempt v4 → enforcement: REJECT
-		{"blacklist_manual_ipv6", "2001:db8::9", true}, // cidr-covered exempt v6: REJECT
-		{"blacklist_ipv4", "10.0.0.5", true},           // interval enforcement: REJECT
-		{"ddos_blocked", "10.0.0.5", true},             // ddos drop set: REJECT
-		{"geoban_ipv4", "10.0.0.5", true},              // geoban drop set (add_element-reachable): REJECT
+		{"blacklist_manual_ipv4", "10.0.0.5", true},        // exact exempt v4 → enforcement: REJECT
+		{"blacklist_manual_ipv6", "2001:db8::9", true},     // cidr-covered exempt v6: REJECT
+		{"blacklist_ipv4", "10.0.0.5", true},               // interval enforcement: REJECT
+		{"ddos_blocked", "10.0.0.5", true},                 // ddos drop set: REJECT
+		{"geoban_ipv4", "10.0.0.5", true},                  // geoban drop set (add_element-reachable): REJECT
 		{"persistent_offenders_ipv6", "2001:db8::9", true}, // persistent-offenders drop set: REJECT
-		{"bogon_ipv4", "10.0.0.5", true},               // bogon drop set: REJECT
-		{"whitelist_ipv4", "10.0.0.5", false},          // whitelist add of exempt IP: ALLOW
-		{"blacklist_manual_ipv4", "45.33.32.156", false},  // normal public IP: ALLOW
-		{"blacklist_ipv4", "10.0.0.0/8", false},        // CIDR input (IsExempt=false): ALLOW
-		{"ssh_ports", "10.0.0.5", false},               // port set (not enforcement): ALLOW
+		{"bogon_ipv4", "10.0.0.5", true},                   // bogon drop set: REJECT
+		{"whitelist_ipv4", "10.0.0.5", false},              // whitelist add of exempt IP: ALLOW
+		{"blacklist_manual_ipv4", "45.33.32.156", false},   // normal public IP: ALLOW
+		{"blacklist_ipv4", "10.0.0.0/8", false},            // CIDR input (IsExempt=false): ALLOW
+		{"ssh_ports", "10.0.0.5", false},                   // port set (not enforcement): ALLOW
 	}
 	for _, c := range cases {
 		got, _ := b.exemptAddRejection(c.set, c.el)
@@ -68,7 +69,7 @@ func TestExemptAddRejection_L3a(t *testing.T) {
 // netlink work (so the counter increments and no set is mutated).
 func TestAddElement_RejectsExemptBeforeNetlink_L3a(t *testing.T) {
 	b := &Backend{}
-	b.exempt = snapshot([]string{"10.0.0.5"}, []string{"2001:db8::/48"})
+	b.exempt = exemption.NewSnapshot([]string{"10.0.0.5"}, []string{"2001:db8::/48"})
 
 	if err := b.AddElement(context.Background(), AddElementRequest{Table: "ip nftban", Set: "blacklist_manual_ipv4", Element: "10.0.0.5"}); !errors.Is(err, ErrNeverBanExempt) {
 		t.Fatalf("v4 exempt add: want ErrNeverBanExempt, got %v", err)
@@ -84,7 +85,7 @@ func TestAddElement_RejectsExemptBeforeNetlink_L3a(t *testing.T) {
 // Regression: backend.Ban still refuses exempt IPs (the original F2 guard is unchanged).
 func TestBan_StillRejectsExempt_L3a(t *testing.T) {
 	b := &Backend{}
-	b.exempt = snapshot([]string{"10.0.0.5"}, []string{"2001:db8::/48"})
+	b.exempt = exemption.NewSnapshot([]string{"10.0.0.5"}, []string{"2001:db8::/48"})
 	for _, ip := range []string{"10.0.0.5", "2001:db8::9"} {
 		res, err := b.Ban(context.Background(), BanRequest{IP: ip, Source: "test"})
 		if err != nil {

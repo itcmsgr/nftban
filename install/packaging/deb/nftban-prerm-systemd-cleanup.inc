@@ -82,6 +82,7 @@ remove_unit_file_if_exists() {
 for unit in \
     nftban-boot-bypass-guard.service \
     nftban-boot-bypass.service \
+    nftban-boot-content.service \
     nftban-boot-normal.service \
     nftban-botscan-collector.service \
     nftban-botscan-collector.timer \

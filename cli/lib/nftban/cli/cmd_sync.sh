@@ -96,14 +96,20 @@ nftban_cmd_sync() {
             ;;
 
         --dry-run)
-            # Dry run mode
+            # v1.236 D1: refused by nftban_sync_full (there is no dry-run sync)
             nftban_sync_full --dry-run
             ;;
 
         --quick|-q|quick)
             # BUG-LOW-001 FIX: Quick sync for postinst (skip feeds/geoban)
             # Use for fast restarts when feeds/geoban don't need reloading
-            nftban_sync_full --quick
+            shift || true
+            nftban_sync_full --quick "$@"
+            ;;
+
+        --wait|--join)
+            # v1.236: bounded wait / join an earlier generation (full sync)
+            nftban_sync_full "$@"
             ;;
 
         *)

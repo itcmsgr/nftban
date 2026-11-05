@@ -193,3 +193,6 @@ unrestricted_by_design:
   - nftban-boot-bypass-guard.service
   - nftban-boot-normal.service
   - nftban-commit-confirm-boot.service
+  # v1.236 RC-7: early boot, before the network; loads the durable set contents (nftban-core
+  # ruleset content + `nft -f`, nftban-boot-early.sh content).
+  - nftban-boot-content.service

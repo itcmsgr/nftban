@@ -1272,6 +1272,7 @@ _nftban_classify_inet_filter() {
         | grep -vE '^[[:space:]]*(table|chain|type |policy|[}]|#)' \
         | grep -cE '[^[:space:]]' || true)
     if [ "\${_rules:-0}" -eq 0 ]; then
+        # nftban:outside-boundary — a foreign table, never part of an NFTBan replacement.
         nft delete table inet filter 2>/dev/null || true
         echo REMOVED; return 0
     fi
@@ -1279,6 +1280,7 @@ _nftban_classify_inet_filter() {
     # removal of a populated/operator-owned table (deterministic + logged; no
     # interactive prompt — rpm installs run non-interactively).
     if [ "\${NFTBAN_ALLOW_REMOVE_INET_FILTER:-0}" = "1" ]; then
+        # nftban:outside-boundary — a foreign table, never part of an NFTBan replacement.
         nft delete table inet filter 2>/dev/null || true
         echo REMOVED_OVERRIDE; return 0
     fi
@@ -1978,6 +1980,7 @@ _NFTBAN_NSR_
         _nsr_removed=0
         _nsr_failed=0
         for _nsr_h in \$_nsr_handles; do
+            # nftban:outside-boundary — the foreign ip/ip6 raw table is never part of a replacement.
             if _nsr_err=\$(nft delete rule "\$_nsr_fam" raw prerouting handle "\$_nsr_h" 2>&1); then
                 _nsr_removed=\$((_nsr_removed + 1))
             else
@@ -2112,10 +2115,13 @@ if [ \$1 -eq 0 ]; then
 
     # STEP 4: Flush and delete nftables tables (CRITICAL — rules persist otherwise)
     if command -v nft >/dev/null 2>&1; then
-        nft flush table ip nftban 2>/dev/null || true
-        nft flush table ip6 nftban 2>/dev/null || true
-        nft delete table ip nftban 2>/dev/null || true
-        nft delete table ip6 nftban 2>/dev/null || true
+        # v1.236: the write boundary (nft_writers.lock EXCLUSIVE, bounded), inline: the
+        # library may already be gone here.
+        mkdir -p /run/nftban 2>/dev/null || true
+        flock -w 60 /run/nftban/nft_writers.lock nft flush table ip nftban 2>/dev/null || true
+        flock -w 60 /run/nftban/nft_writers.lock nft flush table ip6 nftban 2>/dev/null || true
+        flock -w 60 /run/nftban/nft_writers.lock nft delete table ip nftban 2>/dev/null || true
+        flock -w 60 /run/nftban/nft_writers.lock nft delete table ip6 nftban 2>/dev/null || true
     fi
 
     # STEP 4b: v1.233.1 NFTBan SYNPROXY notrack rules in the FOREIGN ip/ip6

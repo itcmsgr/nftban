@@ -46,7 +46,13 @@ readonly TRUST_MODULE_NAME="nftban_trust"
 readonly TRUST_MODULE_VERSION="1.1.0"
 
 # FHS Paths
-readonly TRUST_CACHE_DIR="${TRUST_CACHE_DIR:-/var/cache/nftban/trust}"
+# v1.236: the cache lives in the root-owned data dir. A trust.conf kept from an earlier release
+# can still name the old location under /var/cache/nftban, which the nftban service account owns
+# (it could pre-create or rename the directory): that value is mapped, never written to.
+case "${TRUST_CACHE_DIR:-}" in
+    /var/cache/nftban/trust|/var/cache/nftban/trust/) TRUST_CACHE_DIR="/var/lib/nftban/trust/cache" ;;
+esac
+readonly TRUST_CACHE_DIR="${TRUST_CACHE_DIR:-/var/lib/nftban/trust/cache}"
 readonly TRUST_DATA_DIR="${TRUST_DATA_DIR:-/var/lib/nftban/trust}"
 readonly TRUST_WHITELIST_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}/whitelist.d"
 readonly TRUST_LOG="${TRUST_LOG_FILE:-${NFTBAN_LOG_DIR:-/var/log/nftban}/trust.log}"

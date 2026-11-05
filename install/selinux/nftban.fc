@@ -53,6 +53,7 @@
 
 # Runtime files
 /run/nftban(/.*)?                                           gen_context(system_u:object_r:nftban_var_run_t,s0)
+/run/nftban-writers(/.*)?                                   gen_context(system_u:object_r:nftban_var_run_t,s0)
 /run/nftban/nftband\.sock                               -s  gen_context(system_u:object_r:nftban_var_run_t,s0)
 /run/nftban/nftband\.pid                                --  gen_context(system_u:object_r:nftban_var_run_t,s0)
 

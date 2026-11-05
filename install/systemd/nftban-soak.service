@@ -77,7 +77,7 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 # caches state under /var/cache/nftban, and records state in /var/lib/nftban.
 # Ports.d + whitelist.d stay writable for SSH-safety-critical paths consistent
 # with the maintenance model. Shrinking below this breaks rebuild.
-ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban /etc/nftban /etc/nftban/ports.d /etc/nftban/whitelist.d
+ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban /run/nftban-writers /etc/nftban /etc/nftban/ports.d /etc/nftban/whitelist.d
 
 # Resource limits — aligned with nftban-maintenance.service proven pattern.
 # CPUQuota=25% throttled busier hosts (Plesk/Imunify) past the 300s timeout;

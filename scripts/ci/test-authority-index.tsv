@@ -16,6 +16,7 @@ binary_witness_v1229_4_test	cli/lib/nftban/tests/binary_witness_v1229_4_test.sh	
 blacklist_flush_manual_truth_v218_10_test	cli/lib/nftban/tests/blacklist_flush_manual_truth_v218_10_test.sh	blacklist	test	blacklist-flush	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 blacklist_range_roundtrip_test	cli/lib/nftban/tests/blacklist_range_roundtrip_test.sh	firewall	test	blacklist-range-restore	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 blacklist_refresh_no_failopen_v192_test	cli/lib/nftban/tests/blacklist_refresh_no_failopen_v192_test.sh	blacklist	test	blacklist-refresh-atomicity	ROOT_LAB	lab-manual	false	true	false	false	true	false			
+boot_content_v1236_test	cli/lib/nftban/tests/boot_content_v1236_test.sh	firewall	test	boot	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 boot_projection_effective_ports_r11_v1234_test	cli/lib/nftban/tests/boot_projection_effective_ports_r11_v1234_test.sh	firewall	test	boot-projection	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 boot_projection_v1229_13_test	cli/lib/nftban/tests/boot_projection_v1229_13_test.sh	firewall	test	boot-projection	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botguard_count_truth_v1231_test	cli/lib/nftban/tests/botguard_count_truth_v1231_test.sh	botguard	test	botguard-count-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
@@ -37,6 +38,7 @@ botscan_enforcement_claim_evidence_backed_v1229_10_test	cli/lib/nftban/tests/bot
 botscan_exp_rfi_fp_v218_13_test	cli/lib/nftban/tests/botscan_exp_rfi_fp_v218_13_test.sh	botscan	test	botscan-pattern-exp-rfi	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_fcrdns_v189_test	cli/lib/nftban/tests/botscan_fcrdns_v189_test.sh	botscan	test	botscan-fcrdns-crawler	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_health_truth_contract_v1231_0_test	cli/lib/nftban/tests/botscan_health_truth_contract_v1231_0_test.sh	botscan	test	botscan-adaptive	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+botscan_http_campaign_test	cli/lib/nftban/tests/botscan_http_campaign_test.sh	botscan	test	botscan-http-campaign	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_intercycle_resume_v1232_test	cli/lib/nftban/tests/botscan_intercycle_resume_v1232_test.sh	botscan	test	botscan-intercycle-resume	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_lock_foreign_owner_v1235_test	cli/lib/nftban/tests/botscan_lock_foreign_owner_v1235_test.sh	botscan	test	botscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_logsource_validity_r22a_test	cli/lib/nftban/tests/botscan_logsource_validity_r22a_test.sh	botscan	test	botscan-logsource-validity	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
@@ -332,6 +334,7 @@ rpm_spec_single_install_v157_test	cli/lib/nftban/tests/rpm_spec_single_install_v
 ruleset_fingerprint_v138_test	cli/lib/nftban/tests/ruleset_fingerprint_v138_test.sh	security	test	rulefp	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 sbom_no_fabrication_v1229_4_test	cli/lib/nftban/tests/sbom_no_fabrication_v1229_4_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 sbom_shipped_subject_scope_v1229_5_test	cli/lib/nftban/tests/sbom_shipped_subject_scope_v1229_5_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+search_found_sets_display_v1236_test	cli/lib/nftban/tests/search_found_sets_display_v1236_test.sh	cli	test	search	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 secure_go_gate_coverage_v1229_4_test	cli/lib/nftban/tests/secure_go_gate_coverage_v1229_4_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 secure_go_release_proof_authority_v1230_test	cli/lib/nftban/tests/secure_go_release_proof_authority_v1230_test.sh	release	test	secure-go-release-proof	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 selinux_boot_projection_fcontext_v1229_13_test	cli/lib/nftban/tests/selinux_boot_projection_fcontext_v1229_13_test.sh	firewall	test	selinux-policy	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

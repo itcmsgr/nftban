@@ -210,7 +210,7 @@ nftban_require_root() {
                 echo "Re-run with one of:"
                 echo "  sudo VAR=value ${_bin} <command>     # sudo user"
                 echo "      VAR=value ${_bin} <command>     # root shell"
-                echo "(Do NOT use \`export VAR=value; sudo nftban X\` — export drops at sudo.)"
+                echo "(Do NOT export VAR=value first and elevate in a separate command — the export is dropped.)"
             } >&2
         fi
         exit 1

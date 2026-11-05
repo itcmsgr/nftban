@@ -158,7 +158,7 @@ MemoryMax=2G
 #
 # This minimizes damage if daemon is compromised - cannot modify main config
 # Note: /etc/nftban/rules.d is for .nft fragment files (SELinux requires etc_t context)
-ReadWritePaths=/etc/nftban/blacklist.d /etc/nftban/rules.d /var/lib/nftban /var/log/nftban /run/nftban /var/cache/nftban
+ReadWritePaths=/etc/nftban/blacklist.d /etc/nftban/rules.d /var/lib/nftban /var/log/nftban /run/nftban /run/nftban-writers /var/cache/nftban
 
 # =============================================================================
 # CAPABILITIES

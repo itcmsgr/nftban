@@ -216,7 +216,7 @@ _require_root_or_sudo_hint() {
     local json_mode="${2:-false}"
     if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
         if [[ "$json_mode" != "true" ]]; then
-            echo "ERROR: '${operation}' requires root privileges" >&2
+            echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges for '${operation}'" >&2
         fi
         _v142_sudo_hint "$operation" "$json_mode"
         return 1
@@ -291,8 +291,8 @@ EOF
 # operators need to run. v1.139.2 UX review C6 flagged the gap: an
 # operator hitting EUID-required failure had to know to write
 # `sudo NFTBAN_FORCE=1 /usr/lib/nftban/bin/nftban update` rather than
-# the anti-pattern `export NFTBAN_FORCE=1; sudo nftban update` (the
-# export is lost across the sudo boundary).
+# the anti-pattern of exporting NFTBAN_FORCE=1 in the shell and then running the update
+# through sudo as a separate command (the export is lost across the sudo boundary).
 #
 # Args:
 #   $1 — optional operation description (e.g. "ban an IP")
@@ -305,8 +305,8 @@ EOF
 #   Need root for "<operation>". Re-run with one of:
 #     sudo VAR=value /usr/lib/nftban/bin/nftban <command>     # sudo user
 #         VAR=value /usr/lib/nftban/bin/nftban <command>     # root shell
-#   (Inline VAR=value is preserved across the sudo boundary. Do NOT use
-#    `export VAR=value; sudo nftban X` — the export is dropped.)
+#   (Inline VAR=value is preserved across the sudo boundary. Do NOT export
+#    VAR=value first and elevate in a separate command — the export is dropped.)
 #   (blank line)
 #
 # Returns 0 always; never short-circuits the caller's own return value.
@@ -328,8 +328,8 @@ _v142_sudo_hint() {
         echo "Need root for \"${_op}\". Re-run with one of:"
         echo "  sudo VAR=value ${_bin} <command>     # sudo user"
         echo "      VAR=value ${_bin} <command>     # root shell"
-        echo "(Inline VAR=value is preserved across the sudo boundary. Do NOT use"
-        echo " \`export VAR=value; sudo nftban X\` — the export is dropped.)"
+        echo "(Inline VAR=value is preserved across the sudo boundary. Do NOT export"
+        echo " VAR=value first and elevate in a separate command — the export is dropped.)"
         echo ""
     } >&2
     return 0

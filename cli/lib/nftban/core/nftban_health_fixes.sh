@@ -39,6 +39,10 @@ set -Eeuo pipefail
 [[ -n "${_NFTBAN_HEALTH_FIXES_LOADED:-}" ]] && return 0
 _NFTBAN_HEALTH_FIXES_LOADED=1
 
+# v1.236: direct nft writes go through the write boundary.
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+source "${BASH_SOURCE[0]%/*}/../lib/nft_writers.sh"
+
 # Default paths (for direct sourcing compatibility)
 : "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
 : "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
@@ -1231,7 +1235,7 @@ nftban_health_fix_nftables() {
     # Fix 1: Create missing tables
     if ! echo "$existing_tables" | grep -q "^table ${NFTBAN_TABLE_IPV4}$"; then
         echo "  → Creating missing table: ${NFTBAN_TABLE_IPV4}"
-        if nft add table ${NFTBAN_TABLE_IPV4} 2>/dev/null; then
+        if nftban_nft_write add table ${NFTBAN_TABLE_IPV4} 2>/dev/null; then
             echo "  ✓ Created ${NFTBAN_TABLE_IPV4}"
             fixed=$((fixed + 1))
         else
@@ -1242,7 +1246,7 @@ nftban_health_fix_nftables() {
 
     if ! echo "$existing_tables" | grep -q "^table ${NFTBAN_TABLE_IPV6}$"; then
         echo "  → Creating missing table: ${NFTBAN_TABLE_IPV6}"
-        if nft add table ${NFTBAN_TABLE_IPV6} 2>/dev/null; then
+        if nftban_nft_write add table ${NFTBAN_TABLE_IPV6} 2>/dev/null; then
             echo "  ✓ Created ${NFTBAN_TABLE_IPV6}"
             fixed=$((fixed + 1))
         else
@@ -1261,7 +1265,7 @@ nftban_health_fix_nftables() {
             [[ -n "$set_flags" ]] && flags_clause="flags $set_flags ;"
 
             echo "  → Creating missing set: ${NFTBAN_TABLE_IPV4} $set_name"
-            if nft add set ${NFTBAN_TABLE_IPV4} "$set_name" "{ type $set_type ; $flags_clause }" 2>/dev/null; then
+            if nftban_nft_write add set ${NFTBAN_TABLE_IPV4} "$set_name" "{ type $set_type ; $flags_clause }" 2>/dev/null; then
                 echo "  ✓ Created set $set_name"
                 fixed=$((fixed + 1))
             else
@@ -1280,7 +1284,7 @@ nftban_health_fix_nftables() {
             [[ -n "$set_flags" ]] && flags_clause="flags $set_flags ;"
 
             echo "  → Creating missing set: ${NFTBAN_TABLE_IPV6} $set_name"
-            if nft add set ${NFTBAN_TABLE_IPV6} "$set_name" "{ type $set_type ; $flags_clause }" 2>/dev/null; then
+            if nftban_nft_write add set ${NFTBAN_TABLE_IPV6} "$set_name" "{ type $set_type ; $flags_clause }" 2>/dev/null; then
                 echo "  ✓ Created set $set_name"
                 fixed=$((fixed + 1))
             else
@@ -1297,7 +1301,7 @@ nftban_health_fix_nftables() {
             IFS='|' read -r chain_type chain_hook chain_priority chain_policy _ <<< "$chain_spec"
 
             echo "  → Creating missing chain: ${NFTBAN_TABLE_IPV4} $chain_name"
-            if nft add chain ${NFTBAN_TABLE_IPV4} "$chain_name" "{ type $chain_type hook $chain_hook priority $chain_priority ; policy $chain_policy ; }" 2>/dev/null; then
+            if nftban_nft_write add chain ${NFTBAN_TABLE_IPV4} "$chain_name" "{ type $chain_type hook $chain_hook priority $chain_priority ; policy $chain_policy ; }" 2>/dev/null; then
                 echo "  ✓ Created chain $chain_name (type=$chain_type hook=$chain_hook priority=$chain_priority policy=$chain_policy)"
                 fixed=$((fixed + 1))
             else
@@ -1313,7 +1317,7 @@ nftban_health_fix_nftables() {
             IFS='|' read -r chain_type chain_hook chain_priority chain_policy _ <<< "$chain_spec"
 
             echo "  → Creating missing chain: ${NFTBAN_TABLE_IPV6} $chain_name"
-            if nft add chain ${NFTBAN_TABLE_IPV6} "$chain_name" "{ type $chain_type hook $chain_hook priority $chain_priority ; policy $chain_policy ; }" 2>/dev/null; then
+            if nftban_nft_write add chain ${NFTBAN_TABLE_IPV6} "$chain_name" "{ type $chain_type hook $chain_hook priority $chain_priority ; policy $chain_policy ; }" 2>/dev/null; then
                 echo "  ✓ Created chain $chain_name"
                 fixed=$((fixed + 1))
             else

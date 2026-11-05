@@ -46,7 +46,9 @@ permissions:
 jobs:
   architecture-check:
     name: Policy Gates
-    runs-on: ubuntu-latest
+    # v1.236: pinned. ubuntu-latest moved to 26.04 (uutils coreutils); four ci-bash tests fail there (GNU/uutils
+    # compatibility unconfirmed, tracked separately). The pin is the CI environment only.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -529,6 +531,20 @@ jobs:
       # failure pattern (a pass, a category change, disappearance, or an over-ceiling
       # count all BLOCK). CI green here means all non-quarantined required shell tests
       # passed — not that failures were hidden.
+      # v1.236: botscan_throughput_v187_test asserts the Go prefilter (sections B/C) and needs
+      # nftban-botscan-matcher on PATH; it was quarantined only because this job never built it
+      # (V1226-CIBASH-ENV-01, OPEN_BOTSCAN_MATCHER_CI_PROVISIONING).
+      - name: Set up Go (nftban-botscan-matcher for ci-bash)
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v5.6.0
+        with:
+          # Exact patch, matches go.mod `go 1.26.10` (Go toolchain pin parity).
+          go-version: '1.26.10'
+      - name: Build nftban-botscan-matcher onto PATH for ci-bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/nftban-bin"
+          go build -trimpath -o "$RUNNER_TEMP/nftban-bin/nftban-botscan-matcher" ./cmd/nftban-botscan-matcher
+          "$RUNNER_TEMP/nftban-bin/nftban-botscan-matcher" --version
+          echo "$RUNNER_TEMP/nftban-bin" >> "$GITHUB_PATH"
       - name: CI-bash suite — BLOCKING with audited quarantine (v1.226.0 PR-D)
         run: bash scripts/ci/run-test-suite.sh run --gate ci-bash --quarantine scripts/ci/ci-bash-quarantine.tsv
       # deferred + lab-manual: visible, never executed, never counted PASS
@@ -595,6 +611,20 @@ jobs:
           printf '%s\n' "$output"
           if [ "$rc" -ne 0 ]; then
             echo "::error::nft probe authority guard failed (rc=$rc) — use nftban_nft_probe_table/_set; see scripts/ci/nft-probe-debt-baseline.txt"
+            exit "$rc"
+          fi
+
+      # v1.236: every nft write outside nftband holds the write boundary (nft_writers.lock
+      # EXCLUSIVE). B-1 converted files carry no raw write; B-2 ratchets the rest.
+      - name: Check nft write boundary B-1/B-2/B-3 (v1.236, BLOCKING)
+        run: |
+          set +e
+          output="$(./scripts/ci/check-nft-write-boundary.sh 2>&1)"
+          rc=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::nft write boundary guard failed (rc=$rc) — use nftban_nft_write; see scripts/ci/nft-write-boundary-baseline.txt"
             exit "$rc"
           fi
 

@@ -294,7 +294,7 @@ UNITS_BASE=$'nftband.service enabled\nnftband.socket enabled\nnftban-maintenance
 svc(){  # snippet; runs the REAL library in a fresh shell under strict mode
     local rc=0
     env -i PATH="$STUB:/usr/bin:/bin" SBX="$SB" HOME="$SB" \
-        NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_LIB_DIR="$LIBDIR" NFTBAN_RUN_DIR="$SB/run" \
+        NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_LIB_DIR="$LIBDIR" NFTBAN_RUN_DIR="$SB/run" NFTBAN_WRITERS_DIR="$SB/run" \
         EUID_OVERRIDE=0 \
         bash -c 'set -Eeuo pipefail; source "$1"; shift; eval "$1"' _ "$SVC" "$1" > "$SB/svc.out" 2>&1 || rc=$?
     return "$rc"
@@ -623,7 +623,7 @@ else ko "E13 status JSON master_enabled for an invalid value"; fi
 CMDSTATUS="$LIBDIR/cli/cmd_status.sh"
 st_run(){  # <function> -> stdout of the real status function in the sandbox
     env -i PATH="$STUB:/usr/bin:/bin" SBX="$SB" HOME="$SB" \
-        NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_LIB_DIR="$LIBDIR" NFTBAN_RUN_DIR="$SB/run" \
+        NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_LIB_DIR="$LIBDIR" NFTBAN_RUN_DIR="$SB/run" NFTBAN_WRITERS_DIR="$SB/run" \
         NFTBAN_LOG_DIR="$SB/log" NFTBAN_CACHE_DIR="$SB/cache" \
         timeout 120 bash -c 'source "$1/lib/env.sh" >/dev/null 2>&1 || true; source "$2" >/dev/null 2>&1 || true
             source "$1/core/nftban_output.sh" >/dev/null 2>&1 || true; set +e +u +o pipefail; trap - ERR; "$3"' \

@@ -73,8 +73,9 @@ IF_CODE="$(policy_code "$IF")"
 FC_CODE="$(policy_code "$FC")"
 
 # ── SELinux ────────────────────────────────────────────────────────────────
-[[ -f "$TE" ]] && grep -qE 'policy_module\(nftban, 1\.2\.0\)' <<<"$TE_CODE" \
-  && ok "S1 nftban.te policy_module is 1.2.0" || no "S1 nftban.te policy_module is 1.2.0" "missing/old"
+# v1.236: the module moves forward with each policy change (1.2.1 utmp, 1.2.2 process state); 1.2.0 is the floor.
+[[ -f "$TE" ]] && grep -qE 'policy_module\(nftban, 1\.2\.[0-9]+\)' <<<"$TE_CODE" \
+  && ok "S1 nftban.te policy_module is 1.2.x (>= 1.2.0)" || no "S1 nftban.te policy_module is 1.2.x (>= 1.2.0)" "missing/old"
 [[ -f "$IF" ]] && grep -q 'nftban_domtrans' <<<"$IF_CODE" \
   && ok "S2 nftban.if exists with interfaces" || no "S2 nftban.if exists" "missing"
 [[ -f "$FC" ]] && grep -Eq '/usr/lib/nftban/bin/nftband[[:space:]].*nftband_exec_t' <<<"$FC_CODE" \

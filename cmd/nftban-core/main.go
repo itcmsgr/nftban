@@ -120,7 +120,12 @@ func main() {
 	case "sync":
 		if err := cmdSync(cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			os.Exit(syncExitCode(err))
+		}
+	case "ruleset":
+		if err := cmdRuleset(cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(rulesetExitCode(err))
 		}
 	case "ban":
 		if len(os.Args) < 3 {

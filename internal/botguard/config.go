@@ -83,6 +83,10 @@ type Config struct {
 	// v1.234.0: shared CDN edge range sources (empty = DefaultSharedEdgeFiles()).
 	SharedEdgeFiles []string
 
+	// BotScan HTTP campaign: published by BotScan while the campaign is enabled; absent =
+	// campaign signals are not applied (queued ones cannot refill the set after a disable).
+	CampaignMarkerFile string
+
 	// Logging
 	LogLevel     string
 	LogDecisions bool
@@ -144,6 +148,7 @@ func DefaultConfig() *Config {
 		PendingTTL:           constants.BotguardPendingTTL,
 		AutoTune:             true,
 		BatchSignalFile:      "/var/lib/nftban/botguard/batch_signals.jsonl",
+		CampaignMarkerFile:   "/var/lib/nftban/" + constants.CampaignEnabledMarker,
 		BatchInterval:        constants.BotguardBatchInterval,
 		VerifyWorkers:        8,
 		VerifyRateLimit:      10,

@@ -1,0 +1,30 @@
+# =============================================================================
+# NFTBan - boot set contents (durable bans and whitelist, before the network)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-boot-content.service"
+# meta:type="systemd"
+# meta:tier="CORE"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-11-04"
+# meta:description="v1.236 RC-7. The boot projection loaded by nftables.service declares every whitelist and ban set empty; this loads the durable contents (whitelist.d, blacklist.d, feeds) with the reload/rebuild renderer (nftban-core ruleset content) after nftables.service and BEFORE network-pre.target, so bans are enforced before any interface is up. Runs /usr/lib/nftban/helpers/nftban-boot-early.sh content; skips when disabled, bypassed or inert; a failure is recorded in /run/nftban/boot-content.state and never blocks the boot (the daemon's sync still converges)."
+# =============================================================================
+
+[Unit]
+Description=NFTBan boot set contents (durable bans and whitelist, before the network)
+Documentation=man:nftban(8)
+DefaultDependencies=no
+ConditionKernelCommandLine=!nftban=disabled
+ConditionPathExists=!/var/lib/nftban/state/commit-confirm.rollback-failed
+After=local-fs.target systemd-tmpfiles-setup.service nftables.service nftban-boot-normal.service nftban-commit-confirm-boot.service
+Before=network-pre.target nftband.socket nftband.service
+Wants=network-pre.target
+RequiresMountsFor=/etc/nftban /var/lib/nftban /usr/lib/nftban
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/nftban/helpers/nftban-boot-early.sh content
+
+[Install]
+WantedBy=sysinit.target

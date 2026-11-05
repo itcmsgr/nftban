@@ -715,6 +715,7 @@ check_mode() {
     local orig_rpm="$RPM_FILES_OUT"
     local orig_json="$JSON_OUT"
     local orig_shell="$SHELL_OUT"
+    local orig_perms="$PERMS_OUT"
 
     # Redirect to temp
     TMPFILES_OUT="${temp_dir}/tmpfiles.conf"
@@ -724,6 +725,7 @@ check_mode() {
     RPM_FILES_OUT="${temp_dir}/nftban-files.inc"
     JSON_OUT="${temp_dir}/fhs_directories.json"
     SHELL_OUT="${temp_dir}/nftban_fhs_spec.sh"
+    PERMS_OUT="${temp_dir}/fhs-permissions.sh"
 
     # Generate
     generate_tmpfiles
@@ -733,6 +735,7 @@ check_mode() {
     generate_rpm_files
     generate_json
     generate_shell_helper
+    generate_file_permissions
 
     # Compare
     for pair in \
@@ -742,7 +745,8 @@ check_mode() {
         "${temp_dir}/nftban-dir-attrs.list:${orig_deb_attrs}" \
         "${temp_dir}/nftban-files.inc:${orig_rpm}" \
         "${temp_dir}/fhs_directories.json:${orig_json}" \
-        "${temp_dir}/nftban_fhs_spec.sh:${orig_shell}"; do
+        "${temp_dir}/nftban_fhs_spec.sh:${orig_shell}" \
+        "${temp_dir}/fhs-permissions.sh:${orig_perms}"; do
 
         IFS=':' read -r generated committed <<< "$pair"
 
@@ -773,10 +777,23 @@ check_mode() {
     print_status "All generated files are up to date"
 }
 
+# spec_json — the FHS spec as JSON for jq. mikefarah yq v4 needs -o=json; the Python/jq-wrapped
+# yq emits JSON by default.
+spec_json() {
+    if yq --version 2>&1 | grep -qi mikefarah; then
+        yq -o=json '.' "$FHS_SPEC"
+    else
+        yq '.' "$FHS_SPEC"
+    fi
+}
+
 generate_file_permissions() {
     print_info "Generating fhs-permissions.sh..."
 
     mkdir -p "$(dirname "$PERMS_OUT")"
+    # Written to a temporary file and moved into place only when complete: a failed run
+    # leaves the committed script untouched (it used to leave it truncated).
+    local out="${PERMS_OUT}.tmp.$$"
 
     # Write header (split SPDX to avoid validator detecting it as generator's own)
     {
@@ -794,8 +811,8 @@ generate_file_permissions() {
         #   REGRESSION ON A TIMER.
         echo "# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>"
 # REUSE-IgnoreEnd
-    } > "$PERMS_OUT"
-    cat >> "$PERMS_OUT" << 'PERMS_HEADER'
+    } > "$out"
+    cat >> "$out" << 'PERMS_HEADER'
 #
 # meta:name="fhs-permissions"
 # meta:type="setup"
@@ -831,7 +848,9 @@ PERMS_HEADER
     # v1.228.10: an entry may DECLARE an ownership triple (e.g. as the logrotate `create`
     # authority) without asking the installer to enforce it over existing files.
     # install_enforce:false emits no chown/chmod. Absent field = enforced, as before.
-    yq -r '.file_permissions[] | select(.install_enforce != false) |
+    # jq expression (if/then/else, \( ) interpolation): mikefarah yq v4 rejects it, so the
+    # spec is converted to JSON and the expression runs in jq, under either yq variant.
+    if ! spec_json | jq -r '.file_permissions[] | select(.install_enforce != false) |
         "    # \(.path) - \(.pattern // "*")\n" +
         (if .recursive == true then
             "    find \"\(.path)\" -type f -name \"\(.pattern // "*")\"" +
@@ -851,9 +870,13 @@ PERMS_HEADER
                 "        setcap \"\(.capabilities | split(":")[0])\" \"\(.path)/\($bin)\" 2>/dev/null || true\n") +
             "    fi"
         else "" end)
-    ' "$FHS_SPEC" >> "$PERMS_OUT"
+    ' >> "$out"; then
+        rm -f "$out"
+        print_error "fhs-permissions.sh NOT generated (spec conversion or jq failed); the committed file is unchanged"
+        exit 1
+    fi
 
-    cat >> "$PERMS_OUT" << 'PERMS_FOOTER'
+    cat >> "$out" << 'PERMS_FOOTER'
 
     return 0
 }
@@ -862,7 +885,8 @@ PERMS_HEADER
 export -f nftban_install_set_file_permissions
 PERMS_FOOTER
 
-    chmod 755 "$PERMS_OUT"
+    chmod 755 "$out"
+    mv -f "$out" "$PERMS_OUT"
     print_status "Generated $PERMS_OUT"
 }
 

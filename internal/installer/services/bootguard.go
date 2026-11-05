@@ -16,7 +16,7 @@
 // meta:inventory.binaries="systemctl"
 // meta:inventory.env_vars=""
 // meta:inventory.config_files="/etc/nftban/conf.d/services.conf"
-// meta:inventory.systemd_units="nftban-boot-bypass.service,nftban-boot-bypass-guard.service,nftban-boot-normal.service,nftban-commit-confirm-boot.service"
+// meta:inventory.systemd_units="nftban-boot-bypass.service,nftban-boot-bypass-guard.service,nftban-boot-normal.service,nftban-commit-confirm-boot.service,nftban-boot-content.service"
 // meta:inventory.network=""
 // meta:inventory.privileges="root"
 // =============================================================================
@@ -40,6 +40,9 @@ var BootGuardUnits = []string{
 	"nftban-boot-normal.service",
 	// v1.235 section 4.5: decides a pending commit-confirm apply at boot, before nftband.
 	"nftban-commit-confirm-boot.service",
+	// v1.236 RC-7: loads the durable bans and whitelist after nftables.service and before the
+	// network, so a reboot never exposes the services with empty ban sets.
+	"nftban-boot-content.service",
 }
 
 // ProcCmdlinePath is the kernel command line; a variable so tests can point it

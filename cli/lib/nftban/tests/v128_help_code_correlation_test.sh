@@ -77,8 +77,8 @@ awk '/^_nftban_canonical_commands\(\) \{$/,/^EOF$/' "$_cli_sbin" \
     | grep -E '^[a-z][a-z0-9_-]*$' \
     | sort -u > "$_canonical_tmp"
 canonical_count=$(wc -l < "$_canonical_tmp")
-[[ "$canonical_count" -ge 50 && "$canonical_count" -le 100 ]]
-_t_assert "C1: canonical command list extracted (got: $canonical_count, expected 50-100)" "$?"
+_rc=0; [[ "$canonical_count" -ge 50 && "$canonical_count" -le 100 ]] || _rc=1
+_t_assert "C1: canonical command list extracted (got: $canonical_count, expected 50-100)" "$_rc"
 
 # =============================================================================
 # (2) Build cmd_<X>.sh file inventory.
@@ -103,8 +103,8 @@ for f in "${_cli_lib}/cli/cmd_"*.sh; do
     esac
 done | sort -u > "$_cmd_files_tmp"
 cmd_files_count=$(wc -l < "$_cmd_files_tmp")
-[[ "$cmd_files_count" -ge 40 ]]
-_t_assert "C2: cmd_*.sh file inventory extracted (got: $cmd_files_count, expected >=40)" "$?"
+_rc=0; [[ "$cmd_files_count" -ge 40 ]] || _rc=1
+_t_assert "C2: cmd_*.sh file inventory extracted (got: $cmd_files_count, expected >=40)" "$_rc"
 
 # =============================================================================
 # (3) Build dispatcher's known-nftban-core-command list (case at ~line 1342)
@@ -115,8 +115,8 @@ grep -E '^\s*init\|sync\|' "$_cli_sbin" | head -1 \
     | tr '|' '\n' \
     | sort -u > "$_dispatched_tmp"
 dispatched_count=$(wc -l < "$_dispatched_tmp")
-[[ "$dispatched_count" -ge 5 ]]
-_t_assert "C3: dispatcher's nftban-core case list extracted (got: $dispatched_count, expected >=5)" "$?"
+_rc=0; [[ "$dispatched_count" -ge 5 ]] || _rc=1
+_t_assert "C3: dispatcher's nftban-core case list extracted (got: $dispatched_count, expected >=5)" "$_rc"
 
 # =============================================================================
 # (4) Every cmd_<X>.sh maps to a canonical command (no orphan files)
@@ -219,8 +219,8 @@ fi
 
 # Confirm this is repo-only (no test changes outside this file)
 non_test_files=$(git diff --name-only HEAD 2>/dev/null | grep -v "v128_help_code_correlation_test\.sh" | wc -l)
-[[ "$non_test_files" -le 5 ]]
-_t_assert "D2: PR-B diff is small (test + ≤5 fix files; got: $((non_test_files+1)) total)" "$?"
+_rc=0; [[ "$non_test_files" -le 5 ]] || _rc=1
+_t_assert "D2: PR-B diff is small (test + ≤5 fix files; got: $((non_test_files+1)) total)" "$_rc"
 
 # =============================================================================
 # Summary

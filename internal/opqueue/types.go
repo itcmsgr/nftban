@@ -116,7 +116,10 @@ type QueueStats struct {
 	// L3b: number of EnqueueBan calls refused because a single exempt IP targeted an
 	// enforcement/drop set (never-ban invariant on the opqueue ban path).
 	EnqueueBanExemptSkips uint64
-	LastFlushTime         time.Time
+	// Elements an ApplyGuard refused at application time (e.g. a campaign prefix whose
+	// feature was disabled, whose rule went away, or that became never-ban protected).
+	ApplyGuardRefused int64
+	LastFlushTime     time.Time
 }
 
 // FlushResult contains the outcome of a buffer flush

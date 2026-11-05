@@ -110,12 +110,19 @@ func TestValidNFTBanSet(t *testing.T) {
 func TestKnownNFTBanSets_Count(t *testing.T) {
 	// Verify we have the expected number of known sets
 	// 4 blacklist/whitelist + 2 persistent + 2 bogon + 2 geoban + 4 ports
-	// + 1 ssh_ports (v1.145 PR-B2) + 12 botguard + 4 port_allow = 31
-	if len(knownNFTBanSets) != 31 {
-		t.Errorf("expected 31 known sets, got %d", len(knownNFTBanSets))
+	// + 1 ssh_ports (v1.145 PR-B2) + 12 botguard + 4 port_allow + 1 ddos_blocked (v1.236)
+	// + 1 campaign_prefix_ipv4 (BotScan HTTP campaign) = 33
+	if len(knownNFTBanSets) != 33 {
+		t.Errorf("expected 33 known sets, got %d", len(knownNFTBanSets))
 	}
 	if !knownNFTBanSets["ssh_ports"] {
 		t.Error("ssh_ports must be a daemon-writable set (v1.145 PR-B2)")
+	}
+	if !knownNFTBanSets["ddos_blocked"] {
+		t.Error("ddos_blocked must be daemon-flushable: Suricata teardown and `flush ddos` flush it (v1.236)")
+	}
+	if !knownNFTBanSets["campaign_prefix_ipv4"] {
+		t.Error("campaign_prefix_ipv4 must be daemon-flushable: `botscan disable` empties it")
 	}
 }
 

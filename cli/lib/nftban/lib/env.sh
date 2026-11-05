@@ -97,6 +97,11 @@ nftban_config_apply_final_operator_overlay() {
     _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
 }
 
+# v1.236: the write boundary for nft writes outside nftband (nftban_nft_write,
+# nftban_writers_acquire/_release). Options-neutral; available to every script that sources env.sh.
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+source "${BASH_SOURCE[0]%/*}/nft_writers.sh"
+
 # =============================================================================
 # LOAD CONFIG (if not already loaded by main CLI)
 # =============================================================================

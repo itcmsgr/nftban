@@ -225,15 +225,30 @@ func (w *NFTBackendWrapper) GetSetElements(tableName, setName string) ([]string,
 	return w.nft.GetSetElements(set)
 }
 
-// GetSetCount returns the number of elements in a set without loading them all into memory.
-// For interval sets, filters out IntervalEnd markers to return the true entry count.
+// GetSetCount returns the number of elements in a set (it reads every element; the caller
+// bounds how often). For interval sets, filters out IntervalEnd markers to return the true
+// entry count.
+//
+// v1.236: read-only. It used getSet, which CREATES a missing set as an interval set in the
+// table guessed from the name (http_bot_ban6 has no _ipv6 suffix, so it would be fabricated
+// in the ip table), and counting now runs every exporter interval. The set is looked up in
+// the name's table first (tcp_ports_in etc. exist in both families), then the other one,
+// with FindSetInTable as resolveExistingSet does; a missing set is an error, never created.
 func (w *NFTBackendWrapper) GetSetCount(tableName, setName string) (int, error) {
-	set, err := w.getSet(setName)
-	if err != nil {
-		return 0, err
+	first, second := w.getTable(setName), w.tableIPv6
+	if first == w.tableIPv6 {
+		second = w.tableIPv4
 	}
-
-	return w.nft.GetSetCount(set)
+	for _, tbl := range []*nftables.Table{first, second} {
+		set, err := w.nft.FindSetInTable(tbl, setName)
+		if err != nil {
+			return 0, err
+		}
+		if set != nil {
+			return w.nft.GetSetCount(set)
+		}
+	}
+	return 0, fmt.Errorf("set %s not found in ip or ip6 nftban table", setName)
 }
 
 // InvalidateCache clears the set cache (call after external nft changes)

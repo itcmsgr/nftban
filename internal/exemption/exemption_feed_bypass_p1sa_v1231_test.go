@@ -8,7 +8,7 @@
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-09-14"
-// meta:description="NEGATIVE CONTROL for OPEN_DUPLICATE_AUTHORITY_LOCKOUT_P1S child P1S-A. The feed/geoban/blacklist.d unified replace (cmd/nftband/daemon_handlers_sync.go) converts every feed single IP to <ip>/32 and hands the union to nft.AddCIDRElementsWithStats; before v1.231.0 no never-ban authority was consulted on that path. IsExempt is single-IP-only by contract (internal/nftbackend/backend.go), so the prefix question needed a prefix-shaped answer: exemptResolver.SubtractExempt. Every subject arm here is paired with a PRE-FIX INVERSION arm that reproduces the defect in the same run, so no row can pass vacuously."
+// meta:description="NEGATIVE CONTROL for OPEN_DUPLICATE_AUTHORITY_LOCKOUT_P1S child P1S-A. The feed/geoban/blacklist.d unified replace (cmd/nftband/daemon_handlers_sync.go) converts every feed single IP to <ip>/32 and hands the union to nft.AddCIDRElementsWithStats; before v1.231.0 no never-ban authority was consulted on that path. IsExempt is single-IP-only by contract (internal/nftbackend/backend.go), so the prefix question needed a prefix-shaped answer: Resolver.SubtractExempt. Every subject arm here is paired with a PRE-FIX INVERSION arm that reproduces the defect in the same run, so no row can pass vacuously."
 // meta:inventory.files=""
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
@@ -40,7 +40,7 @@
 //   --- FAIL: TestP1SA_NC2_ExemptIPSurvivesTheUnifiedReplaceFilterChain (0.00s)
 // with both positive controls passing (no INVALID_TEST fatal).
 
-package nftbackend
+package exemption
 
 import (
 	"net/netip"
@@ -61,9 +61,9 @@ const (
 	hostileFixtureNet  = "198.100.44.0/24" // public, not exempt — instrument positive control
 )
 
-func p1saLoadedResolver(t *testing.T, exact ...string) *exemptResolver {
+func p1saLoadedResolver(t *testing.T, exact ...string) *Resolver {
 	t.Helper()
-	r := &exemptResolver{ttl: time.Hour, loaded: true, loadedAt: time.Now(), exact: map[string]struct{}{}}
+	r := &Resolver{ttl: time.Hour, loaded: true, loadedAt: time.Now(), exact: map[string]struct{}{}}
 	for _, ip := range exact {
 		r.exact[ip] = struct{}{}
 	}
@@ -194,7 +194,7 @@ func TestP1SA_NC4_FailSafeSnapshot(t *testing.T) {
 
 	// Never loaded: refresh is attempted, finds no sources in this hermetic context,
 	// and the load must not withhold anything.
-	unloaded := &exemptResolver{ttl: time.Hour}
+	unloaded := &Resolver{ttl: time.Hour}
 	kept, removed, _ := unloaded.SubtractExempt(in)
 	if removed != 0 || len(kept) != len(in) {
 		t.Errorf("FAIL-SAFE BROKEN: an unloaded snapshot subtracted %d element(s) (kept=%v); a resolver failure must never block a feed load", removed, kept)
@@ -208,14 +208,11 @@ func TestP1SA_NC4_FailSafeSnapshot(t *testing.T) {
 	}
 
 	// Nil resolver and nil backend.
-	var nilR *exemptResolver
+	var nilR *Resolver
 	if kept, removed, _ = nilR.SubtractExempt(in); removed != 0 || len(kept) != len(in) {
 		t.Errorf("FAIL-SAFE BROKEN: nil resolver subtracted %d element(s)", removed)
 	}
-	var nilB *Backend
-	if kept, removed, _ = nilB.SubtractExempt(in); removed != 0 || len(kept) != len(in) {
-		t.Errorf("FAIL-SAFE BROKEN: nil backend subtracted %d element(s)", removed)
-	}
+	// The nil-Backend arm lives in internal/nftbackend (exemption_backend_test.go).
 
 	// Unparseable input is passed through, not silently eaten.
 	junk := []string{"not-an-ip", ""}
