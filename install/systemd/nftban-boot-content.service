@@ -17,7 +17,7 @@ DefaultDependencies=no
 ConditionKernelCommandLine=!nftban=disabled
 ConditionPathExists=!/var/lib/nftban/state/commit-confirm.rollback-failed
 After=local-fs.target systemd-tmpfiles-setup.service nftables.service nftban-boot-normal.service nftban-commit-confirm-boot.service
-Before=network-pre.target nftband.socket nftband.service
+Before=network-pre.target
 Wants=network-pre.target
 RequiresMountsFor=/etc/nftban /var/lib/nftban /usr/lib/nftban
 

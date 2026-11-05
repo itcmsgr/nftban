@@ -51,7 +51,8 @@ echo "$*" >> "$STUB/nft.calls"
 case "$1 $2" in
     "list tables") [[ -f "$STUB/unreadable" ]] && { echo "Error: Operation not permitted" >&2; exit 1; }
                    echo "table inet filter"; [[ -f "$STUB/table_present" ]] && printf 'table ip nftban\ntable ip6 nftban\n'; exit 0 ;;
-    "-f "*)        cp "$2" "$STUB/loaded.nft"; [[ -f "$STUB/load_fails" ]] && { echo "Error: No such file or directory" >&2; exit 1; }; exit 0 ;;
+    "-f -")        cat > "$STUB/loaded.nft"; [[ -f "$STUB/load_fails" ]] && { echo "Error: Could not process rule: No such file or directory" >&2; exit 1; }; exit 0 ;;
+    "-f "*)        echo "Error: Could not open file \"$2\": Permission denied" >&2; exit 1 ;;  # a path is never passed (SELinux, EL)
 esac
 exit 0
 S
@@ -108,8 +109,9 @@ pass "renderer refused: nothing loaded, reason recorded, exit 0"
 # 5. nft -f refused -> recorded, exit 0 (boot never blocked)
 touch "$tmp/load_fails"; run || fail "load-failed exit $?"
 [[ "$(state)" == content-failed ]] || fail "load failed: outcome=$(state)"
+grep -q 'Could not process rule' "$tmp/run/boot-content.state" || fail "load failed: nft's message not recorded: $(cat "$tmp/run/boot-content.state")"
 rm -f "$tmp/load_fails"
-pass "load refused: recorded, exit 0"
+pass "load refused: nft's message recorded, exit 0"
 
 # 6. the bypass record is never overwritten by this mode
 [[ "$(cat "$tmp/run/boot-bypass.state")" == "outcome=primary" ]] || fail "boot-bypass.state was modified"
@@ -117,7 +119,11 @@ pass "boot-bypass.state untouched"
 
 # 7. unit: ordering and hold conditions
 grep -qx 'After=local-fs.target systemd-tmpfiles-setup.service nftables.service nftban-boot-normal.service nftban-commit-confirm-boot.service' "$UNIT" || fail "unit: After="
-grep -qx 'Before=network-pre.target nftband.socket nftband.service' "$UNIT" || fail "unit: Before="
+# Before= is network-pre.target ONLY: ordering before nftband.socket/.service made a cycle on EL
+# (nftables.service orders after basic.target -> sockets.target -> nftband.socket), and systemd
+# broke it by dropping nftables.service (el9-clean) or sockets.target (lab4) from the boot.
+grep -qx 'Before=network-pre.target' "$UNIT" || fail "unit: Before= must be network-pre.target only: $(grep '^Before=' "$UNIT")"
+[[ "$(grep -c '^Before=' "$UNIT")" == 1 ]] || fail "unit: more than one Before= line"
 grep -qx 'Wants=network-pre.target' "$UNIT" || fail "unit: Wants=network-pre.target"
 grep -qx 'ConditionKernelCommandLine=!nftban=disabled' "$UNIT" || fail "unit: bypass condition"
 grep -qx 'ConditionPathExists=!/var/lib/nftban/state/commit-confirm.rollback-failed' "$UNIT" || fail "unit: D10 condition"

@@ -224,13 +224,17 @@ mode_content() {
         rm -rf -- "$work"; return 0
     fi
     sum="$(grep -m1 '^RULESET_CONTENT' "$work/content.err" 2>/dev/null)"
-    # Runs before nftband.service and before any firewall lane (unit ordering); the write boundary is
-    # still taken (inline lock: this helper does not load the library). /run/nftban-writers comes
-    # from tmpfiles (the unit orders after systemd-tmpfiles-setup.service).
-    if flock -w 60 "${NFTBAN_WRITERS_DIR:-/run/nftban-writers}"/nft_writers.lock nft -f "$work/content.nft" > "$work/load.err" 2>&1; then
+    # The write boundary is taken (inline lock: this helper does not load the library);
+    # /run/nftban-writers comes from tmpfiles (the unit orders after systemd-tmpfiles-setup.service).
+    # SELinux (EL): started by systemd, nft runs as iptables_t, which may not open files under
+    # /var/lib/nftban — el9-clean Enforcing: "Could not open file ... Permission denied", with no
+    # AVC logged (dontaudit), and the message itself was lost in a file there. So this shell reads
+    # the contents and streams them to `nft -f -`, and nft's messages come back to this shell.
+    local lerr
+    if lerr="$(cat -- "$work/content.nft" | flock -w 60 "${NFTBAN_WRITERS_DIR:-/run/nftban-writers}"/nft_writers.lock nft -f - 2>&1)"; then
         record content-loaded "${sum:-RULESET_CONTENT (no summary)}"
     else
-        record content-failed "nft -f refused the contents: $(tail -n 1 "$work/load.err" 2>/dev/null); sets stay empty until the daemon's sync"
+        record content-failed "nft -f refused the contents: ${lerr##*$'\n'}; sets stay empty until the daemon's sync"
     fi
     rm -rf -- "$work"
     return 0
