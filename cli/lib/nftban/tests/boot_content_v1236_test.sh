@@ -43,13 +43,15 @@ pass() { echo "PASS: $*"; }
 mkdir -p "$tmp/bin" "$tmp/run" "$tmp/data"
 mkdir -p "$tmp/writers"
 export NFTBAN_BOOT_STATE_DIR="$tmp/run" NFTBAN_SERVICES_CONF="$tmp/services.conf" \
-       NFTBAN_CORE="$tmp/bin/nftban-core" NFTBAN_DATA_DIR="$tmp/data" NFTBAN_WRITERS_DIR="$tmp/writers" STUB="$tmp"
+       NFTBAN_CORE="$tmp/bin/nftban-core" NFTBAN_DATA_DIR="$tmp/data" NFTBAN_WRITERS_DIR="$tmp/writers" STUB="$tmp" \
+       NFTBAN_LIB_DIR="$REPO_ROOT/cli/lib/nftban"
 cat > "$tmp/bin/nft" <<'S'
 #!/usr/bin/env bash
 echo "$*" >> "$STUB/nft.calls"
 case "$1 $2" in
-    "list table") [[ -f "$STUB/table_present" ]] && exit 0 || exit 1 ;;
-    "-f "*)       cp "$2" "$STUB/loaded.nft"; [[ -f "$STUB/load_fails" ]] && { echo "Error: No such file or directory" >&2; exit 1; }; exit 0 ;;
+    "list tables") [[ -f "$STUB/unreadable" ]] && { echo "Error: Operation not permitted" >&2; exit 1; }
+                   echo "table inet filter"; [[ -f "$STUB/table_present" ]] && printf 'table ip nftban\ntable ip6 nftban\n'; exit 0 ;;
+    "-f "*)        cp "$2" "$STUB/loaded.nft"; [[ -f "$STUB/load_fails" ]] && { echo "Error: No such file or directory" >&2; exit 1; }; exit 0 ;;
 esac
 exit 0
 S
@@ -88,6 +90,13 @@ rm -f "$tmp/table_present"; run || fail "no-table exit $?"
 [[ "$(state)" == content-skipped ]] && ! grep -q '^-f' "$tmp/nft.calls" || fail "no table: outcome=$(state)"
 touch "$tmp/table_present"
 pass "no ip nftban table: skipped, nothing loaded"
+
+# 3b. ruleset unreadable (typed probe CANNOT_READ) -> not treated as absent, nothing loaded, recorded
+touch "$tmp/unreadable"; run || fail "unreadable exit $?"
+[[ "$(state)" == content-failed ]] && ! grep -q '^-f' "$tmp/nft.calls" || fail "unreadable: outcome=$(state)"
+grep -q 'not readable' "$tmp/run/boot-content.state" || fail "unreadable: reason not recorded"
+rm -f "$tmp/unreadable"
+pass "ruleset unreadable: CANNOT_READ recorded, nothing loaded"
 
 # 4. renderer refused -> nothing loaded, recorded, exit 0
 echo 3 > "$tmp/render_rc"; run || fail "refused exit $?"

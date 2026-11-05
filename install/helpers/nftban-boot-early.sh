@@ -203,9 +203,19 @@ mode_content() {
         record content-skipped "NFTBan is not enabled (stored choice); nothing loaded"; return 0
     fi
     command -v nft >/dev/null 2>&1 || { record content-skipped "nft not available"; return 0; }
-    if ! nft list table ip nftban >/dev/null 2>&1; then
-        record content-skipped "no ip nftban table (inert or bypassed projection); nothing loaded"; return 0
-    fi
+    # Typed probe (v1.228.4): only a verified ABSENT means "inert or bypassed"; an unreadable
+    # ruleset is not absence and loads nothing either, with its error class recorded.
+    # shellcheck source=/usr/lib/nftban/lib/nft_probe.sh
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_probe.sh" 2>/dev/null \
+        || { record content-failed "typed nft probe (lib/nft_probe.sh) not available; nothing loaded"; return 0; }
+    nftban_nft_probe_table ip nftban boot-content || true
+    case "${NFTBAN_NFT_PROBE_VERDICT:-}" in
+        "$NFTBAN_NFT_PROBE_PRESENT") ;;
+        "$NFTBAN_NFT_PROBE_ABSENT")
+            record content-skipped "no ip nftban table (inert or bypassed projection); nothing loaded"; return 0 ;;
+        *)
+            record content-failed "ip nftban table not readable (${NFTBAN_NFT_PROBE_CLASS:-unknown}); nothing loaded"; return 0 ;;
+    esac
     work="$(mktemp -d "${NFTBAN_DATA_DIR:-/var/lib/nftban}/.boot-content.XXXXXX" 2>/dev/null)" \
         || { record content-failed "private work directory not created; sets stay empty until the daemon's sync"; return 0; }
     "$core" ruleset content > "$work/content.nft" 2> "$work/content.err" || rc=$?
