@@ -418,6 +418,7 @@ nftban_nft_probe_may_rebuild() {
 # NFTBAN_NFT_GEN_SOURCE (json | text). Returns 0 when the table was read, 1 when it
 # could not be read. The caller compares the value with the generation it expects.
 # -----------------------------------------------------------------------------
+# shellcheck disable=SC2034  # NFTBAN_NFT_GEN_VALUE/SOURCE are the output, read by callers in other files
 nftban_nft_generation_read() {
     local _fam="$1" _tbl="$2" _nft="${NFTBAN_NFT_BIN:-nft}" _json _text _n _has _line _first=1 _ncom=0 _val=""
     NFTBAN_NFT_GEN_VALUE=""; NFTBAN_NFT_GEN_SOURCE=""
