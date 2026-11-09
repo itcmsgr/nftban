@@ -75,6 +75,7 @@ var GeneratedRequiredSetsIPv6 = []string{
 var GeneratedAllSetsIPv4 = []string{
 	"blacklist_ipv4",
 	"blacklist_manual_ipv4",
+	"campaign_prefix_ipv4",
 	"http_bot_allow",
 	"http_bot_ban",
 	"http_bot_emergency",

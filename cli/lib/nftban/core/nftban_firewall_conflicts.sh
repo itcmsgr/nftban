@@ -67,6 +67,10 @@ declare -g CONFLICT_CRITICAL=3
 [[ -n "${_NFTBAN_FIREWALL_CONFLICTS_LOADED:-}" ]] && return 0
 _NFTBAN_FIREWALL_CONFLICTS_LOADED=1
 
+# v1.236: direct nft writes go through the write boundary.
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+source "${BASH_SOURCE[0]%/*}/../lib/nft_writers.sh"
+
 # Global arrays to store detected conflicts
 declare -ga NFTBAN_FIREWALL_CONFLICTS=()
 declare -ga NFTBAN_FIREWALL_FIXES=()
@@ -1135,7 +1139,7 @@ nftban_delete_ghost_table_if_empty() {
     cclass="$(nftban_table_content_class "$family" "$name")"
     case "$cclass" in
         "$TC_CONTENT_EMPTY")
-            nft delete table "$family" "$name" 2>/dev/null || return 0
+            nftban_nft_write delete table "$family" "$name" 2>/dev/null || return 0
             [[ "$quiet" == "true" ]] || echo "  Removed ghost table: $family $name (empty skeleton)"
             ;;
         "$TC_CONTENT_POPULATED")
@@ -1311,7 +1315,7 @@ nftban_cleanup_ghost_tables() {
             fi
             case "$_content" in
                 "$TC_CONTENT_EMPTY")
-                    if nft delete table $ghost 2>/dev/null; then
+                    if nftban_nft_write delete table $ghost 2>/dev/null; then
                         ((removed++)) || true
                         [[ "$quiet" == "false" ]] && echo "  Removed ghost table: $ghost (empty skeleton)"
                     else

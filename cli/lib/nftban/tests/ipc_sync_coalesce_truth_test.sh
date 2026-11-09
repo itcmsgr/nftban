@@ -33,7 +33,7 @@ ok()  { PASS=$((PASS+1)); echo "  [PASS] $1"; }
 bad() { FAIL=$((FAIL+1)); echo "  [FAIL] $1"; }
 
 SBX="$(mktemp -d)"; trap 'rm -rf "$SBX"' EXIT
-export NFTBAN_RUN_DIR="$SBX/run"; mkdir -p "$NFTBAN_RUN_DIR"
+export NFTBAN_RUN_DIR="$SBX/run" NFTBAN_WRITERS_DIR="$SBX/run"; mkdir -p "$NFTBAN_RUN_DIR"
 STUB_LOG="$SBX/ipc.log"; : > "$STUB_LOG"
 # ⛔ THE PRE-FIX BASELINE IS SYNTHESISED FROM THE LIVE LIBRARY BY A DECLARED
 #    INVERSION — it is NOT read from a git ref.
@@ -68,6 +68,10 @@ sed "s|${FIXED_RETURN}|return 0|" "$IPC_LIB" > "$SBX/old_ipc.sh" || {
 if cmp -s "$IPC_LIB" "$SBX/old_ipc.sh"; then
     echo "  [FAIL] synthesised baseline is byte-identical to the fixed library — vacuous"; exit 1
 fi
+# v1.236: nft_ipc.sh sources its sibling nft_writers.sh; the synthesised copy needs it beside it
+# (unchanged), exactly as the installed library has it.
+cp "$(dirname "$IPC_LIB")/nft_writers.sh" "$SBX/nft_writers.sh" || {
+    echo "  [FAIL] could not place nft_writers.sh beside the synthesised library"; exit 1; }
 
 # Each arm runs in a SUBSHELL with its own library, so old and new never coexist.
 # The stub transport RECORDS every request, so "was IPC actually sent" is counted,

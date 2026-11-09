@@ -103,32 +103,32 @@ fi
 # =============================================================================
 
 # A1: identical strings -> 0
-[[ "$(_nftban_damerau_levenshtein "ban" "ban")" == "0" ]]
-_t_assert "A1: damerau_levenshtein('ban','ban') == 0" "$?"
+_rc=0; [[ "$(_nftban_damerau_levenshtein "ban" "ban")" == "0" ]] || _rc=1
+_t_assert "A1: damerau_levenshtein('ban','ban') == 0" "$_rc"
 
 # A2: single substitution
-[[ "$(_nftban_damerau_levenshtein "ban" "bah")" == "1" ]]
-_t_assert "A2: damerau_levenshtein('ban','bah') == 1" "$?"
+_rc=0; [[ "$(_nftban_damerau_levenshtein "ban" "bah")" == "1" ]] || _rc=1
+_t_assert "A2: damerau_levenshtein('ban','bah') == 1" "$_rc"
 
 # A3: single insertion
-[[ "$(_nftban_damerau_levenshtein "ban" "band")" == "1" ]]
-_t_assert "A3: damerau_levenshtein('ban','band') == 1" "$?"
+_rc=0; [[ "$(_nftban_damerau_levenshtein "ban" "band")" == "1" ]] || _rc=1
+_t_assert "A3: damerau_levenshtein('ban','band') == 1" "$_rc"
 
 # A4: single deletion
-[[ "$(_nftban_damerau_levenshtein "bann" "ban")" == "1" ]]
-_t_assert "A4: damerau_levenshtein('bann','ban') == 1" "$?"
+_rc=0; [[ "$(_nftban_damerau_levenshtein "bann" "ban")" == "1" ]] || _rc=1
+_t_assert "A4: damerau_levenshtein('bann','ban') == 1" "$_rc"
 
 # A5: adjacent transposition (Damerau-specific; should be 1, NOT 2)
-[[ "$(_nftban_damerau_levenshtein "bna" "ban")" == "1" ]]
-_t_assert "A5: damerau_levenshtein('bna','ban') == 1 (transposition)" "$?"
+_rc=0; [[ "$(_nftban_damerau_levenshtein "bna" "ban")" == "1" ]] || _rc=1
+_t_assert "A5: damerau_levenshtein('bna','ban') == 1 (transposition)" "$_rc"
 
 # A6: udpate <-> update is an adjacent transposition of d/p
-[[ "$(_nftban_damerau_levenshtein "udpate" "update")" == "1" ]]
-_t_assert "A6: damerau_levenshtein('udpate','update') == 1 (transposition)" "$?"
+_rc=0; [[ "$(_nftban_damerau_levenshtein "udpate" "update")" == "1" ]] || _rc=1
+_t_assert "A6: damerau_levenshtein('udpate','update') == 1 (transposition)" "$_rc"
 
 # A7: empty string
-[[ "$(_nftban_damerau_levenshtein "" "ban")" == "3" ]]
-_t_assert "A7: damerau_levenshtein('','ban') == 3" "$?"
+_rc=0; [[ "$(_nftban_damerau_levenshtein "" "ban")" == "3" ]] || _rc=1
+_t_assert "A7: damerau_levenshtein('','ban') == 3" "$_rc"
 
 # =============================================================================
 # (B) Positive typo suggestions (per operator scope)
@@ -193,11 +193,11 @@ _check_no_suggestion "hello123notacommand"
 
 # D1: source still contains the multi-word fallback case
 grep -qE 'configtest\)' "$_sbin_nftban" && grep -qE 'suggestion="config validate"' "$_sbin_nftban"
-_t_assert "D1: cli/sbin/nftban multi-word fallback preserves configtest -> 'config validate'" "$?"
+_rc=$?; _t_assert "D1: cli/sbin/nftban multi-word fallback preserves configtest -> 'config validate'" "$_rc"
 
 # D2: configaudit -> "config audit"
 grep -qE 'configaudit\)' "$_sbin_nftban" && grep -qE 'suggestion="config audit"' "$_sbin_nftban"
-_t_assert "D2: cli/sbin/nftban multi-word fallback preserves configaudit -> 'config audit'" "$?"
+_rc=$?; _t_assert "D2: cli/sbin/nftban multi-word fallback preserves configaudit -> 'config audit'" "$_rc"
 
 # D3: prior static case table is removed (verify by absence of one of its distinctive members)
 # The pre-V127 table contained entries like 'satus|staus|sattus' on a single
@@ -209,7 +209,7 @@ _t_assert "D3: legacy static typo case 'satus|staus|sattus)' removed" "$ok"
 
 # D4: V127 UX-5 anchor comment present in cli/sbin/nftban
 grep -q 'V127 UX-5' "$_sbin_nftban"
-_t_assert "D4: cli/sbin/nftban carries V127 UX-5 scope anchor comment" "$?"
+_rc=$?; _t_assert "D4: cli/sbin/nftban carries V127 UX-5 scope anchor comment" "$_rc"
 
 # =============================================================================
 # (E) D-8 alias display in cmd_firewall_logs.sh
@@ -217,15 +217,15 @@ _t_assert "D4: cli/sbin/nftban carries V127 UX-5 scope anchor comment" "$?"
 
 # E1: _fwlog_help contains an ALIAS section
 awk '/_fwlog_help\(\) \{/,/^EOF$/' "$_cmd_firewall_logs" | grep -q '^ALIAS:$'
-_t_assert "E1: _fwlog_help body contains 'ALIAS:' section" "$?"
+_rc=$?; _t_assert "E1: _fwlog_help body contains 'ALIAS:' section" "$_rc"
 
 # E2: _fwlog_help alias section explicitly states firewall-logs -> firewall logs
 awk '/_fwlog_help\(\) \{/,/^EOF$/' "$_cmd_firewall_logs" | grep -qE 'firewall-logs.*alias.*firewall logs'
-_t_assert "E2: _fwlog_help annotates firewall-logs as alias for 'firewall logs'" "$?"
+_rc=$?; _t_assert "E2: _fwlog_help annotates firewall-logs as alias for 'firewall logs'" "$_rc"
 
 # E3: V127 UX-5 anchor comment present in cmd_firewall_logs.sh
 grep -q 'V127 UX-5' "$_cmd_firewall_logs"
-_t_assert "E3: cmd_firewall_logs.sh carries V127 UX-5 anchor comment" "$?"
+_rc=$?; _t_assert "E3: cmd_firewall_logs.sh carries V127 UX-5 anchor comment" "$_rc"
 
 # =============================================================================
 # (F) D-9 update <-> version cross-reference
@@ -233,23 +233,23 @@ _t_assert "E3: cmd_firewall_logs.sh carries V127 UX-5 anchor comment" "$?"
 
 # F1: _cmd_update_help body has SEE ALSO referencing nftban version
 awk '/_cmd_update_help\(\) \{/,/^EOF$/' "$_cmd_update" | grep -q '^SEE ALSO:$'
-_t_assert "F1: _cmd_update_help body contains 'SEE ALSO:' section" "$?"
+_rc=$?; _t_assert "F1: _cmd_update_help body contains 'SEE ALSO:' section" "$_rc"
 
 awk '/_cmd_update_help\(\) \{/,/^EOF$/' "$_cmd_update" | grep -qE 'nftban version( |$|\s)'
-_t_assert "F2: _cmd_update_help SEE ALSO mentions 'nftban version'" "$?"
+_rc=$?; _t_assert "F2: _cmd_update_help SEE ALSO mentions 'nftban version'" "$_rc"
 
 awk '/_cmd_update_help\(\) \{/,/^EOF$/' "$_cmd_update" | grep -qE 'nftban version --update'
-_t_assert "F3: _cmd_update_help SEE ALSO mentions 'nftban version --update'" "$?"
+_rc=$?; _t_assert "F3: _cmd_update_help SEE ALSO mentions 'nftban version --update'" "$_rc"
 
 # F4: nftban_cmd_version_usage body has SEE ALSO referencing nftban update
 awk '/nftban_cmd_version_usage\(\) \{/,/^EOF$/' "$_cmd_version" | grep -q '^SEE ALSO:$'
-_t_assert "F4: nftban_cmd_version_usage body contains 'SEE ALSO:' section" "$?"
+_rc=$?; _t_assert "F4: nftban_cmd_version_usage body contains 'SEE ALSO:' section" "$_rc"
 
 awk '/nftban_cmd_version_usage\(\) \{/,/^EOF$/' "$_cmd_version" | grep -qE 'nftban update( |$|\s)'
-_t_assert "F5: nftban_cmd_version_usage SEE ALSO mentions 'nftban update'" "$?"
+_rc=$?; _t_assert "F5: nftban_cmd_version_usage SEE ALSO mentions 'nftban update'" "$_rc"
 
 awk '/nftban_cmd_version_usage\(\) \{/,/^EOF$/' "$_cmd_version" | grep -qE 'nftban update check'
-_t_assert "F6: nftban_cmd_version_usage SEE ALSO mentions 'nftban update check'" "$?"
+_rc=$?; _t_assert "F6: nftban_cmd_version_usage SEE ALSO mentions 'nftban update check'" "$_rc"
 
 # =============================================================================
 # (G) Scope-creep guards (no UX-6 broad help cleanup; no banner; no Ctrl+C)
@@ -269,8 +269,8 @@ done
 # already had an EXIT CODES block pre-V127; assert the V127 SEE ALSO block
 # was added but exit-code section wasn't expanded)
 _pre=$(grep -c '^EXIT CODES:$' "$_cmd_update" || true)
-[[ "$_pre" == "1" ]]
-_t_assert "G2: cmd_update.sh still has exactly one EXIT CODES block (no sweep)" "$?"
+_rc=0; [[ "$_pre" == "1" ]] || _rc=1
+_t_assert "G2: cmd_update.sh still has exactly one EXIT CODES block (no sweep)" "$_rc"
 
 # G3: No new top-level commands added to dispatcher canonical list as
 # side-effect of UX-5.
@@ -281,8 +281,8 @@ _t_assert "G2: cmd_update.sh still has exactly one EXIT CODES block (no sweep)" 
 # (Level-0 subset of the canonical list). This remains a runaway-growth bound,
 # not a contract: the exact-parity assertion lives in T-D3.
 _canonical_count=$(_nftban_canonical_commands | grep -v '^$' | wc -l)
-[[ "$_canonical_count" -ge 50 ]] && [[ "$_canonical_count" -le 90 ]]
-_t_assert "G3: canonical command list has $_canonical_count entries (sane bound 50-90)" "$?"
+_rc=0; [[ "$_canonical_count" -ge 50 ]] && [[ "$_canonical_count" -le 90 ]] || _rc=1
+_t_assert "G3: canonical command list has $_canonical_count entries (sane bound 50-90)" "$_rc"
 
 # =============================================================================
 # (H) Suricata work absent (we are PR-E, not PR-D)

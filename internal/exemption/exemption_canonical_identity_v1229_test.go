@@ -20,7 +20,7 @@
 // unmapping only the lookup would have moved the mismatch rather than removing it
 // (a stored "::ffff:.../120" prefix Contains() the mapped form but NOT the unmapped
 // one), which is why prefixes are canonicalized at store time too.
-package nftbackend
+package exemption
 
 import (
 	"net/netip"
@@ -30,8 +30,8 @@ import (
 
 // newLoadedResolver builds a resolver with a fixed snapshot and no refresh, so the
 // arms test membership semantics only — not file/proc discovery.
-func newLoadedResolver(exact []string, prefixes []string) *exemptResolver {
-	r := &exemptResolver{exact: map[string]struct{}{}, ttl: 1 << 62}
+func newLoadedResolver(exact []string, prefixes []string) *Resolver {
+	r := &Resolver{exact: map[string]struct{}{}, ttl: 1 << 62}
 	for _, e := range exact {
 		a, err := netip.ParseAddr(e)
 		if err != nil {
@@ -88,7 +88,7 @@ func TestNeverBanCanonicalIdentity_PrefixPath(t *testing.T) {
 // reaches addEntry() -> canonPrefix() exactly as production does.
 func TestNeverBanCanonicalIdentity_MappedPrefixStillProtects(t *testing.T) {
 	t.Setenv("NFTBAN_MANAGEMENT_IPS", "::ffff:203.0.113.0/120")
-	r := &exemptResolver{exact: map[string]struct{}{}, ttl: 1 << 62}
+	r := &Resolver{exact: map[string]struct{}{}, ttl: 1 << 62}
 	r.Refresh() // PRODUCTION store path
 
 	var stored []string
@@ -121,10 +121,10 @@ func TestNeverBanCanonicalIdentity_DoesNotOverMatch(t *testing.T) {
 	r := newLoadedResolver([]string{"203.0.113.5"}, []string{"198.51.100.0/24"})
 
 	for _, in := range []string{
-		"203.0.113.6",           // adjacent to an exact key
-		"::ffff:203.0.113.6",    // mapped form of a non-exempt address
-		"198.51.101.1",          // just outside the exempt prefix
-		"2001:db8::1",           // unrelated v6
+		"203.0.113.6",        // adjacent to an exact key
+		"::ffff:203.0.113.6", // mapped form of a non-exempt address
+		"198.51.101.1",       // just outside the exempt prefix
+		"2001:db8::1",        // unrelated v6
 	} {
 		if ok, why := r.IsExempt(in); ok {
 			t.Fatalf("OVER-MATCH: %q reported exempt (reason=%q) — legitimate bans would be refused", in, why)

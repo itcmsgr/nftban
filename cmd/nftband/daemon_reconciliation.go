@@ -50,6 +50,57 @@ func (d *Daemon) startPeriodicReconciliation(wrapper *opqueue.NFTBackendWrapper)
 	}
 }
 
+// Light recount pacing (v1.236). set_counts.json is written at most every 10 s, so recounts
+// closer together than that would not be seen; a burst of writes yields one recount.
+const (
+	countRefreshDebounce = 2 * time.Second
+	countRefreshMinGap   = 10 * time.Second
+)
+
+// startCountRefresh keeps the ACTIVE set counts in step with the kernel between full
+// reconciliations (v1.236, COUNT-MECH-INCREMENTAL-COUNTER-DRIFT). The +/-1 tracking misses
+// re-adds of an existing element, timeout expiry and writes by other processes. This re-reads
+// the kernel with the reconciliation's reader: debounced after a daemon set write, and on the
+// scale-aware exporter interval when there is none, so expiry is seen without a write.
+// Cumulative ban-event counters (metrics, stats) are not touched: they never go down.
+func (d *Daemon) startCountRefresh(wrapper *opqueue.NFTBackendWrapper) {
+	last := time.Now()
+	for {
+		timer := time.NewTimer(d.setCounters.RecommendedExporterInterval())
+		select {
+		case <-d.ctx.Done():
+			timer.Stop()
+			return
+		case <-d.countRefresh:
+			timer.Stop()
+			wait := countRefreshMinGap - time.Since(last)
+			if wait < countRefreshDebounce {
+				wait = countRefreshDebounce
+			}
+			select {
+			case <-d.ctx.Done():
+				return
+			case <-time.After(wait):
+			}
+			select { // writes during the wait are covered by this recount
+			case <-d.countRefresh:
+			default:
+			}
+		case <-timer.C:
+		}
+		d.reconcileSetCountersFromKernel(wrapper, false)
+		last = time.Now()
+	}
+}
+
+// noteSetWrite asks startCountRefresh for a recount. It never blocks.
+func (d *Daemon) noteSetWrite() {
+	select {
+	case d.countRefresh <- struct{}{}:
+	default:
+	}
+}
+
 // runReconciliation performs a single reconciliation cycle with metrics (v1.34.0)
 func (d *Daemon) runReconciliation(wrapper *opqueue.NFTBackendWrapper) {
 	start := time.Now()
@@ -69,7 +120,7 @@ func (d *Daemon) runReconciliation(wrapper *opqueue.NFTBackendWrapper) {
 	defer lock.Release()
 
 	// Run reconciliation
-	d.reconcileSetCountersFromKernel(wrapper)
+	d.reconcileSetCountersFromKernel(wrapper, true)
 	d.sourceIndex.ReconcileWithBackend(wrapper)
 
 	// Prune expired source index entries (v1.38.0)

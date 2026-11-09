@@ -12,7 +12,7 @@
 // meta:inventory.systemd_units=""
 // meta:inventory.network=""
 // meta:inventory.privileges="none"
-package nftbackend
+package exemption
 
 import (
 	"net/netip"
@@ -24,8 +24,8 @@ import (
 
 // snapshot builds a resolver with a fixed, non-stale snapshot so IsExempt tests the
 // matching logic without triggering a live Refresh.
-func snapshot(exact []string, cidrs []string) *exemptResolver {
-	r := &exemptResolver{ttl: time.Hour, loaded: true, loadedAt: time.Now(), exact: map[string]struct{}{}}
+func snapshot(exact []string, cidrs []string) *Resolver {
+	r := &Resolver{ttl: time.Hour, loaded: true, loadedAt: time.Now(), exact: map[string]struct{}{}}
 	for _, e := range exact {
 		if a, err := netip.ParseAddr(e); err == nil {
 			r.exact[a.Unmap().String()] = struct{}{}
@@ -48,16 +48,16 @@ func TestIsExempt_ExactAndCIDR_V4V6(t *testing.T) {
 		ip   string
 		want bool
 	}{
-		{"192.0.2.122", true},        // exact v4 (the F2 admin IP)
-		{"10.5.6.7", true},             // inside v4 CIDR
-		{"10.0.0.1", true},             // inside v4 CIDR
-		{"2001:db8::1", true},          // exact v6
-		{"2001:db8:abcd::99", true},    // inside v6 CIDR
-		{"8.8.8.8", false},             // not exempt → MUST still be bannable
-		{"203.0.113.5", false},         // not exempt
-		{"2001:db8:ffff::1", false},    // v6 not in CIDR
-		{"not-an-ip", false},           // invalid
-		{"1.2.3.0/24", false},          // CIDR ban request is not the admin/session class
+		{"192.0.2.122", true},       // exact v4 (the F2 admin IP)
+		{"10.5.6.7", true},          // inside v4 CIDR
+		{"10.0.0.1", true},          // inside v4 CIDR
+		{"2001:db8::1", true},       // exact v6
+		{"2001:db8:abcd::99", true}, // inside v6 CIDR
+		{"8.8.8.8", false},          // not exempt → MUST still be bannable
+		{"203.0.113.5", false},      // not exempt
+		{"2001:db8:ffff::1", false}, // v6 not in CIDR
+		{"not-an-ip", false},        // invalid
+		{"1.2.3.0/24", false},       // CIDR ban request is not the admin/session class
 	}
 	for _, c := range cases {
 		got, _ := r.IsExempt(c.ip)
@@ -91,9 +91,9 @@ func TestHexPort(t *testing.T) {
 
 func TestHexAddrIP(t *testing.T) {
 	cases := map[string]string{
-		"0100007F:0050": "127.0.0.1",  // little-endian → reversed
-		"0F02000A:0016": "10.0.2.15",  // 0A.00.02.0F
-		"00000000000000000000000001000000:0016": "::1", // v6 ::1 /proc repr
+		"0100007F:0050":                         "127.0.0.1", // little-endian → reversed
+		"0F02000A:0016":                         "10.0.2.15", // 0A.00.02.0F
+		"00000000000000000000000001000000:0016": "::1",       // v6 ::1 /proc repr
 	}
 	for field, want := range cases {
 		got, ok := hexAddrIP(field)
@@ -135,7 +135,7 @@ func TestRefresh_WritesScannerFileAndNoPanic(t *testing.T) {
 	scanner := filepath.Join(dir, "exempt.list")
 	// Empty configDir → whitelist load is a no-op; DetectSystemIPs/proc run live but
 	// must not panic. We only assert the scanner file is written.
-	r := &exemptResolver{configDir: "", scannerFile: scanner, ttl: time.Hour, exact: map[string]struct{}{}}
+	r := &Resolver{configDir: "", scannerFile: scanner, ttl: time.Hour, exact: map[string]struct{}{}}
 	r.Refresh()
 	if _, err := os.Stat(scanner); err != nil {
 		t.Errorf("Refresh did not write scanner file: %v", err)

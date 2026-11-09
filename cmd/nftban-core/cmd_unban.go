@@ -99,7 +99,11 @@ func cmdUnban(ipStr string, cfg *nftbanconf.Config) error {
 		}
 	}
 
-	if !isBannedInFile && !isBannedInNFT {
+	// v1.236 F7: the daemon's check answers for a single address only, so a CIDR that exists
+	// only in the kernel (a timed LoginMon / detector ban) always read as "not banned" and
+	// was never removed. For a CIDR the unban itself decides (Step 4).
+	isCIDR := strings.Contains(normalizedIP, "/")
+	if !isBannedInFile && !isBannedInNFT && !isCIDR {
 		fmt.Printf("  ⚠️  IP %s is not currently banned\n", normalizedIP)
 		fmt.Println()
 		fmt.Println("Nothing to do - IP is already not banned.")
@@ -142,17 +146,32 @@ func cmdUnban(ipStr string, cfg *nftbanconf.Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to unban via IPC: %w", err)
 	}
-	if !resp.Success {
-		// Check if it's just "not found" vs a real error
-		if strings.Contains(resp.Error, "not found") {
-			fmt.Printf("  ⚠️  IP %s was not in nftables set\n", normalizedIP)
-		} else {
-			fmt.Printf("  ⚠️  Could not delete from nftables: %s\n", resp.Error)
+	// v1.236 F7: "removed" only when the daemon deleted an element. A success answer with
+	// status not_banned was printed as "Removed", and a failed delete still ended in
+	// "UNBANNED".
+	removedNFT := false
+	switch {
+	case !resp.Success && strings.Contains(resp.Error, "not found"):
+		fmt.Printf("  ⚠️  IP %s was not in nftables set\n", normalizedIP)
+	case !resp.Success:
+		return fmt.Errorf("could not delete %s from nftables: %s", normalizedIP, resp.Error)
+	default:
+		status := ""
+		if data, ok := resp.Data.(map[string]any); ok {
+			status, _ = data["status"].(string)
 		}
-	} else {
-		fmt.Printf("  ✅ Removed %s from nftables\n", normalizedIP)
+		if status == "not_banned" {
+			fmt.Printf("  ⚠️  %s was not in nftables set\n", normalizedIP)
+		} else {
+			removedNFT = true
+			fmt.Printf("  ✅ Removed %s from nftables\n", normalizedIP)
+		}
 	}
 	fmt.Println()
+	if !removedNFT && !isBannedInFile {
+		fmt.Printf("Nothing to do - %s is not banned.\n", normalizedIP)
+		return nil
+	}
 
 	// Log the unban action
 	fmt.Println("Step 5: Logging unban...")

@@ -516,9 +516,14 @@ _display_results() {
         echo "Found in nftables sets:"
         echo "───────────────────────────────────────────────────────────────"
 
+        # v1.236: the set is everything after the FIRST colon ("nftban:blacklist:manual" ->
+        # "blacklist:manual"). `##*:` kept only "manual", so no branch matched and a banned
+        # address printed an empty list (dns4, v1.234.0). The family follows the address.
+        local family="ip"
+        [[ "$ip" == *:* ]] && family="ip6"
         while IFS= read -r location; do
             local table="${location%%:*}"
-            local set="${location##*:}"
+            local set="${location#*:}"
 
             case "$set" in
                 whitelist)
@@ -536,7 +541,7 @@ _display_results() {
                     local manual_ban_info manual_set_name manual_timeout_str manual_expires_str
                     manual_set_name="blacklist_manual_ipv4"
                     [[ "$ip" == *:* ]] && manual_set_name="blacklist_manual_ipv6"
-                    manual_ban_info=$(timeout 10s nft list set "$table" "$manual_set_name" 2>/dev/null | grep -F "$ip" | head -1) || true
+                    manual_ban_info=$(timeout 10s nft list set "$family" "$table" "$manual_set_name" 2>/dev/null | grep -F "$ip" | head -1) || true
                     if [[ "$manual_ban_info" == *"timeout"* ]]; then
                         manual_timeout_str=$(echo "$manual_ban_info" | grep -oE 'timeout [0-9]+[smhd]' | head -1) || true
                         manual_expires_str=$(echo "$manual_ban_info" | grep -oE 'expires [0-9]+[smhd]+[0-9]*[smhd]*' | head -1) || true
@@ -552,7 +557,7 @@ _display_results() {
                     local ban_info set_name timeout_str expires_str
                     set_name="blacklist_ipv4"
                     [[ "$ip" == *:* ]] && set_name="blacklist_ipv6"
-                    ban_info=$(timeout 10s nft list set "$table" "$set_name" 2>/dev/null | grep -F "$ip" | head -1) || true
+                    ban_info=$(timeout 10s nft list set "$family" "$table" "$set_name" 2>/dev/null | grep -F "$ip" | head -1) || true
                     if [[ "$ban_info" == *"timeout"* ]]; then
                         # Extract timeout info: "timeout 1h expires 55m30s123ms,"
                         timeout_str=$(echo "$ban_info" | grep -oE 'timeout [0-9]+[smhd]' | head -1) || true

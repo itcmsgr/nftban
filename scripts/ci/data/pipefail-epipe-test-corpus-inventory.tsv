@@ -22,6 +22,7 @@ cli/lib/nftban/tests/botscan_collector_gather_stream_v2092_test.sh	1
 cli/lib/nftban/tests/botscan_deadline_rotation_v185_test.sh	5
 cli/lib/nftban/tests/botscan_exp_rfi_fp_v218_13_test.sh	4
 cli/lib/nftban/tests/botscan_health_truth_contract_v1231_0_test.sh	5
+cli/lib/nftban/tests/botscan_http_campaign_test.sh	3
 cli/lib/nftban/tests/botscan_operator_truth_contract_v219_0_test.sh	1
 cli/lib/nftban/tests/botscan_read_authority_v178_test.sh	5
 cli/lib/nftban/tests/botscan_revslider_fp_v218_10_test.sh	3

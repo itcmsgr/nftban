@@ -9750,7 +9750,7 @@
     "TRUST_CACHE_DIR": {
       "type": "string",
       "$ref": "#/definitions/path",
-      "default": "/var/cache/nftban/trust",
+      "default": "/var/lib/nftban/trust/cache",
       "description": "Cache directory for downloaded IP ranges",
       "introduced_in": "1.0.30",
       "category": "paths",

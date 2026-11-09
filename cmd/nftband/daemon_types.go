@@ -92,9 +92,15 @@ var knownNFTBanSets = map[string]bool{
 	"http_bot_grey": true, "http_bot_grey6": true,
 	"http_bot_emergency": true, "http_bot_emergency6": true,
 	"http_bot_pending": true, "http_bot_pending6": true,
+	// BotScan HTTP campaign prefixes: flush on disable, delete_element for one prefix
+	"campaign_prefix_ipv4": true,
 	// Per-IP port access sets (v1.43.0 — BUG-008 fix: flush was silently failing)
 	"port_allow_tcp_ipv4": true, "port_allow_tcp_ipv6": true,
 	"port_allow_udp_ipv4": true, "port_allow_udp_ipv6": true,
+	// v1.236: the DDoS (Suricata) block set. Without it flush_set refused it ("invalid set"),
+	// so `nftban ddos` teardown / switch to classic and `nftban flush ddos` never flushed it.
+	// Element adds stay under the never-ban guard (nftbackend.IsEnforcementSet).
+	"ddos_blocked": true,
 }
 
 func validNFTBanSet(set string) bool {
@@ -129,7 +135,9 @@ var profileEnabled = false
 var banMutex sync.Mutex
 
 // syncMutex protects concurrent sync operations to prevent
-// race conditions when multiple sync requests are issued simultaneously
+// race conditions when multiple sync requests are issued simultaneously.
+// v1.236: runSync holds it for the whole run; requests reach runSync only through
+// the sync coordinator (daemon_sync_coord.go), which runs one sync at a time.
 var syncMutex sync.Mutex
 
 // getDaemonPaths returns paths from central config
@@ -246,6 +254,9 @@ type Daemon struct {
 	setCounters *stats.SetCounters // Per-set element counts (O(1) reads)
 	bgWg        sync.WaitGroup     // Tracks background goroutines for clean shutdown
 
+	// v1.236: a daemon set write asks for a debounced kernel recount (startCountRefresh)
+	countRefresh chan struct{}
+
 	// v1.13.12: Config reload tracking
 	configHash   string       // SHA256 of loaded config files
 	lastReloadTs time.Time    // When config was last loaded/reloaded
@@ -281,6 +292,10 @@ type Daemon struct {
 
 	// v1.41.0: Ban correlation ID tracking (IP → banID for BAN→UNBAN linking)
 	banIDMap sync.Map // key: string (IP), value: string (banID)
+
+	// v1.236: the one runner of full/quick syncs (daemon_sync_coord.go), created on first use.
+	syncCoordOnce sync.Once
+	syncCoord     *syncCoordinator
 }
 
 // SocketRequest is the format for CLI→daemon requests

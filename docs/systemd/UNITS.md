@@ -40,7 +40,7 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 | `nftban-soak.timer` | Every 2h at HH:17 (staggered off cron storm) | Soak validation (read-only checks + bounded rebuild) |
 | `nftban-tunnel.timer` | Every 5min | DNS tunnel suspicion scan |
 
-## Services (30)
+## Services (31)
 
 | Service | Category | Purpose |
 |---------|----------|---------|
@@ -54,6 +54,7 @@ package inventory projection: `install/packaging/systemd/nftban-systemd-install.
 | `nftban-snapshot.service` | oneshot | State snapshot |
 | `nftban-boot-bypass.service` | oneshot, early boot | As of v1.235: runs only with the kernel parameter `nftban=disabled`; makes the NFTBan boot projection inert for that boot, before `nftables.service` loads it |
 | `nftban-boot-bypass-guard.service` | oneshot | As of v1.235: runs only with `nftban=disabled`, after `nftables.service`; if NFTBan tables were loaded anyway, deletes `ip`/`ip6 nftban` and records it |
+| `nftban-boot-content.service` | oneshot, early boot | As of v1.236: after `nftables.service` and before `network-pre.target`, loads the durable whitelist, `blacklist.d` bans and feeds into the sets the boot projection created (same renderer as reload/rebuild); skipped when disabled, bypassed or inert; result in `/run/nftban/boot-content.state` |
 | `nftban-boot-normal.service` | oneshot, early boot | As of v1.235: without the bypass, restores a projection set aside by a previous bypass boot, and keeps the projection inert while NFTBan is disabled |
 | `nftban-commit-confirm-boot.service` | oneshot, early boot | As of v1.235: decides a pending `nftban firewall rebuild --confirm` apply at boot, before the daemon; repeats the alarm while a rollback has failed |
 | `nftban-unified-exporter.service` | oneshot | Metrics export |

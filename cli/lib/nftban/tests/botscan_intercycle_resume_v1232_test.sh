@@ -103,7 +103,10 @@ reset; export BOTSCAN_SPOOL_REAP=true BOTSCAN_SCAN_BUDGET_SECS=2
 small="$SPOOL/_var_log_a_small.log"; mk "$small" $(( CAP*2 )); seed "$small" 0
 for i in 1 2 3; do f="$SPOOL/_var_log_b_big$i.log"; mk "$f" $(( CAP*40 )); seed "$f" "$CAP"; done
 k=0; retired=0
-while (( k < 15 )); do
+# v1.236 F4: the bound is in cycles of a 2 s wall-clock scan budget, so how many cycles the
+# small object needs depends on host speed: <= 15 on lab hosts, 20-30 on a 2-vCPU Rocky 10
+# guest (measured), where 15 failed. 60 still fails an object that never retires.
+while (( k < 60 )); do
   cycle; k=$((k+1))
   [[ -f "$small" ]] || { retired=1; break; }
 done

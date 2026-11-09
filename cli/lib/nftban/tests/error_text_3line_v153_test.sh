@@ -122,7 +122,7 @@ if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
         _require_root_or_sudo_hint "ban an IP" false 2>&1
         echo "RC=$?"
     ) || true
-    printf '%s\n' "$out" | grep -q "requires root privileges" \
+    printf '%s\n' "$out" | grep -q "insufficient privileges for 'ban an IP'" \
         && ok "emits a root-required line when EUID!=0" || no "root-required line missing" "$out"
     printf '%s\n' "$out" | grep -q "Re-run with one of:" \
         && ok "emits the inline sudo / root-shell re-run guidance" || no "sudo hint missing" "$out"

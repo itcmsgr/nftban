@@ -252,7 +252,7 @@ var RequiredDirs = []DirSpec{
 	// Writable subdirs are nftban:nftban.
 	{DataDir, 0750, "root:nftban"},
 	{StateDir, 0750, "nftban:nftban"},
-	{FeedsDir, 0750, "nftban:nftban"},
+	{FeedsDir, 0750, "root:nftban"}, // v1.236: root writes here; the nftban group reads
 	{PanelsDir, 0750, "nftban:nftban"},
 	{DataDir + "/banned", 0750, "nftban:nftban"},
 	{DataDir + "/whitelist", 0750, "nftban:nftban"},

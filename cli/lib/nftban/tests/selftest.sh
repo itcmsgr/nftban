@@ -1419,7 +1419,7 @@ run_nft_schema_validation() {
         "portscan_detection|NFTBAN_ANCHOR:ANCHOR_DETECT"
         "ddos_protection|NFTBAN_ANCHOR:ANCHOR_SERVICE"
         "ddos_prefix|NFTBAN_ANCHOR:ANCHOR_SERVICE"
-        "http_bot_guard|NFTBAN_ANCHOR:ANCHOR_SERVICE"
+        "http_bot_guard|NFTBAN_ANCHOR:ANCHOR_DETECT"
         "ddos_synproxy|NFTBAN_ANCHOR:ANCHOR_ESTABLISHED"
     )
     for _jmp_family in ip ip6; do

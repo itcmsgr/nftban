@@ -1523,7 +1523,7 @@ nftban_ddos_penalty_scan() {
                 _added=1
             elif [[ "${NFTBAN_EMERGENCY_MODE:-0}" == "1" ]] || ! declare -f nft_ipc_add_element >/dev/null 2>&1; then
                 # Emergency / IPC-unavailable fallback (gated): direct nft write.
-                if nft add element ${table_fam} ${target_set} "{ $ip }" 2>/dev/null; then
+                if nftban_nft_write add element ${table_fam} ${target_set} "{ $ip }" 2>/dev/null; then
                     _added=1
                     _nftban_ddos_classic_log "WARN" "Penalty via emergency direct-nft (daemon IPC unavailable): ${ip} → ${target_set}"
                 fi

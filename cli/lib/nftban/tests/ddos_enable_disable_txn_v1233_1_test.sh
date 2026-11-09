@@ -60,7 +60,7 @@ TMPD="$(mktemp -d)"; trap 'rm -rf "$TMPD"' EXIT
 # arms that need their own value still override locally.
 _HI="$TMPD/hi"
 export NFTBAN_CONFIG_DIR="$_HI/etc" NFTBAN_DATA_DIR="$_HI/data" NFTBAN_LOG_DIR="$_HI/log" \
-       NFTBAN_CACHE_DIR="$_HI/cache" NFTBAN_RUN_DIR="$_HI/run" NFTBAN_STATE_DIR="$_HI/data/state"
+       NFTBAN_CACHE_DIR="$_HI/cache" NFTBAN_RUN_DIR="$_HI/run" NFTBAN_WRITERS_DIR="$_HI/run" NFTBAN_STATE_DIR="$_HI/data/state"
 mkdir -p "$NFTBAN_CONFIG_DIR" "$NFTBAN_DATA_DIR/state" "$NFTBAN_LOG_DIR" "$NFTBAN_CACHE_DIR" "$NFTBAN_RUN_DIR"
 # v1.235: the IPC client sends nothing without firewall authority; this world is an authorized install.
 printf 'INSTALL_STATE=COMMITTED\nAUTHORITY=TAKEOVER\n' > "$NFTBAN_STATE_DIR/install_state"
@@ -402,7 +402,7 @@ daemon_reconcile() {
         NFTBAN_CONFIG_DIR="$NFTBAN_CONFIG_DIR" NFTBAN_LIB_DIR="$NFTBAN_LIB_DIR" \
         NFTBAN_LOG_DIR="$NFTBAN_LOG_DIR" NFTBAN_DATA_DIR="$NFTBAN_DATA_DIR" NFTBAN_STATE_DIR="$NFTBAN_STATE_DIR" \
         NFTBAN_CACHE_DIR="$NFTBAN_CACHE_DIR" NFTBAN_FRAGMENT_DIR="$NFTBAN_FRAGMENT_DIR" \
-        NFTBAN_PLAN_RECORD_DIR="$NFTBAN_PLAN_RECORD_DIR" NFTBAN_RUN_DIR="$NFTBAN_RUN_DIR" \
+        NFTBAN_PLAN_RECORD_DIR="$NFTBAN_PLAN_RECORD_DIR" NFTBAN_RUN_DIR="$NFTBAN_RUN_DIR" NFTBAN_WRITERS_DIR="$NFTBAN_RUN_DIR" \
         NFTBAN_PLAN_GENERATION_FILE="$NFTBAN_PLAN_GENERATION_FILE" \
         NFTBAN_DAEMON_SOCKET="$NFTBAN_DAEMON_SOCKET" NFTBAN_IPC_TIMEOUT="${NFTBAN_IPC_TIMEOUT:-5}" \
         bash --noprofile --norc -c 'source "$1" && nftban_ddos_reconcile' _ \
@@ -443,7 +443,7 @@ export FAKE_K="$W/kernel" FAKE_CONF="$W/etc"
 export NFTBAN_CONFIG_DIR="$W/etc" NFTBAN_LIB_DIR="$LIB"
 export NFTBAN_LOG_DIR="$W/log" NFTBAN_DATA_DIR="$W/data" NFTBAN_CACHE_DIR="$W/cache"
 export NFTBAN_FRAGMENT_DIR="$W/etc/rules.d"
-export NFTBAN_PLAN_RECORD_DIR="$W/run" NFTBAN_RUN_DIR="$W/run"
+export NFTBAN_PLAN_RECORD_DIR="$W/run" NFTBAN_RUN_DIR="$W/run" NFTBAN_WRITERS_DIR="$W/run"
 export NFTBAN_PLAN_GENERATION_FILE="$W/run/convergence-generation"
 export NFTBAN_DAEMON_SOCKET="$W/run/nftband.sock"
 export NFTBAN_IPC_TIMEOUT=5
@@ -468,13 +468,19 @@ make_world() {  # fresh "never projected, disabled" host
     local fam
     for fam in ip ip6; do
         mkdir -p "$FAKE_K/c/$fam/nftban" "$FAKE_K/s/$fam/nftban" "$FAKE_K/ct/$fam/nftban"
+        # v1.236: all seven anchors, as the schema always carries them (docs/ANCHOR_CONTRACT.md);
+        # the Suricata block rule is placed before ANCHOR_BAN and refuses without it.
         printf '%s\n' \
+            $'9\tcounter name anchor_hygiene comment "NFTBAN_ANCHOR:ANCHOR_HYGIENE"' \
             $'10\tct state invalid drop' \
             $'11\tcounter name anchor_trusted comment "NFTBAN_ANCHOR:ANCHOR_TRUSTED"' \
+            $'16\tcounter name anchor_ban comment "NFTBAN_ANCHOR:ANCHOR_BAN"' \
             $'12\tct state established,related accept' \
             $'13\tcounter name anchor_established comment "NFTBAN_ANCHOR:ANCHOR_ESTABLISHED"' \
+            $'17\tcounter name anchor_detect comment "NFTBAN_ANCHOR:ANCHOR_DETECT"' \
             $'14\tcounter name anchor_service comment "NFTBAN_ANCHOR:ANCHOR_SERVICE"' \
-            $'15\ttcp dport 22 accept' > "$FAKE_K/c/$fam/nftban/input"
+            $'15\ttcp dport 22 accept' \
+            $'18\tcounter name anchor_final comment "NFTBAN_ANCHOR:ANCHOR_FINAL"' > "$FAKE_K/c/$fam/nftban/input"
     done
     echo up > "$FAKE_K/daemon"; echo false > "$FAKE_K/enabled_at_start"
     python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1])' "$NFTBAN_DAEMON_SOCKET"

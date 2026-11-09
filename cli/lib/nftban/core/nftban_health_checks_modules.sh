@@ -86,10 +86,29 @@ nftban_health_check_modules() {
         fi
     done
 
+    # v1.236 (design §7): the feed authority. A kept conflict, a feed file that is present but
+    # not enforced, or an authority that cannot be decided is a WARNING with its reason key.
+    local _fa _fa_core="${NFTBAN_LIB_DIR}/bin/nftban-core" _fa_reasons=""
+    if [[ -x "$_fa_core" ]]; then
+        if _fa=$("$_fa_core" feeds effective 2>/dev/null) && [[ -n "$_fa" ]]; then
+            _fa_reasons=$(jq -r '(.reasons // []) as $r | (.texts // []) as $t | range(0; $r | length) | "[\($r[.])] \($t[.])"' <<<"$_fa" 2>/dev/null || true)
+        else
+            _fa_reasons="[feeds_authority_unknown] the feed authority could not be decided (nftban-core feeds effective failed)"
+        fi
+        if [[ -n "$_fa_reasons" ]]; then
+            local _fa_line
+            while IFS= read -r _fa_line; do
+                [[ -n "$_fa_line" ]] && module_issues+=("Feeds: $_fa_line")
+            done <<<"$_fa_reasons"
+            NFTBAN_HEALTH_WARNINGS+=("Feeds: ${_fa_reasons//$'\n'/; }")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        fi
+    fi
+
     # Store results
     if [[ ${#module_issues[@]} -gt 0 ]]; then
         NFTBAN_HEALTH_ISSUES["modules"]="${module_issues[*]}"
-        NFTBAN_HEALTH_ERRORS+=("Module issues: ${module_issues[*]}")
+        [[ $status -ge $HEALTH_ERROR ]] && NFTBAN_HEALTH_ERRORS+=("Module issues: ${module_issues[*]}")
     fi
 
     NFTBAN_HEALTH_RESULTS["modules"]=$status

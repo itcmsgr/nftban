@@ -182,6 +182,7 @@ _NFTBAN_NSR_
         _nsr_removed=0
         _nsr_failed=0
         for _nsr_h in $_nsr_handles; do
+            # nftban:outside-boundary — the foreign ip/ip6 raw table is never part of a replacement.
             if _nsr_err=$(nft delete rule "$_nsr_fam" raw prerouting handle "$_nsr_h" 2>&1); then
                 _nsr_removed=$((_nsr_removed + 1))
             else

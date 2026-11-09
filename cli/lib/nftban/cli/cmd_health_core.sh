@@ -511,9 +511,17 @@ nftban_health_cmd_fix() {
             # Now safe to create/fix nftables structure
             nftban_health_fix_nftables
 
+            # v1.236 D3: the SSH-port fix (00-ssh.conf + both sets) runs HERE and in
+            # `health check --auto-heal`, never in a read-only check. This path is
+            # already authority-gated above; the check re-checks before writing.
+            if declare -f nftban_health_check_ssh_port >/dev/null 2>&1; then
+                echo "  Checking SSH port..."
+                nftban_health_check_ssh_port 1 || true
+            fi
+
             # v1.48.0: Sync ports to nft sets (catches SSH port changes)
-            # The health CHECK updates 00-ssh.conf and tries IPC, but IPC may fail.
-            # A full sync directly applies port config to nft sets.
+            # The SSH-port fix above updates 00-ssh.conf; a sync applies the port
+            # config to the nft sets.
             if command -v nftban &>/dev/null; then
                 echo "  Syncing ports to firewall..."
                 # v1.228.5: `sync --quick` reaches the daemon over

@@ -154,6 +154,9 @@ mode_bypass_guard() {
     grep -qx 'table ip6 nftban' <<<"$tables" && found="${found:+$found }ip6"
     [[ -n "$found" ]] || return 0      # guarantee held; primary record stands
     local fam failed=""
+    # Runs in early boot, before nftband and before any firewall lane, so no write can overlap
+    # it; and the bypass removal must never depend on a lock (a lock failure would silently
+    # defeat the operator's bypass).  nftban:outside-boundary
     for fam in $found; do nft delete table "$fam" nftban 2>/dev/null || failed="${failed:+$failed }$fam"; done
     if [[ -z "$failed" ]]; then
         record backstop-removed "NFTBan tables ($found) WERE loaded during this bypass boot and were removed"
@@ -185,9 +188,62 @@ mode_normal() {
     return 0
 }
 
+# v1.236 RC-7 (nftban-boot-content.service: after nftables.service, before network-pre.target).
+# The boot projection declares every whitelist and ban set EMPTY; until the daemon's first sync
+# (60 s after it starts) a reboot left blacklist.d bans unenforced while the services were already
+# reachable (lab2: ~62 s). This loads the durable contents into the sets the projection just
+# created, with the SAME renderer as reload/rebuild (nftban-core ruleset content: whitelist.d,
+# blacklist.d, feeds, never-ban check). Durable state is read now, so an unban or flush made before
+# the reboot is already reflected; timed bans are not durable and are not restored. Any failure
+# leaves the previous behaviour (empty until the daemon's sync) and is recorded, never fatal.
+mode_content() {
+    local STATE="${STATE_DIR}/boot-content.state"
+    local core="${NFTBAN_CORE:-/usr/lib/nftban/bin/nftban-core}" work rc=0 sum
+    if [[ "$(stored_switch_state)" != on ]]; then
+        record content-skipped "NFTBan is not enabled (stored choice); nothing loaded"; return 0
+    fi
+    command -v nft >/dev/null 2>&1 || { record content-skipped "nft not available"; return 0; }
+    # Typed probe (v1.228.4): only a verified ABSENT means "inert or bypassed"; an unreadable
+    # ruleset is not absence and loads nothing either, with its error class recorded.
+    # shellcheck source=/usr/lib/nftban/lib/nft_probe.sh
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_probe.sh" 2>/dev/null \
+        || { record content-failed "typed nft probe (lib/nft_probe.sh) not available; nothing loaded"; return 0; }
+    nftban_nft_probe_table ip nftban boot-content || true
+    case "${NFTBAN_NFT_PROBE_VERDICT:-}" in
+        "$NFTBAN_NFT_PROBE_PRESENT") ;;
+        "$NFTBAN_NFT_PROBE_ABSENT")
+            record content-skipped "no ip nftban table (inert or bypassed projection); nothing loaded"; return 0 ;;
+        *)
+            record content-failed "ip nftban table not readable (${NFTBAN_NFT_PROBE_CLASS:-unknown}); nothing loaded"; return 0 ;;
+    esac
+    work="$(mktemp -d "${NFTBAN_DATA_DIR:-/var/lib/nftban}/.boot-content.XXXXXX" 2>/dev/null)" \
+        || { record content-failed "private work directory not created; sets stay empty until the daemon's sync"; return 0; }
+    "$core" ruleset content > "$work/content.nft" 2> "$work/content.err" || rc=$?
+    if [[ $rc -ne 0 ]]; then
+        record content-refused "renderer rc=$rc: $(tail -n 1 "$work/content.err" 2>/dev/null); sets stay empty until the daemon's sync"
+        rm -rf -- "$work"; return 0
+    fi
+    sum="$(grep -m1 '^RULESET_CONTENT' "$work/content.err" 2>/dev/null)"
+    # The write boundary is taken (inline lock: this helper does not load the library);
+    # /run/nftban-writers comes from tmpfiles (the unit orders after systemd-tmpfiles-setup.service).
+    # SELinux (EL): started by systemd, nft runs as iptables_t, which may not open files under
+    # /var/lib/nftban — el9-clean Enforcing: "Could not open file ... Permission denied", with no
+    # AVC logged (dontaudit), and the message itself was lost in a file there. So this shell reads
+    # the contents and streams them to `nft -f -`, and nft's messages come back to this shell.
+    local lerr
+    if lerr="$(cat -- "$work/content.nft" | flock -w 60 "${NFTBAN_WRITERS_DIR:-/run/nftban-writers}"/nft_writers.lock nft -f - 2>&1)"; then
+        record content-loaded "${sum:-RULESET_CONTENT (no summary)}"
+    else
+        record content-failed "nft -f refused the contents: ${lerr##*$'\n'}; sets stay empty until the daemon's sync"
+    fi
+    rm -rf -- "$work"
+    return 0
+}
+
 case "${1:-}" in
     bypass)        mode_bypass ;;
     bypass-guard)  mode_bypass_guard ;;
     normal)        mode_normal ;;
-    *) echo "usage: nftban-boot-early {bypass|bypass-guard|normal}" >&2; exit 2 ;;
+    content)       mode_content ;;
+    *) echo "usage: nftban-boot-early {bypass|bypass-guard|normal|content}" >&2; exit 2 ;;
 esac

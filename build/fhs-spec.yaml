@@ -594,11 +594,49 @@ directories:
       artifact_class: state
       retention_mode: unclassified
       mode: "0750"
-      owner: nftban
+      owner: root
       group: nftban
       description: "Threat feed data"
       created_by: tmpfiles
       tmpfiles_reconcile: "z"
+      note: |
+        v1.236 (owner 2026-10-31): root-owned. The writer is root (nftban-core feeds update in the
+        root nftban-core-feeds.service), which writes <feed>.txt.tmp and renames it; with the
+        directory owned by the nftban service account, that account could pre-plant the .tmp name
+        as a symlink and make root overwrite any file. The nftban group keeps read + search, which
+        is all its readers need (the exporter reads the files; cmd_feeds.go setFeedFileOwnership).
+        tmpfiles z and the installer's canonical pass re-own the directory on upgrade.
+
+    - path: /var/lib/nftban/trust
+      artifact_class: state
+      retention_mode: unclassified
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Trust (CDN / cloud provider) ranges downloaded by nftban trust: the Go loader's <name>.txt files"
+      created_by: tmpfiles
+      tmpfiles_reconcile: "z"
+      note: |
+        v1.236 (owner 2026-10-31): declared (it was created on first use by root, undeclared).
+        Root writes it; the ruleset render reads <data>/trust/*.txt as whitelist prefixes, so it
+        stays root-owned; the nftban group reads.
+
+    - path: /var/lib/nftban/trust/cache
+      artifact_class: state
+      retention_mode: unclassified
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Trust provider caches written by the shell trust module (<provider>-ipv4/ipv6.txt); read by BotScan and the BotGuard shared-edge list"
+      created_by: tmpfiles
+      tmpfiles_reconcile: "z"
+      note: |
+        v1.236 (owner 2026-10-31): MOVED from /var/cache/nftban/trust. /var/cache/nftban belongs to
+        the nftban service account, which could pre-create or rename the trust directory there;
+        root then downloaded (curl -o <file>.tmp) and moved files inside a directory that account
+        controls. Here the parent chain is root-owned. A subdirectory, not <data>/trust itself, so
+        the caches do not join the whitelist glob of <data>/trust/*.txt. Existing caches are not
+        migrated: providers are disabled by default and `nftban trust update` rebuilds them.
 
     - path: /var/lib/nftban/reports
       artifact_class: state
@@ -1240,6 +1278,23 @@ directories:
         `+`ExecStartPre install -d is removed. The old path is no longer created; on an upgraded
         host it disappears at the next reboot (tmpfs).
 
+    - path: /run/nftban-writers
+      artifact_class: runtime
+      mode: "0700"
+      owner: root
+      group: root
+      description: "nft write boundary (v1.236): nft_writers.lock and nft_writers.intent. nftband holds the lock SHARED for each kernel transaction; every other nft writer (root shell paths, the boot helper) holds it EXCLUSIVE. Root only."
+      created_by: tmpfiles
+      tmpfiles_reconcile: "z"
+      note: |
+        v1.236 (owner 2026-10-31): the boundary files live here, not in /run/nftban. /run/nftban
+        belongs to the nftban service account (0755, socket discovery); its owner could unlink and
+        recreate a lock file there, so the daemon and a shell writer would lock different inodes and
+        the boundary would no longer exclude them. Same rule as /run/nftban-firewall-validate
+        (v1.235): a file root relies on for integrity does not live in a directory the service
+        account owns; the parent is the root-owned /run. tmpfiles is the single creator (boot and
+        package install, before any service starts), so units listing it in ReadWritePaths always
+        find it. v1.235.1 had no write boundary, so no released version used the old location.
   # ---------------------------------------------------------------------------
   # Shared Data (root:root, 755) - Read-only application data
   # ---------------------------------------------------------------------------

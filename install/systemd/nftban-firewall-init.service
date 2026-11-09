@@ -78,7 +78,7 @@ Restart=no
 PrivateTmp=yes
 ProtectHome=yes
 ProtectSystem=strict
-ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban /etc/nftban
+ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban /run/nftban-writers /etc/nftban
 
 # Kernel Protection
 ProtectKernelTunables=true

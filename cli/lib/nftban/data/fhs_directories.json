@@ -508,9 +508,25 @@
       {
         "path": "/var/lib/nftban/feeds",
         "mode": "0750",
-        "owner": "nftban",
+        "owner": "root",
         "group": "nftban",
         "description": "Threat feed data",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/trust",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "Trust (CDN / cloud provider) ranges downloaded by nftban trust: the Go loader's <name>.txt files",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/trust/cache",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "Trust provider caches written by the shell trust module (<provider>-ipv4/ipv6.txt); read by BotScan and the BotGuard shared-edge list",
         "created_by": "tmpfiles"
       },
       {
@@ -979,6 +995,14 @@
         "owner": "root",
         "group": "nftban",
         "description": "nftban-firewall-validate.service handoff dir (last.json, root:nftban 0640): root writes, the nftban group reads; setgid makes the wrapper's file inherit group nftban without CAP_CHOWN",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/run/nftban-writers",
+        "mode": "0700",
+        "owner": "root",
+        "group": "root",
+        "description": "nft write boundary (v1.236): nft_writers.lock and nft_writers.intent. nftband holds the lock SHARED for each kernel transaction; every other nft writer (root shell paths, the boot helper) holds it EXCLUSIVE. Root only.",
         "created_by": "tmpfiles"
       }
     ],

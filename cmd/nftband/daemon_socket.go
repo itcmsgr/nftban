@@ -285,7 +285,6 @@ func (d *Daemon) handleSocketConnection(conn net.Conn) {
 		})
 		return
 	}
-	_ = uid // Available for audit logging if needed
 	_ = gid
 
 	// Read request (limit to 1 MB to prevent DoS via oversized payloads)
@@ -296,6 +295,18 @@ func (d *Daemon) handleSocketConnection(conn net.Conn) {
 		d.writeSocketResponse(conn, SocketResponse{
 			Success: false,
 			Error:   "invalid request: " + err.Error(),
+		})
+		return
+	}
+
+	// v1.236: the nftban service account may call only read-only methods and sync
+	// (daemon_ipc_authz.go); root and the operators in the nftban group are unchanged.
+	if !methodPermitted(uid, req.Method) {
+		metrics.RecordIPCRejection("service_account_method")
+		log.Printf("IPC refused: method=%s is not permitted for the nftban service account (uid=%d)", req.Method, uid)
+		d.writeSocketResponse(conn, SocketResponse{
+			Success: false,
+			Error:   "refused: method " + req.Method + " is not permitted for the nftban service account",
 		})
 		return
 	}

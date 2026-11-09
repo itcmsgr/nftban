@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.235.1 - FHS Specification (GENERATED)
+# NFTBan v1.236.0 - FHS Specification (GENERATED)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
@@ -8,7 +8,7 @@
 # meta:name="nftban_fhs_spec"
 # meta:type="core"
 # meta:header="FHS Specification"
-# meta:version="1.235.1"
+# meta:version="1.236.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -113,7 +113,9 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban"]="0750|root|nftban|Application state data (root-owned security boundary)"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/banned"]="0750|nftban|nftban|Banned IP state files"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/whitelist"]="0750|nftban|nftban|Whitelist state files"
-    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/feeds"]="0750|nftban|nftban|Threat feed data"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/feeds"]="0750|root|nftban|Threat feed data"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/trust"]="0750|root|nftban|Trust (CDN / cloud provider) ranges downloaded by nftban trust: the Go loader's <name>.txt files"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/trust/cache"]="0750|root|nftban|Trust provider caches written by the shell trust module (<provider>-ipv4/ipv6.txt); read by BotScan and the BotGuard shared-edge list"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/reports"]="0750|nftban|nftban|Generated reports"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/reports/baseline"]="0750|nftban|nftban|Baseline reports"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/reports/watchdog"]="0750|nftban|nftban|Watchdog system reports"
@@ -176,6 +178,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/run/nftban"]="0755|nftban|nftban|Runtime data (PID files, sockets)"
     NFTBAN_FHS_DIRECTORIES["/run/nftban/botscan"]="0750|nftban|nftban|BotScan read-authority spool (v1.178-A): nftban:nftban access-log lines written by nftban-botscan-collector.service (CAP_DAC_READ_SEARCH) and read by the unprivileged nftban-botscan.service scanner. tmpfs/ephemeral."
     NFTBAN_FHS_DIRECTORIES["/run/nftban-firewall-validate"]="2750|root|nftban|nftban-firewall-validate.service handoff dir (last.json, root:nftban 0640): root writes, the nftban group reads; setgid makes the wrapper's file inherit group nftban without CAP_CHOWN"
+    NFTBAN_FHS_DIRECTORIES["/run/nftban-writers"]="0700|root|root|nft write boundary (v1.236): nft_writers.lock and nft_writers.intent. nftband holds the lock SHARED for each kernel transaction; every other nft writer (root shell paths, the boot helper) holds it EXCLUSIVE. Root only."
 
     # Shared Directories
     NFTBAN_FHS_DIRECTORIES["/usr/share/nftban"]="0755|root|root|Shared application data"

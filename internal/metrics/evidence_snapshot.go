@@ -257,6 +257,7 @@ func RenderHuman(snap *EvidenceSnapshot, w io.Writer) {
 			"ip:input_ct_ssh_drop", "ip:input_ct_http_drop", "ip:input_ct_mail_drop",
 			"ip:input_syn_rate_exceeded", "ip6:input_syn_prefix_drop",
 			"ip:input_blacklist_manual_drop", "ip:input_blacklist_drop",
+			"ip:input_campaign_prefix_drop",
 		}
 		anyEnforcement := false
 		for _, key := range enforcementKeys {

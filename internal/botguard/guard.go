@@ -52,7 +52,22 @@ import (
 	"github.com/itcmsgr/nftban/internal/module"
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
 	"github.com/itcmsgr/nftban/internal/opqueue"
+	"github.com/itcmsgr/nftban/internal/procenv"
 )
+
+// applyKernelLayer re-applies the BotGuard kernel layer (sets, http_bot_guard chain, jump)
+// through the SAME shell root the rebuild (step 10, `nftban botguard enable`) and the CLI
+// use: nft_fragment_enable_module botguard, with the CLI's environment (lib/env.sh).
+// v1.236 RC-7: the boot projection carries no module chains; DDoS and PortScan re-apply
+// theirs from Start() (their reconcile roots), BotGuard did not, so after every reboot an
+// ENABLED BotGuard had no chain and no jump (lab2) until the next rebuild.
+// A variable only so tests can observe the call without running nft.
+var applyKernelLayer = func() error {
+	cfg := nftbanconf.MustLoad()
+	return procenv.Command("bash", "-c",
+		"source \"$1/lib/env.sh\" && source \"$1/lib/nft_fragment.sh\" && nft_fragment_enable_module botguard",
+		"_", cfg.LibDir).Run()
+}
 
 const (
 	ModuleName    = "botguard"
@@ -109,6 +124,12 @@ type Module struct {
 	sharedEdges         *sharedEdgeSet
 	sharedEdgesOnce     sync.Once
 	sharedEdgesWarnOnce sync.Once
+
+	// BotScan HTTP campaign consumer (campaign.go): kernel/never-ban side injected by the
+	// daemon, and the bounded per-target expiry history used for recurrence decisions.
+	campaignKernel  CampaignKernel
+	campaignMu      sync.Mutex
+	campaignHistory map[string]campaignRecord
 }
 
 // New creates a new bot guard module.
@@ -238,6 +259,15 @@ func (m *Module) Start(ctx context.Context) error {
 	}
 
 	ctx, m.cancel = context.WithCancel(ctx)
+
+	// v1.236 RC-7: converge the kernel layer from the persisted intent, as DDoS and
+	// PortScan do in Start(). A failure is recorded, not fatal (same as those modules).
+	if err := applyKernelLayer(); err != nil {
+		m.mu.Lock()
+		m.status.RecordError(err)
+		m.mu.Unlock()
+		log.Printf("[botguard] kernel layer NOT applied at start (chain/jump missing until 'nftban firewall rebuild'): %v", err)
+	}
 
 	// v1.191 8B inc7 — bounded warm-up: replay the recent tail of batch_signals.jsonl into the
 	// decision cache so a restart does not lose in-flight TEMPORARY classification. Bounded
@@ -940,7 +970,19 @@ func (m *Module) consumeSignalFile(path string) error {
 
 	toManual := !m.config.Enabled
 	applied := 0
+	// BotScan HTTP campaign signals: one path for BotGuard enabled and disabled; never the
+	// per-IP routes below (no EventBan, so no persistent-offender escalation).
+	var campaign []BatchSignal
 	for i := range fresh {
+		if isCampaignSignal(&fresh[i]) {
+			campaign = append(campaign, fresh[i])
+		}
+	}
+	applied += m.applyCampaignSignals(campaign)
+	for i := range fresh {
+		if isCampaignSignal(&fresh[i]) {
+			continue
+		}
 		if toManual {
 			if m.applyBotscanBanSignal(&fresh[i]) {
 				applied++

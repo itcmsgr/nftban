@@ -23,6 +23,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/netip"
 	"os"
 	goruntime "runtime"
 	"strings"
@@ -34,27 +35,38 @@ import (
 	"github.com/itcmsgr/nftban/internal/metrics"
 	"github.com/itcmsgr/nftban/internal/netutil"
 	"github.com/itcmsgr/nftban/internal/nftbackend"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
 	"github.com/itcmsgr/nftban/internal/opqueue"
 	"github.com/itcmsgr/nftban/internal/ports"
+	"github.com/itcmsgr/nftban/internal/ruleset"
 	"github.com/itcmsgr/nftban/internal/runtime"
 	"github.com/itcmsgr/nftban/internal/safety"
 	nftsync "github.com/itcmsgr/nftban/internal/setsync"
+	"github.com/itcmsgr/nftban/pkg/ipc"
 )
 
-// handleSyncRequest performs a full differential sync of whitelists/blacklists
-// If params["quick"]=true, skips feeds and geoban loading (for fast postinst sync)
-func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
+// runSync performs a full differential sync of whitelists/blacklists.
+// quickMode skips feeds and geoban loading (for fast postinst sync).
+//
+// v1.236: called only by the sync coordinator (daemon_sync_coord.go), which owns
+// request joining and the two-part result. runSync reports the EFFECT in
+// respData["effect"]: "applied", "partial" (with "partial_reasons") or, when the
+// firewall authority refuses every write, "refused" with Success=false.
+func (d *Daemon) runSync(quickMode bool) SocketResponse {
 	// Prevent concurrent sync operations from racing
 	syncMutex.Lock()
 	defer syncMutex.Unlock()
 
-	// Check for quick mode (skips feeds/geoban for fast postinst sync)
-	quickMode := false
-	if params != nil {
-		if q, ok := params["quick"].(bool); ok && q {
-			quickMode = true
+	// No authority, no write: refused before any work (completed, no effect), instead
+	// of failing halfway at the first kernel write.
+	if nftsync.WriteGate != nil {
+		if err := nftsync.WriteGate(); err != nil {
+			return SocketResponse{Success: false, Error: err.Error(), Data: map[string]any{ipc.KeyEffect: string(ipc.EffectRefused)}}
 		}
 	}
+
+	// Components that did not commit what was requested (effect "partial").
+	var partialReasons []string
 
 	_, configDir, _, _ := getDaemonPaths()
 
@@ -221,32 +233,56 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 	// non-public address (e.g. from an older release, or a hand-edited blacklist.d) can
 	// never be re-materialized into a drop set: absolute address-class reject, then the
 	// membership exemption (whitelist/system/live-SSH/host-owned).
-	for _, ip := range blacklistIPv4Single {
-		if reject, reason := netutil.EnforcementClassReject(ip); reject {
-			log.Printf("[SYNC] SKIP blacklist.d IPv4 %s -> manual set: non-bannable class (%s)", ip, reason)
-			continue
+	//
+	// v1.236 safety lane stage 1: the surviving IPs are then applied in ONE call per family
+	// (setsync.UpsertPermanentElements: additive, one read, one atomic transaction per plan, the
+	// same per-element semantics as AddIPWithTimeout(ip, 0) incl. the H11 timed->permanent replace)
+	// instead of 2-3 netlink transactions per IP, which made a ~3200-ban sync take 15-30 s.
+	bannable := func(family string, ips []string) []string {
+		out := make([]string, 0, len(ips))
+		for _, ip := range ips {
+			if reject, reason := netutil.EnforcementClassReject(ip); reject {
+				log.Printf("[SYNC] SKIP blacklist.d %s %s -> manual set: non-bannable class (%s)", family, ip, reason)
+				continue
+			}
+			if ok, reason := d.backend.IsExempt(ip); ok {
+				log.Printf("[SYNC] SKIP blacklist.d %s %s -> manual set: never-ban exempt (%s)", family, ip, reason)
+				continue
+			}
+			out = append(out, ip)
 		}
-		if ok, reason := d.backend.IsExempt(ip); ok {
-			log.Printf("[SYNC] SKIP blacklist.d IPv4 %s -> manual set: never-ban exempt (%s)", ip, reason)
-			continue
+		return out
+	}
+	var manualAdded, manualReplaced int
+	applyPermanent := func(family string, set *nftables.Set, ips []string) {
+		if len(ips) == 0 {
+			return
 		}
-		if err := nft.AddIPWithTimeout(manualV4Set, ip, 0); err != nil {
-			log.Printf("[SYNC] Warning: blacklist.d IPv4 %s -> manual hash set: %v", ip, err)
+		st, err := nft.UpsertPermanentElements(set, ips)
+		manualAdded += st.IPsAdded
+		manualReplaced += st.IPsReplaced
+		if err == nil {
+			log.Printf("[SYNC] blacklist.d %s -> manual set: %d added, %d timed->permanent, %d already permanent, %d invalid, converged=%t (%v)",
+				family, st.IPsAdded, st.IPsReplaced, st.IPsUnchanged, st.IPsInvalid, st.Converged, st.Duration)
+			if !st.Converged {
+				partialReasons = append(partialReasons, "blacklist_manual_"+strings.ToLower(family)+"_not_verified_converged")
+			}
+			return
+		}
+		partialReasons = append(partialReasons, "blacklist_manual_"+strings.ToLower(family)+"_per_ip_fallback_uncounted")
+		// Upsert failed (nothing beyond the acknowledged counts was applied): keep the previous
+		// behaviour, each IP tried with AddIPWithTimeout (its own H11 delete+add transaction), each
+		// failure logged, so one bad element never drops the rest. Effect of this path: not counted.
+		log.Printf("[SYNC] Warning: blacklist.d %s upsert failed after %d added / %d timed->permanent (%v); applying per IP, effect not counted",
+			family, st.IPsAdded, st.IPsReplaced, err)
+		for _, ip := range ips {
+			if err := nft.AddIPWithTimeout(set, ip, 0); err != nil {
+				log.Printf("[SYNC] Warning: blacklist.d %s %s -> manual hash set: %v", family, ip, err)
+			}
 		}
 	}
-	for _, ip := range blacklistIPv6Single {
-		if reject, reason := netutil.EnforcementClassReject(ip); reject {
-			log.Printf("[SYNC] SKIP blacklist.d IPv6 %s -> manual set: non-bannable class (%s)", ip, reason)
-			continue
-		}
-		if ok, reason := d.backend.IsExempt(ip); ok {
-			log.Printf("[SYNC] SKIP blacklist.d IPv6 %s -> manual set: never-ban exempt (%s)", ip, reason)
-			continue
-		}
-		if err := nft.AddIPWithTimeout(manualV6Set, ip, 0); err != nil {
-			log.Printf("[SYNC] Warning: blacklist.d IPv6 %s -> manual hash set: %v", ip, err)
-		}
-	}
+	applyPermanent("IPv4", manualV4Set, bannable("IPv4", blacklistIPv4Single))
+	applyPermanent("IPv6", manualV6Set, bannable("IPv6", blacklistIPv6Single))
 	// INC3 (BLACKLIST_TOPOLOGY_CLEANUP, Option A): blacklist.d CIDRs are folded into the
 	// SAME canonical replace as feeds + geoban (below) so the flush-first replace OWNS
 	// them and they survive feed reload. The interval blacklist sets are therefore NOT
@@ -296,6 +332,7 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 	// ==========================================================================
 	var feedsIPv4Loaded, feedsIPv6Loaded int
 	var feedsSkipped, geobanSkipped bool
+	var feedDecision feeds.Decision
 	var feedsCIDRCount, geobanCIDRCount int
 	var feedsMemNeeded, geobanMemNeeded int64
 	if !quickMode {
@@ -304,13 +341,36 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 			log.Printf("[SYNC] Memory pressure %s: skipping feeds", safety.GetMemoryPressureLevel())
 			feedsSkipped = true
 		} else {
-			_, _, dataDir, _ := getDaemonPaths()
-			feedsDir := dataDir + "/feeds"
+			fcfg := nftbanconf.MustLoad()
+			feedsDir := fcfg.DataDir + "/feeds"
 
-			// Check if feeds directory exists and has .txt files
-			if entries, err := os.ReadDir(feedsDir); err == nil && len(entries) > 0 {
-				// Load all feeds
-				ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet, _, feedErr := feeds.LoadAllFeeds(feedsDir)
+			// v1.236 (design §7): ONE feed authority decides which feed files are enforced
+			// (until v1.236 every .txt was, whatever NFTBAN_FEEDS_ENABLED said). If it cannot
+			// be decided, or an enforced file cannot be read, the sync is REFUSED before the
+			// unified replace: the replace would otherwise drop the live feed protection.
+			fd, ferr := feeds.Evaluate(fcfg.ConfigDir, fcfg.DataDir, fcfg.FeedsEnabled)
+			if ferr != nil {
+				return SocketResponse{Success: false, Error: "feed authority undecidable, sync refused (existing feed protection kept): " + ferr.Error(),
+					Data: map[string]any{ipc.KeyEffect: string(ipc.EffectRefused)}}
+			}
+			feedDecision = fd
+			if fd.NeedsRecord {
+				reason := ""
+				if len(fd.Reasons) > 0 {
+					reason = fd.Reasons[0]
+				}
+				if werr := feeds.WriteState(fcfg.DataDir, fd.State, reason, time.Now()); werr != nil {
+					log.Printf("[SYNC] feed authority: could not record state %s: %v", fd.State, werr)
+				} else {
+					log.Printf("[SYNC] feed authority: recorded %s (enforced feeds: %v)", fd.State, fd.Enforced)
+				}
+			}
+			if len(fd.Enforced) > 0 {
+				ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet, feedErr := feeds.LoadEnforcedFeeds(feedsDir, fd.Enforced)
+				if feedErr != nil {
+					return SocketResponse{Success: false, Error: "enforced feed unreadable, sync refused (existing feed protection kept): " + feedErr.Error(),
+						Data: map[string]any{ipc.KeyEffect: string(ipc.EffectRefused)}}
+				}
 				if feedErr == nil {
 					// Pre-allocate slices with exact capacity to avoid reallocation overhead
 					// With 15,000+ CIDRs, this prevents ~14 slice doublings
@@ -494,19 +554,34 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 				exemptSubtractedV4, exemptSubtractedV6)
 		}
 
-		if len(unifiedBlacklistV4) > 0 {
-			if _, err := nft.AddCIDRElementsWithStats(blacklistIPv4Set, unifiedBlacklistV4); err != nil {
-				log.Printf("[SYNC] Warning: unified blacklist_ipv4 replace failed: %v", err)
-			} else {
-				log.Printf("[SYNC] Unified blacklist_ipv4 replace: %d input CIDRs (feeds+geoban+blacklist.d)", len(unifiedBlacklistV4))
+		// v1.236: a failed replace was only logged while the sync still answered success;
+		// it is now part of the effect ("partial"), so callers can see it.
+		// v1.236 F5/F6: the replace runs for an empty union too (the union is complete
+		// here, so removed durable entries must leave the kernel) and carries the live
+		// timed elements — detector / LoginMon CIDR bans — with their remaining lifetime.
+		for _, u := range []struct {
+			set    *nftables.Set
+			family string
+			name   string
+			union  []string
+		}{
+			{blacklistIPv4Set, "ip", "blacklist_ipv4", unifiedBlacklistV4},
+			{blacklistIPv6Set, "ip6", "blacklist_ipv6", unifiedBlacklistV6},
+		} {
+			if u.set == nil {
+				continue
 			}
-		}
-		if len(unifiedBlacklistV6) > 0 {
-			if _, err := nft.AddCIDRElementsWithStats(blacklistIPv6Set, unifiedBlacklistV6); err != nil {
-				log.Printf("[SYNC] Warning: unified blacklist_ipv6 replace failed: %v", err)
-			} else {
-				log.Printf("[SYNC] Unified blacklist_ipv6 replace: %d input CIDRs (feeds+geoban+blacklist.d)", len(unifiedBlacklistV6))
+			durable, carried, reason, err := d.unifiedBlacklistElements(u.family, u.name, u.union)
+			if err == nil {
+				err = nft.ReplaceCIDRUnion(u.set, append(durable, carried...))
+				reason = u.name + "_replace_failed"
 			}
+			if err != nil {
+				log.Printf("[SYNC] Warning: unified %s replace not applied (set unchanged): %v", u.name, err)
+				partialReasons = append(partialReasons, reason)
+				continue
+			}
+			log.Printf("[SYNC] Unified %s replace: %d durable elements (feeds+geoban+blacklist.d), %d timed kept", u.name, len(durable), len(carried))
 		}
 	}
 
@@ -575,6 +650,30 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 		respData["exempt_split_limit_prefixes"] = exemptOmitted
 		respData["degraded"] = true
 		respData["degraded_reason"] = "exemption_split_limit"
+		partialReasons = append(partialReasons, "exemption_split_limit")
+	}
+	if feedsSkipped {
+		partialReasons = append(partialReasons, "feeds_skipped_memory")
+	}
+	if geobanSkipped {
+		partialReasons = append(partialReasons, "geoban_skipped_memory")
+	}
+	// v1.236 (design §7): the feed authority in force for this sync (one key per reason).
+	if feedDecision.State != "" {
+		respData["feed_authority"] = feedDecision.State
+		respData["feeds_enforced"] = feedDecision.Enforced
+		if len(feedDecision.Reasons) > 0 {
+			respData["feed_authority_reasons"] = feedDecision.Reasons
+			respData["feed_authority_texts"] = feedDecision.Texts
+		}
+	}
+	// v1.236: blacklist.d single IPs (acknowledged commits only; see UpsertPermanentElements).
+	respData["blacklist_manual_added"] = manualAdded
+	respData["blacklist_manual_replaced"] = manualReplaced
+	respData[ipc.KeyEffect] = string(ipc.EffectApplied)
+	if len(partialReasons) > 0 {
+		respData[ipc.KeyEffect] = string(ipc.EffectPartial)
+		respData["partial_reasons"] = partialReasons
 	}
 
 	// Add protection status to response for CLI visibility
@@ -1047,4 +1146,68 @@ func (d *Daemon) handleQueueStatusRequest() SocketResponse {
 			"queue_depth":              d.opQueue.QueueDepth(),
 		},
 	}
+}
+
+// unifiedBlacklistElements returns the canonical durable union for one interval blacklist
+// set and the live timed elements to carry through its replace (v1.236 F6): every kernel
+// element with a timeout, with its remaining lifetime (ruleset.TimedCarry, the reload
+// content's rule), except one that covers a never-ban address or lies inside a durable
+// CIDR (kept by that CIDR). If the live set cannot be read the replace is refused, so the
+// timed bans are never wiped blind (partial reason <set>_timed_unreadable).
+func (d *Daemon) unifiedBlacklistElements(family, set string, union []string) ([]string, []string, string, error) {
+	var durable []string
+	if len(union) > 0 {
+		c, _, err := nftsync.CanonicalCIDRElements(union)
+		if err != nil {
+			return nil, nil, set + "_replace_failed", err
+		}
+		durable = c
+	}
+	live, err := ruleset.NftSetReader(family, set)
+	if err != nil {
+		return nil, nil, set + "_timed_unreadable", fmt.Errorf("live timed elements unreadable: %w", err)
+	}
+	covered := make(map[netip.Prefix]bool, len(durable))
+	for _, c := range durable {
+		if p, perr := netip.ParsePrefix(c); perr == nil {
+			covered[p.Masked()] = true
+		}
+	}
+	var carried []string
+	for _, e := range live {
+		if !e.HasTimeout {
+			continue // permanent elements are re-derived from their sources
+		}
+		if !strings.Contains(e.Key, "-") { // a kernel-merged range is carried as is
+			if _, removed, omitted := d.backend.SubtractExempt([]string{e.Key}); removed > 0 || len(omitted) > 0 {
+				continue
+			}
+			if insideDurable(e.Key, covered) {
+				continue
+			}
+		}
+		if v, ok := ruleset.TimedCarry(e, 2*time.Second); ok {
+			carried = append(carried, v)
+		}
+	}
+	return durable, carried, "", nil
+}
+
+// insideDurable reports whether an address or prefix lies inside one of the durable CIDRs
+// (looked up by its supernets, so the cost does not grow with the union).
+func insideDurable(key string, covered map[netip.Prefix]bool) bool {
+	p, err := netip.ParsePrefix(key)
+	if err != nil {
+		a, aerr := netip.ParseAddr(key)
+		if aerr != nil {
+			return false
+		}
+		p = netip.PrefixFrom(a, a.BitLen())
+	}
+	for bits := p.Bits(); bits >= 0; bits-- {
+		if covered[netip.PrefixFrom(p.Addr(), bits).Masked()] {
+			return true
+		}
+	}
+	return false
 }

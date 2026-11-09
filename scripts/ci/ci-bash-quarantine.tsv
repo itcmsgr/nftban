@@ -26,7 +26,14 @@
 #     (R20). The test now passes in full; a passing quarantined test BLOCKS, so
 #     the entry is retired and the ceiling lowered 3 -> 2.
 #
+#   2026-11-01  v128_polkit_aware_wording_sweep_test  (V1226-CIBASH-PRODDEF-02,
+#     POLKIT_WORDING_DRIFT, lane OPEN_POLKIT_WORDING_REWORD). The 14 root/sudo phrasings are
+#     reworded to the polkit wording (v1.236); the one nft_probe.sh case pattern that matches
+#     nft's own stderr is allow-listed by line shape in the test. The test passes in full.
+#   2026-11-01  botscan_throughput_v187_test  (V1226-CIBASH-ENV-01, MISSING_MATCHER_BINARY,
+#     lane OPEN_BOTSCAN_MATCHER_CI_PROVISIONING). The Policy Gates job builds
+#     nftban-botscan-matcher before ci-bash (ci-architecture.yml), so the precondition holds.
+#   Both entries retired; ceiling lowered 2 -> 0.
+#
 # Columns: QT id path owner reason finding introduced review_or_expiry disposition expected_failure_class remediation_lane expected_failure_pattern
-QUARANTINE_CEILING=2
-QT	botscan_throughput_v187_test	cli/lib/nftban/tests/botscan_throughput_v187_test.sh	nftban-maintainers	prefilter-count invariant requires the Go nftban-botscan-matcher binary which is not built in the hermetic ci-bash environment. v1.229.10: the test now ASSERTS this precondition explicitly instead of surfacing it as a wrong count, so the bound pattern moved from the count mismatch to the named precondition. Section A (forward cursor) now PASSES here; only B/C need the binary.	V1226-CIBASH-ENV-01	2026-07-22	2026-10-31	ENVIRONMENT_SENSITIVE	MISSING_MATCHER_BINARY	OPEN_BOTSCAN_MATCHER_CI_PROVISIONING	PRECONDITION UNMET: nftban-botscan-matcher
-QT	v128_polkit_aware_wording_sweep_test	cli/lib/nftban/tests/v128_polkit_aware_wording_sweep_test.sh	nftban-maintainers	confirmed product defect: 5 operator-facing CLI surfaces reintroduced root/sudo wording after the v1.133 polkit sweep, undetected while this test was unwired from CI	V1226-CIBASH-PRODDEF-02	2026-07-22	2026-10-31	CONFIRMED_PRODUCT_DEFECT	POLKIT_WORDING_DRIFT	OPEN_POLKIT_WORDING_REWORD	requires root [privileges]' in CLI surfaces
+QUARANTINE_CEILING=0

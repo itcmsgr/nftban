@@ -81,8 +81,23 @@ func (m *Module) writeBotscanConsumerStatus() {
 
 		// v1.234.0: BotScan signals refused because the address is a shared CDN edge
 		"batch_signals_shared_edge_skipped": m.stats.BatchSignalsSharedEdgeSkipped,
+
+		// BotScan HTTP campaign: detected (signals) vs requested (enqueued) vs the reasons not;
+		// campaign_apply_refused (below) is what the queue refused at application. Enforcement
+		// evidence is the kernel counter input_campaign_prefix_drop.
+		"campaign_signals":        m.stats.CampaignSignals,
+		"campaign_requested":      m.stats.CampaignRequested,
+		"campaign_duplicate":      m.stats.CampaignDuplicate,
+		"campaign_refused":        m.stats.CampaignRefused,
+		"campaign_not_enforced":   m.stats.CampaignNotEnforced,
+		"campaign_recurrence":     m.stats.CampaignRecurrence,
+		"campaign_over_cycle_cap": m.stats.CampaignCycleCapHits,
+		"campaign_disabled":       m.stats.CampaignDisabled,
 	}
 	m.mu.RUnlock()
+	if m.opQueue != nil {
+		rec["campaign_apply_refused"] = m.opQueue.Stats().ApplyGuardRefused
+	}
 	b, err := json.Marshal(rec)
 	if err != nil {
 		return
@@ -113,6 +128,10 @@ func (m *Module) appendBotscanEvidence(sig *BatchSignal, setName string, ttlSec 
 		"url":           "",     // reserved: matched URL/path not in BatchSignal (shell-producer follow-up)
 		// v1.234.0: the rule's REQUESTED duration beside the effective one (0 = not sent by an older producer)
 		"requested_ttl_sec": sig.RequestedTTLSec,
+		// BotScan HTTP campaign ("" for a per-IP ban): the /24 or member it escalated, and why
+		"kind":        sig.Kind,
+		"prefix":      sig.Prefix,
+		"campaign_id": sig.CampaignID,
 	}
 	b, err := json.Marshal(rec)
 	if err != nil {

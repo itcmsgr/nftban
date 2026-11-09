@@ -626,7 +626,7 @@ _loginmon_ipc_call() {
     command -v socat >/dev/null 2>&1 || return 1
     local resp=""
     resp=$(echo '{"method":"modules","params":{}}' | \
-        timeout 5 socat - "UNIX-CONNECT:$socket_path" 2>/dev/null) || return 1
+        timeout 5 socat -t 5 - "UNIX-CONNECT:$socket_path" 2>/dev/null) || return 1
     [[ -n "$resp" ]] || return 1
     printf '%s' "$resp"
 }

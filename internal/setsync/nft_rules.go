@@ -29,6 +29,11 @@ import (
 
 // CreateChainIfNotExists creates a chain if it doesn't exist
 func (m *NFTManager) CreateChainIfNotExists(table *nftables.Table, chainName string, chainType nftables.ChainType, hook *nftables.ChainHook, priority *nftables.ChainPriority) (*nftables.Chain, error) {
+	release, errW := BeginWrite()
+	if errW != nil {
+		return nil, errW
+	}
+	defer release()
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {
@@ -66,6 +71,11 @@ func (m *NFTManager) CreateChainIfNotExists(table *nftables.Table, chainName str
 
 // AddDropRuleForSet adds a rule to drop packets from IPs in a set
 func (m *NFTManager) AddDropRuleForSet(chain *nftables.Chain, set *nftables.Set, ipv4 bool) error {
+	release, errW := BeginWrite()
+	if errW != nil {
+		return errW
+	}
+	defer release()
 	// INV-NFT-TX-01: private connection, owned for this transaction only.
 	conn, errTx := m.txConn()
 	if errTx != nil {

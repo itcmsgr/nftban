@@ -16,6 +16,10 @@ set -Eeuo pipefail
 [[ -n "${_NFTBAN_SVC_CONTROL_LOADED:-}" ]] && return 0
 readonly _NFTBAN_SVC_CONTROL_LOADED=1
 
+# v1.236: direct nft writes go through the write boundary.
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+source "${BASH_SOURCE[0]%/*}/nft_writers.sh"
+
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -1172,7 +1176,7 @@ nftban_disable_all() {
         if command -v nft >/dev/null 2>&1; then
             local fam
             for fam in ip ip6; do
-                nft delete table "$fam" nftban 2>/dev/null || true
+                nftban_nft_write delete table "$fam" nftban 2>/dev/null || true
             done
             if ! declare -F _nft_cleanup_synproxy_raw >/dev/null 2>&1; then
                 # shellcheck source=/dev/null
