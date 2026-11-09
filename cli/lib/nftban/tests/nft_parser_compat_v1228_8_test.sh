@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-08-08"
-# meta:description="PR1 consumer-level bad controls for the nft parser contract. Drives nftban_health_check_limiter_capacity against AUTHENTIC per-version nft JSON captured from seven production hosts (nft 1.0.2/1.0.9/1.1.1/1.1.5/1.1.6) and proves: (A) a saturated limiter is detected on EVERY version including 1.0.2, which omits the 'dynamic' flag from -j output and made the old token-gated check blind to 13 real limiters; (B) a healthy limiter is not falsely flagged on any version; (C) a FAILED nft command, MALFORMED JSON, and TRUNCATED JSON each yield UNKNOWN and a non-OK status, never the old silent HEALTHY; (D) an EMPTY-but-successful dump is classified per contract; (E) the discrimination control - the pre-fix token-gated logic - is proven to MISS the 1.0.2 saturation this test catches, so the test cannot pass vacuously."
+# meta:description="PR1 consumer-level bad controls for the nft parser contract. Drives nftban_health_check_limiter_capacity against AUTHENTIC per-version nft JSON captured from seven production hosts (nft 1.0.2/1.0.9/1.1.1/1.1.5/1.1.6) and proves: (A) a saturated limiter is detected on EVERY version including 1.0.2, which omits the 'dynamic' flag from -j output and made the old token-gated check blind to 13 real limiters; (B) a healthy limiter is not falsely flagged on any version; (C) a FAILED nft command, MALFORMED JSON, and TRUNCATED JSON each yield UNKNOWN and a non-OK status, never the old silent HEALTHY; (D) an EMPTY-but-successful dump is classified per contract; (E) the discrimination control - the pre-fix token-gated logic - is proven to MISS the 1.0.2 saturation this test catches, so the test cannot pass vacuously; (F) v1.236.1: the shared generation reader (nftban_nft_generation_read) reads the table marker from AUTHENTIC nft -j and text captures of 1.0.2/1.0.6/1.0.9/1.1.3/1.1.5/1.1.6 (text on 1.0.2/1.0.6, which omit the table comment from JSON), ignores set/chain decoy comments, and the v1.236.0 JSON-only readback is proven blind on 1.0.2/1.0.6."
 # meta:ta.id="nft_parser_compat_v1228_8_test"
 # meta:ta.owner="health"
 # meta:ta.module="nft-parser-contract"
@@ -23,8 +23,8 @@
 # meta:ta.requires_systemd="false"
 # meta:ta.requires_nftables="false"
 # meta:ta.requires_package="false"
-# meta:inventory.files="fixtures/nft-versions/sets-*.json"
-# meta:inventory.binaries="bash,python3"
+# meta:inventory.files="fixtures/nft-versions/sets-*.json,fixtures/nft-versions/table-gen-*"
+# meta:inventory.binaries="bash,python3,jq"
 # meta:inventory.env_vars="NFTBAN_LIB_DIR"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -77,6 +77,7 @@ case "$NFT_FAKE_MODE" in
     malformed) echo 'this is not json at all {{{'; exit 0 ;;
     truncated) head -c 60 "$NFT_FAKE_TRUNC_SRC"; exit 0 ;;
     empty)     exit 0 ;;
+    gen:*)     if [[ "${1:-}" == "-j" ]]; then cat "${NFT_FAKE_MODE#gen:}.json"; else cat "${NFT_FAKE_MODE#gen:}.txt"; fi; exit 0 ;;
 esac
 EOS
     chmod +x "$WORK/nft"
@@ -220,6 +221,49 @@ then
 else
     bad "fixture divergence lost"
 fi
+
+echo "=== F. GENERATION MARKER READBACK ON EVERY nft VERSION (v1.236.1, authentic captures) ==="
+# table-gen-<v>-{marked,unmarked}.{json,txt}: real `nft -j list table` / `nft list table` output of an
+# nftban-shaped table (generation comment right after the header, as internal/ruleset/modules.go writes it,
+# plus a set and a chain carrying their own nftban-gen= comments as decoys), captured in a throwaway netns on
+# Ubuntu 22.04 (1.0.2), Debian 12 (1.0.6), Ubuntu 24.04 (1.0.9), Debian 13 (1.1.3), CentOS Stream 10 (1.1.5)
+# and Ubuntu 26.04 (1.1.6). 1.0.2 and 1.0.6 leave the table comment out of JSON: v1.236.0 read the marker from
+# JSON only, and on Ubuntu 22.04 the upgrade stopped in FAILED_REBUILD.
+GEN_VERSIONS=(1.0.2 1.0.6 1.0.9 1.1.3 1.1.5 1.1.6)
+GEN_MARK="nftban-gen=1794257084868951797-375691"
+# shellcheck source=/dev/null
+source "$NFTBAN_LIB_DIR/lib/nft_probe.sh" 2>/dev/null || bad "cannot source lib/nft_probe.sh"
+for v in "${GEN_VERSIONS[@]}"; do
+    case "$v" in 1.0.2|1.0.6) want_src=text ;; *) want_src=json ;; esac
+    for m in marked unmarked; do
+        [[ -f "$FIXDIR/table-gen-$v-$m.json" && -f "$FIXDIR/table-gen-$v-$m.txt" ]] || { bad "$v $m fixture missing"; continue; }
+        want_val=""; [[ "$m" == marked ]] && want_val="$GEN_MARK"
+        # an unmarked table has no comment in either form, so the reader always ends on the text listing
+        [[ "$m" == unmarked ]] && want_src=text
+        NFT_FAKE_MODE="gen:$FIXDIR/table-gen-$v-$m"; export NFT_FAKE_MODE
+        rc=0; nftban_nft_generation_read ip nftban || rc=$?
+        if [[ $rc -eq 0 && "$NFTBAN_NFT_GEN_VALUE" == "$want_val" && "$NFTBAN_NFT_GEN_SOURCE" == "$want_src" ]]; then
+            ok "nft $v $m: generation '${want_val:-none}' read from $want_src (set/chain decoys ignored)"
+        else
+            bad "nft $v $m: rc=$rc value='$NFTBAN_NFT_GEN_VALUE' source='$NFTBAN_NFT_GEN_SOURCE' (want '${want_val}' from $want_src)"
+        fi
+    done
+done
+NFT_FAKE_MODE=fail; export NFT_FAKE_MODE
+rc=0; nftban_nft_generation_read ip nftban || rc=$?
+[[ $rc -ne 0 ]] && ok "failed nft read -> reader failure (UNKNOWN), not 'no marker'" || bad "failed nft read returned rc 0"
+
+# Discrimination control: the v1.236.0 JSON-only expression (cmd_firewall.sh:3221 at b5cb29ff) must miss the
+# marker on 1.0.2/1.0.6 and see it elsewhere, or these fixtures no longer carry the divergence.
+for v in "${GEN_VERSIONS[@]}"; do
+    old="$(jq -r '.nftables[] | .table? | select(.) | .comment // ""' "$FIXDIR/table-gen-$v-marked.json" 2>/dev/null)"
+    case "$v" in
+        1.0.2|1.0.6) [[ -z "$old" ]] && ok "nft $v: JSON-only (v1.236.0) readback is blind — fixture discriminating" \
+                         || bad "nft $v: fixture JSON now carries the table comment — divergence lost" ;;
+        *)           [[ "$old" == "$GEN_MARK" ]] && ok "nft $v: JSON carries the table comment" \
+                         || bad "nft $v: JSON lacks the table comment (old='$old')" ;;
+    esac
+done
 
 echo
 echo "=== nft_parser_compat_v1228_8: PASS=$PASS FAIL=$FAIL ==="
