@@ -170,13 +170,13 @@ func TestBootContent_UnverifiableIsNotRestored(t *testing.T) {
 func TestBootContent_IntervalContainment(t *testing.T) {
 	kernel := []string{"10.0.0.0/8", "10.1.0.0/24", "192.0.2.0-192.0.2.127"}
 	cases := map[string]bool{ // key -> covered
-		"10.200.3.0/24":   true,
-		"10.1.0.5":        true,
-		"192.0.2.64/26":   true,
-		"192.0.2.128/25":  false, // crosses the end of the range
-		"11.0.0.0/8":      false,
-		"172.16.0.1":      false,
-		"not-an-address":  false,
+		"10.200.3.0/24":           true,
+		"10.1.0.5":                true,
+		"192.0.2.64/26":           true,
+		"192.0.2.128/25":          false, // crosses the end of the range
+		"11.0.0.0/8":              false,
+		"172.16.0.1":              false,
+		"not-an-address":          false,
 		"192.0.2.0 timeout 3600s": true, // carried suffix ignored
 	}
 	for k, want := range cases {
