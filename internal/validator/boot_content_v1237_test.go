@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -38,9 +39,12 @@ func (f bootFixture) run(t *testing.T) *Finding {
 			t.Fatal(err)
 		}
 	}
-	savedP, savedB, savedE, savedK := bootContentStatePath, bootTimeFn, bootExpectFn, bootKernelFn
-	t.Cleanup(func() { bootContentStatePath, bootTimeFn, bootExpectFn, bootKernelFn = savedP, savedB, savedE, savedK })
+	savedP, savedB, savedE, savedK, savedO := bootContentStatePath, bootTimeFn, bootExpectFn, bootKernelFn, bootStateOwnerOK
+	t.Cleanup(func() {
+		bootContentStatePath, bootTimeFn, bootExpectFn, bootKernelFn, bootStateOwnerOK = savedP, savedB, savedE, savedK, savedO
+	})
 	bootContentStatePath = p
+	bootStateOwnerOK = func(uint32) bool { return true } // test files are not root-owned
 	bt := f.bootTime
 	if bt.IsZero() {
 		bt = time.Date(2026, 11, 10, 16, 0, 0, 0, time.UTC)
@@ -63,13 +67,59 @@ func TestBootContent_UnregisteredVerifierIsUnverifiable(t *testing.T) {
 	if err := os.WriteFile(p, []byte(failedState), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	savedP, savedB, savedV := bootContentStatePath, bootTimeFn, bootVerifier
-	t.Cleanup(func() { bootContentStatePath, bootTimeFn, bootVerifier = savedP, savedB, savedV })
+	savedP, savedB, savedV, savedO := bootContentStatePath, bootTimeFn, bootVerifier, bootStateOwnerOK
+	t.Cleanup(func() {
+		bootContentStatePath, bootTimeFn, bootVerifier, bootStateOwnerOK = savedP, savedB, savedV, savedO
+	})
 	bootContentStatePath, bootVerifier = p, nil
+	bootStateOwnerOK = func(uint32) bool { return true }
 	bootTimeFn = func() (time.Time, bool) { return time.Date(2026, 11, 10, 16, 0, 0, 0, time.UTC), true }
 	f := bootContentFinding()
 	if f == nil || f.Code != CodeBootContentUnverifiable || !strings.Contains(f.Message, "no boot-content verifier") {
 		t.Fatalf("unregistered verifier must be VAL-BOOT-002, got %+v", f)
+	}
+}
+
+// The state file lives in a directory the nftban service account owns: a symlink, a FIFO or
+// a file not owned by root is not trusted (VAL-BOOT-002), and a FIFO must not block.
+func TestBootContent_UntrustedStateEntryIsUnverifiable(t *testing.T) {
+	saved, savedO, savedB := bootContentStatePath, bootStateOwnerOK, bootTimeFn
+	t.Cleanup(func() { bootContentStatePath, bootStateOwnerOK, bootTimeFn = saved, savedO, savedB })
+	bootTimeFn = func() (time.Time, bool) { return time.Date(2026, 11, 10, 16, 0, 0, 0, time.UTC), true }
+	dir := t.TempDir()
+
+	regular := filepath.Join(dir, "regular.state")
+	if err := os.WriteFile(regular, []byte("outcome=content-loaded\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link.state")
+	if err := os.Symlink(regular, link); err != nil {
+		t.Fatal(err)
+	}
+	fifo := filepath.Join(dir, "fifo.state")
+	if err := syscall.Mkfifo(fifo, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	bootStateOwnerOK = func(uint32) bool { return true }
+	for name, p := range map[string]string{"symlink": link, "fifo": fifo} {
+		bootContentStatePath = p
+		done := make(chan *Finding, 1)
+		go func() { done <- bootContentFinding() }()
+		select {
+		case f := <-done:
+			if f == nil || f.Code != CodeBootContentUnverifiable {
+				t.Errorf("%s state entry must be VAL-BOOT-002, got %+v", name, f)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s state entry blocked the validator", name)
+		}
+	}
+
+	bootContentStatePath = regular
+	bootStateOwnerOK = func(uint32) bool { return false } // e.g. planted by the service account
+	if f := bootContentFinding(); f == nil || f.Code != CodeBootContentUnverifiable || !strings.Contains(f.Message, "not owned by root") {
+		t.Fatalf("a state file not owned by root must be VAL-BOOT-002, got %+v", f)
 	}
 }
 

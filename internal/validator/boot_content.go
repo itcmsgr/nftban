@@ -39,11 +39,14 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -68,8 +71,11 @@ var errNoBootVerifier = errors.New("no boot-content verifier registered in this 
 // Seams (tests replace them).
 var (
 	bootContentStatePath = "/run/nftban/boot-content.state"
-	bootTimeFn           = readBootTime
-	bootExpectFn         = func() (map[string][]string, error) {
+	// The state file lives in /run/nftban, which the nftban service account owns: only a
+	// root-owned regular file is trusted (tests run unprivileged and replace this).
+	bootStateOwnerOK = func(uid uint32) bool { return uid == 0 }
+	bootTimeFn       = readBootTime
+	bootExpectFn     = func() (map[string][]string, error) {
 		if bootVerifier == nil || bootVerifier.Expected == nil {
 			return nil, errNoBootVerifier
 		}
@@ -163,10 +169,20 @@ func bootContentFinding() *Finding {
 		Remediation: "Wait for the daemon's sync to complete, or run: nftban firewall reload. Cause: journalctl -b -u nftban-boot-content"}
 }
 
+// bootStateMaxBytes bounds the read (the real file is a few hundred bytes).
+const bootStateMaxBytes = 64 << 10
+
 // readBootContentState parses the key=value state file. present=false when it does not exist.
+//
+// Trust: /run/nftban is owned by the nftban service account, so the entry can be replaced by
+// that account. The file is opened without following a symlink and without blocking (a FIFO),
+// and is used only if it is a root-owned regular file of bounded size; anything else is
+// returned as an error, which the caller reports (VAL-BOOT-002) instead of trusting.
+// Residual: that account can delete the entry, which reads as "no outcome recorded" — the
+// same as before this check existed.
 func readBootContentState(path string) (bootContentState, bool, error) {
 	var st bootContentState
-	f, err := os.Open(path) // #nosec G304 -- fixed path under /run/nftban (root-written)
+	f, err := os.OpenFile(filepath.Clean(path), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return st, false, nil
@@ -174,7 +190,20 @@ func readBootContentState(path string) (bootContentState, bool, error) {
 		return st, true, err
 	}
 	defer f.Close()
-	sc := bufio.NewScanner(f)
+	fi, err := f.Stat()
+	if err != nil {
+		return st, true, err
+	}
+	if !fi.Mode().IsRegular() {
+		return st, true, fmt.Errorf("not a regular file (%s)", fi.Mode().Type())
+	}
+	if sys, ok := fi.Sys().(*syscall.Stat_t); !ok || !bootStateOwnerOK(sys.Uid) {
+		return st, true, fmt.Errorf("not owned by root")
+	}
+	if fi.Size() > bootStateMaxBytes {
+		return st, true, fmt.Errorf("unexpectedly large (%d bytes)", fi.Size())
+	}
+	sc := bufio.NewScanner(io.LimitReader(f, bootStateMaxBytes))
 	for sc.Scan() {
 		k, v, ok := strings.Cut(sc.Text(), "=")
 		if !ok {
