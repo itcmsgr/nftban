@@ -10,7 +10,7 @@
 // meta:description="Read-only check for BUG-STATUS-PROTECTED-DURING-BOOT-SET-LOAD-WINDOW: when THIS boot's nftban-boot-content load failed or was refused, the verdict stays DEGRADED until every durable ban element is present in the kernel (positive evidence). A daemon start or a sync attempt alone is not evidence."
 // meta:inventory.files="/run/nftban/boot-content.state,/proc/stat"
 // meta:inventory.binaries="nft"
-// meta:inventory.privileges="CAP_NET_ADMIN (kernel set read; only after a failed load)"
+// meta:inventory.privileges="CAP_NET_ADMIN (kernel set read via the registered verifier; only after a failed load)"
 // =============================================================================
 //
 // Since v1.236 nftban-boot-content.service loads the durable contents (whitelist.d,
@@ -27,7 +27,8 @@
 //   - zero expected durable bans is restored by definition: empty sets alone never degrade.
 //
 // Expected content = ruleset.Render (the renderer boot-content itself uses) with an EMPTY
-// kernel reader, so nothing is carried and only durable sources count. Required sets: the
+// kernel reader, so nothing is carried and only durable sources count; supplied through the
+// registered BootContentVerifier (import cycle: internal/metrics imports this package). Required sets: the
 // ban sets blacklist_manual_ipv4/6 (single addresses: exact membership) and blacklist_ipv4/6
 // (interval sets with auto-merge: each expected address/prefix must lie inside one kernel
 // element). Anything that prevents establishing this (state unreadable after failure, render
@@ -36,6 +37,7 @@ package validator
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"net/netip"
 	"os"
@@ -43,18 +45,42 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/itcmsgr/nftban/internal/exemption"
-	"github.com/itcmsgr/nftban/internal/nftbanconf"
-	"github.com/itcmsgr/nftban/internal/ruleset"
 )
+
+// BootContentVerifier supplies what this package cannot import (internal/metrics imports the
+// validator, and the renderer's dependencies import internal/metrics): the durable content
+// keys per "family/set" as the boot-content renderer produces them with nothing carried, and
+// the element keys of one kernel set. Registered by every binary that produces a verdict
+// (ruleset.RegisterBootContentVerifier). Unregistered = restoration NOT verifiable: after a
+// failed load that is reported (VAL-BOOT-002), never assumed restored.
+type BootContentVerifier struct {
+	Expected   func() (map[string][]string, error)
+	KernelKeys func(family, set string) ([]string, error)
+}
+
+var bootVerifier *BootContentVerifier
+
+// SetBootContentVerifier registers the verifier for this process.
+func SetBootContentVerifier(v BootContentVerifier) { bootVerifier = &v }
+
+var errNoBootVerifier = errors.New("no boot-content verifier registered in this binary")
 
 // Seams (tests replace them).
 var (
 	bootContentStatePath = "/run/nftban/boot-content.state"
 	bootTimeFn           = readBootTime
-	bootExpectFn         = renderDurableBans
-	bootKernelFn         = ruleset.NftSetReader
+	bootExpectFn         = func() (map[string][]string, error) {
+		if bootVerifier == nil || bootVerifier.Expected == nil {
+			return nil, errNoBootVerifier
+		}
+		return bootVerifier.Expected()
+	}
+	bootKernelFn = func(family, set string) ([]string, error) {
+		if bootVerifier == nil || bootVerifier.KernelKeys == nil {
+			return nil, errNoBootVerifier
+		}
+		return bootVerifier.KernelKeys(family, set)
+	}
 )
 
 // bootBanSets are the sets whose restoration is required. exact = hash set of single
@@ -192,31 +218,12 @@ func readBootTime() (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// renderDurableBans renders the durable content exactly as nftban-boot-content does, with an
-// empty kernel reader (nothing carried), and returns the element keys per "family/set".
-func renderDurableBans() (map[string][]string, error) {
-	cfg, err := nftbanconf.Load()
-	if err != nil {
-		return nil, fmt.Errorf("config: %w", err)
-	}
-	empty := func(string, string) ([]ruleset.Element, error) { return nil, nil }
-	res, err := ruleset.Render(ruleset.Options{
-		ConfigDir:   cfg.ConfigDir,
-		DataDir:     cfg.DataDir,
-		FeedsMaster: cfg.FeedsEnabled,
-	}, empty, exemption.NewExemption(cfg.ConfigDir))
-	if err != nil {
-		return nil, err
-	}
-	return res.Keys, nil
-}
-
-// countMissing counts expected keys not enforced by the kernel elements.
-func countMissing(want []string, have []ruleset.Element, exact bool) int {
+// countMissing counts expected keys not enforced by the kernel element keys.
+func countMissing(want []string, have []string, exact bool) int {
 	if exact {
 		set := make(map[string]bool, len(have))
-		for _, e := range have {
-			set[canonKey(e.Key)] = true
+		for _, k := range have {
+			set[canonKey(k)] = true
 		}
 		n := 0
 		for _, k := range want {
@@ -227,8 +234,8 @@ func countMissing(want []string, have []ruleset.Element, exact bool) int {
 		return n
 	}
 	ranges := make([]addrRange, 0, len(have))
-	for _, e := range have {
-		if r, ok := keyRange(e.Key); ok {
+	for _, k := range have {
+		if r, ok := keyRange(k); ok {
 			ranges = append(ranges, r)
 		}
 	}

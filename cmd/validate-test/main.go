@@ -31,6 +31,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/itcmsgr/nftban/internal/ruleset"
 	"github.com/itcmsgr/nftban/internal/validator"
 )
 
@@ -41,6 +42,9 @@ func main() {
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	// v1.237: same verdict inputs as nftban-validate.
+	ruleset.RegisterBootContentVerifier()
 
 	// Run validation
 	result, err := validator.ValidateKernel(ctx)

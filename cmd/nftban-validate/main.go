@@ -39,6 +39,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/itcmsgr/nftban/internal/ruleset"
 	"github.com/itcmsgr/nftban/internal/validator"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
@@ -60,6 +61,9 @@ func main() {
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	// v1.237: restoration check after a failed boot-content load (validator cannot import it).
+	ruleset.RegisterBootContentVerifier()
 
 	// Run validation
 	result, err := validator.ValidateKernel(ctx)

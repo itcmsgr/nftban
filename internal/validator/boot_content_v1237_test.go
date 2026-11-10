@@ -18,8 +18,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/itcmsgr/nftban/internal/ruleset"
 )
 
 type bootFixture struct {
@@ -49,17 +47,30 @@ func (f bootFixture) run(t *testing.T) *Finding {
 	}
 	bootTimeFn = func() (time.Time, bool) { return bt, true }
 	bootExpectFn = func() (map[string][]string, error) { return f.expected, f.expErr }
-	bootKernelFn = func(fam, set string) ([]ruleset.Element, error) {
+	bootKernelFn = func(fam, set string) ([]string, error) {
 		if f.kerErr != nil {
 			return nil, f.kerErr
 		}
-		var out []ruleset.Element
-		for _, k := range f.kernel[fam+"/"+set] {
-			out = append(out, ruleset.Element{Key: k})
-		}
-		return out, nil
+		return f.kernel[fam+"/"+set], nil
 	}
 	return bootContentFinding()
+}
+
+// An unregistered verifier (a binary that was not wired) must fail closed after a failed load.
+func TestBootContent_UnregisteredVerifierIsUnverifiable(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "boot-content.state")
+	if err := os.WriteFile(p, []byte(failedState), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	savedP, savedB, savedV := bootContentStatePath, bootTimeFn, bootVerifier
+	t.Cleanup(func() { bootContentStatePath, bootTimeFn, bootVerifier = savedP, savedB, savedV })
+	bootContentStatePath, bootVerifier = p, nil
+	bootTimeFn = func() (time.Time, bool) { return time.Date(2026, 11, 10, 16, 0, 0, 0, time.UTC), true }
+	f := bootContentFinding()
+	if f == nil || f.Code != CodeBootContentUnverifiable || !strings.Contains(f.Message, "no boot-content verifier") {
+		t.Fatalf("unregistered verifier must be VAL-BOOT-002, got %+v", f)
+	}
 }
 
 const failedState = "outcome=content-failed\nat=2026-11-10T16:00:12Z\nmonotonic_us=12000000\ndetail=nft -f refused the contents: x; sets stay empty until the daemon's sync\n"
@@ -157,7 +168,7 @@ func TestBootContent_UnverifiableIsNotRestored(t *testing.T) {
 }
 
 func TestBootContent_IntervalContainment(t *testing.T) {
-	kernel := []ruleset.Element{{Key: "10.0.0.0/8"}, {Key: "10.1.0.0/24"}, {Key: "192.0.2.0-192.0.2.127"}}
+	kernel := []string{"10.0.0.0/8", "10.1.0.0/24", "192.0.2.0-192.0.2.127"}
 	cases := map[string]bool{ // key -> covered
 		"10.200.3.0/24":   true,
 		"10.1.0.5":        true,

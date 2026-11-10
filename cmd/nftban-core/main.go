@@ -32,6 +32,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/analytics"
 	"github.com/itcmsgr/nftban/internal/installer/state"
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
+	"github.com/itcmsgr/nftban/internal/ruleset"
 	"github.com/itcmsgr/nftban/pkg/ipc"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
@@ -67,6 +68,10 @@ func main() {
 	// LOAD CONFIG ONCE - Pass to all commands
 	// ════════════════════════════════════════════════════════════
 	cfg := nftbanconf.MustLoad()
+
+	// v1.237: the metrics evidence snapshot runs the validator; register the boot-content
+	// restoration check so its verdict matches nftban-validate.
+	ruleset.RegisterBootContentVerifier()
 
 	// v1.235 (owner 2026-10-10): without firewall authority nothing is sent to the daemon
 	// (no write, and no socket activation of a daemon that may not run).
