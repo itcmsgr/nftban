@@ -329,6 +329,7 @@ _nftban_protection_state_validator() {
                 VAL-TABLE-*)   echo "DEGRADED:D-TABLE" ;;
                 VAL-SERVICE-*) echo "DEGRADED:D-DAEMON" ;;
                 VAL-TIMER-*)   echo "DEGRADED:D-NOTIMERS" ;;
+                VAL-BOOT-*)    echo "DEGRADED:D-BOOT-CONTENT" ;;  # v1.237: boot load failed, bans not yet restored
                 *)             echo "DEGRADED:D-VALIDATOR" ;;
             esac
             ;;
