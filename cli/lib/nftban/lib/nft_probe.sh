@@ -401,7 +401,63 @@ nftban_nft_probe_may_rebuild() {
     [[ "${NFTBAN_NFT_PROBE_VERDICT:-}" == "$NFTBAN_NFT_PROBE_ABSENT" ]]
 }
 
+# -----------------------------------------------------------------------------
+# nftban_nft_generation_read <family> <table>
+#
+# v1.236.1: the ONE reader of the generation marker (the table comment the atomic
+# load writes, internal/ruleset/modules.go). nftables 1.0.2 (Ubuntu 22.04) and 1.0.6
+# (Debian 12) store a table comment but omit it from `nft -j` JSON (measured
+# 2026-11-09); newer versions include it. So JSON first, and the text listing ONLY
+# when the JSON was read, holds exactly this one table and has no comment field.
+# Nothing is inferred: a failed read, malformed output, more or fewer than one
+# matching table, a text header that is not exactly "table <family> <table> {", or
+# more than one table-level comment is CANNOT_READ. A readable table without a
+# comment reads as "" — never as the expected generation.
+#
+# Sets NFTBAN_NFT_GEN_VALUE (the comment; "" when the table has none) and
+# NFTBAN_NFT_GEN_SOURCE (json | text). Returns 0 when the table was read, 1 when it
+# could not be read. The caller compares the value with the generation it expects.
+# -----------------------------------------------------------------------------
+# shellcheck disable=SC2034  # NFTBAN_NFT_GEN_VALUE/SOURCE are the output, read by callers in other files
+nftban_nft_generation_read() {
+    local _fam="$1" _tbl="$2" _nft="${NFTBAN_NFT_BIN:-nft}" _json _text _n _has _line _first=1 _ncom=0 _val=""
+    NFTBAN_NFT_GEN_VALUE=""; NFTBAN_NFT_GEN_SOURCE=""
+    _json="$("$_nft" -j list table "$_fam" "$_tbl" 2>/dev/null)" || return 1
+    _n="$(jq -r --arg f "$_fam" --arg t "$_tbl" \
+        '[.nftables[]? | .table? | select(.) | select(.family == $f and .name == $t)] | length' <<< "$_json" 2>/dev/null)" || return 1
+    [[ "$_n" == 1 ]] || return 1
+    _has="$(jq -r --arg f "$_fam" --arg t "$_tbl" \
+        '.nftables[] | .table? | select(.) | select(.family == $f and .name == $t)
+         | if has("comment") then (if (.comment | type) == "string" then "yes" else "bad" end) else "no" end' <<< "$_json" 2>/dev/null)" || return 1
+    case "$_has" in
+        yes)
+            NFTBAN_NFT_GEN_VALUE="$(jq -r --arg f "$_fam" --arg t "$_tbl" \
+                '.nftables[] | .table? | select(.) | select(.family == $f and .name == $t) | .comment' <<< "$_json" 2>/dev/null)" || return 1
+            NFTBAN_NFT_GEN_SOURCE=json; return 0 ;;
+        no) ;;
+        *) return 1 ;;
+    esac
+    # The table-level attributes are the one-tab lines right after the header ("flags …",
+    # "comment …"); set and chain comments are nested deeper and are never read here.
+    local _re_comment=$'^\tcomment "([^"]*)"$' _re_flags=$'^\tflags [a-z,]+$'
+    _text="$("$_nft" list table "$_fam" "$_tbl" 2>/dev/null)" || return 1
+    while IFS= read -r _line; do
+        if (( _first )); then
+            [[ "$_line" == "table $_fam $_tbl {" ]] || return 1
+            _first=0; continue
+        fi
+        if [[ "$_line" =~ $_re_comment ]]; then
+            _ncom=$((_ncom + 1)); _val="${BASH_REMATCH[1]}"; continue
+        fi
+        [[ "$_line" =~ $_re_flags ]] && continue
+        break
+    done <<< "$_text"
+    (( _first == 0 && _ncom <= 1 )) || return 1
+    NFTBAN_NFT_GEN_VALUE="$_val"; NFTBAN_NFT_GEN_SOURCE=text
+    return 0
+}
+
 export -f nftban_nft_probe_session_degraded nftban_nft_probe_session_reset \
           nftban_nft_probe_table nftban_nft_probe_set nftban_nft_probe_error_class \
           nftban_nft_probe_redact nftban_nft_probe_diagnostic \
-          nftban_nft_probe_may_rebuild 2>/dev/null || true
+          nftban_nft_probe_may_rebuild nftban_nft_generation_read 2>/dev/null || true

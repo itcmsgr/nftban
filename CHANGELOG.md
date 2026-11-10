@@ -11,6 +11,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.236.1] - 2026-11-09 — Upgrade fix for nftables 1.0.2 and 1.0.6 (Ubuntu 22.04, Debian 12)
+
+A fix release for v1.236.0. Its known issues (see the v1.236.0 entry below) still apply.
+
+### Fixed
+
+- **Upgrading to v1.236.0 stopped in `FAILED_REBUILD` on Ubuntu 22.04 and Debian 12.**
+  - **Cause.** v1.236.0 loads the firewall in one transaction and marks it with a generation comment on the
+    `nftban` table. After the load it reads the comment back to confirm the transaction was applied. That
+    readback used only `nft -j` (JSON) output. nftables 1.0.2 (Ubuntu 22.04) and 1.0.6 (Debian 12) store the
+    table comment but leave it out of the JSON output. The readback found no marker and reported the outcome
+    as UNKNOWN.
+  - **What happened next.** The rebuild exited with an error. The installer recorded `FAILED_REBUILD` and did not
+    start the NFTBan daemon. The firewall load itself had been applied: bans, whitelist and ports stayed
+    enforced in the kernel.
+  - **The fix.** One shared reader (`nftban_nft_generation_read` in `lib/nft_probe.sh`) serves every rebuild and
+    reload. It reads the table comment from JSON when the JSON carries it. When the JSON has no comment field,
+    it reads the `comment` line of the table from the text listing. Comments on sets and chains are not read
+    as the table comment. The check is unchanged: the exact table, the exact family and the exact expected
+    generation. A failed or malformed read, or an old marker, still gives UNKNOWN, and a rejected load still
+    gives REJECTED.
+  - **Measured nftables behaviour.** The table comment is missing from JSON on 1.0.2 (Ubuntu 22.04) and
+    1.0.6 (Debian 12). It is present on 1.0.9 (Ubuntu 24.04, Rocky 9), 1.1.3 (Debian 13), 1.1.5 (CentOS
+    Stream 10) and 1.1.6 (Ubuntu 26.04).
+  - **Not affected:** hosts whose nftables includes the table comment in JSON (all of the other versions
+    listed above).
+  - **Recovery for a host already in this state:** install v1.236.1, or reinstall v1.235.1.
+
 ## [v1.236.0] - 2026-11-09 — Firewall replacement without enforcement gaps; BotGuard enforcement
 
 As of v1.236.0. Verified on Ubuntu 24.04 (DEB), Rocky 9 (EL9 RPM) and Rocky 10 (EL10 RPM) as an upgrade from

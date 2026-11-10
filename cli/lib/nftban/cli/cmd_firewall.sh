@@ -3217,8 +3217,17 @@ _fw_atomic_load() {
     nft -f "$out" 2>&1 || rc=$? # nftban:held
     rm -rf -- "$work"
 
-    readable=0
-    marker="$(nft -j list table ip nftban 2>/dev/null | jq -r '.nftables[] | .table? | select(.) | .comment // ""' 2>/dev/null)" && readable=1
+    # v1.236.1: the generation is read by the shared reader (lib/nft_probe.sh): JSON, and the
+    # text listing where this nftables omits table comments from JSON (1.0.2 / 1.0.6). Only an
+    # exact match of the expected generation counts as applied; unreadable stays UNKNOWN.
+    readable=0; marker=""
+    if ! declare -F nftban_nft_generation_read >/dev/null 2>&1; then
+        # shellcheck source=/usr/lib/nftban/lib/nft_probe.sh
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_probe.sh" 2>/dev/null || true
+    fi
+    if declare -F nftban_nft_generation_read >/dev/null 2>&1 && nftban_nft_generation_read ip nftban; then
+        readable=1; marker="$NFTBAN_NFT_GEN_VALUE"
+    fi
     # Boundary ends here: queued daemon writes now apply onto the new ruleset.
     nftban_writers_release
     if [[ "$marker" == "nftban-gen=$nonce" ]]; then
@@ -3229,7 +3238,11 @@ _fw_atomic_load() {
         echo "ERROR: nft REJECTED the replacement (rc=$rc); generation marker unchanged — the previous ruleset is still loaded" >&2
         return 1
     fi
-    echo "ERROR: outcome UNKNOWN (nft rc=$rc, generation readback: '${marker:-unreadable}') — not claiming applied or unchanged" >&2
+    if [[ $readable -eq 1 ]]; then
+        echo "ERROR: outcome UNKNOWN (nft rc=$rc, generation readback: '${marker:-no marker}', expected 'nftban-gen=$nonce') — not claiming applied or unchanged" >&2
+    else
+        echo "ERROR: outcome UNKNOWN (nft rc=$rc, generation readback: unreadable) — not claiming applied or unchanged" >&2
+    fi
     return 2
 }
 
