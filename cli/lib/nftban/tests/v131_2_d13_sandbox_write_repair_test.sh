@@ -112,12 +112,30 @@ fi
 #     Scan ACTIVE directive lines only (strip comment lines first) so the
 #     architecture comments that legitimately mention "systemd-journal/adm" and
 #     "no pkexec" do not trip the guard.
+#     v1.237 (owner 2026-11-11): EXACTLY one supplementary group is allowed, nftban, for
+#     read-only access to the nftban-group files the validator's boot-content check renders
+#     (state/feed_authority is 0640 nftban:nftban; ProtectSystem=strict keeps it read-only).
+#     Any other group, an extra value or a second SupplementaryGroups line still fails, and
+#     the journal/adm/pkexec ban below is unchanged and applies to every active directive.
 _a5_active=$(grep -vE '^[[:space:]]*#' "$_unit_file")
-if grep -qiE '^SupplementaryGroups=|^[A-Za-z]+=.*(systemd-journal|pkexec)|^[A-Za-z]+=.*(^|[[:space:]])adm([[:space:]]|$)' <<<"$_a5_active"; then
-    _t_assert "A5: unit adds NO SupplementaryGroups/systemd-journal/adm and NO pkexec" 1 \
-        "found a forbidden journal/pkexec token in an active unit directive"
+_a5_sg=$(grep -iE '^SupplementaryGroups=' <<<"$_a5_active" || true)
+_a5_sg_ok=0
+if [[ -n "$_a5_sg" ]]; then
+    if [[ "$(grep -c . <<<"$_a5_sg")" -ne 1 ]] || ! grep -qxE 'SupplementaryGroups=nftban[[:space:]]*' <<<"$_a5_sg"; then
+        _a5_sg_ok=1
+    fi
+fi
+if [[ $_a5_sg_ok -ne 0 ]]; then
+    _t_assert "A5: SupplementaryGroups is absent or exactly 'nftban' (one line, one group)" 1 \
+        "found: $(tr '\n' ' ' <<<"$_a5_sg")"
 else
-    _t_assert "A5: unit adds NO SupplementaryGroups/systemd-journal/adm and NO pkexec" 0
+    _t_assert "A5: SupplementaryGroups is absent or exactly 'nftban' (one line, one group)" 0
+fi
+if grep -qiE '^[A-Za-z]+=.*(systemd-journal|pkexec)|^[A-Za-z]+=(.*[[:space:]])?adm([[:space:]]|$)' <<<"$_a5_active"; then
+    _t_assert "A5b: unit adds NO systemd-journal/adm group and NO pkexec" 1 \
+        "found a forbidden journal/adm/pkexec token in an active unit directive"
+else
+    _t_assert "A5b: unit adds NO systemd-journal/adm group and NO pkexec" 0
 fi
 
 # ----------------------------------------------------------------------------
