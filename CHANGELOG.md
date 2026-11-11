@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.236.2] - 2026-11-11 — SELinux label fix for the runtime directories on EL9
+
+A fix release for v1.236.1. Its known issues and those of v1.236.0 still apply.
+
+### Fixed
+
+- **On EL9 with SELinux Enforcing, the daemon could not change the firewall after a reboot.**
+  - **Effect.** After a reboot, `nftband` could not open its writer lock
+    (`/run/nftban-writers/nft_writers.lock: permission denied`). New bans, `nftban sync` and set changes failed,
+    and an install or update on such a host ended `DEGRADED` (whitelist convergence). Bans loaded at boot by
+    `nftban-boot-content` stayed enforced. No SELinux denial was logged. EL10, Debian and Ubuntu, and EL9 hosts
+    with SELinux disabled or permissive, are not affected.
+  - **Cause.** EL9's SELinux maps `/run` to `/var/run` before it looks up a file label. The NFTBan policy
+    listed its runtime directories only as `/run/...`, so on EL9 those entries never matched and the directories
+    got the generic `var_run_t` label. The daemon's confined domain may not use a lock with that label.
+  - **The fix.** The policy module (now 1.2.4) lists the same runtime entries also as `/var/run/...`, which EL9
+    matches; EL10 keeps matching the `/run/...` entries. The package relabels `/run/nftban` and
+    `/run/nftban-writers` when it is installed, so an updated host is fixed without a reboot.
+
+---
+
 ## [v1.236.1] - 2026-11-09 — Upgrade fix for nftables 1.0.2 and 1.0.6 (Ubuntu 22.04, Debian 12)
 
 A fix release for v1.236.0. Its known issues (see the v1.236.0 entry below) still apply.
