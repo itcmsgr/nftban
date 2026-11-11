@@ -537,8 +537,8 @@ jobs:
       - name: Set up Go (nftban-botscan-matcher for ci-bash)
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v5.6.0
         with:
-          # Exact patch, matches go.mod `go 1.26.10` (Go toolchain pin parity).
-          go-version: '1.26.10'
+          # Exact patch, matches go.mod `go 1.26.11` (Go toolchain pin parity).
+          go-version: '1.26.11'
       - name: Build nftban-botscan-matcher onto PATH for ci-bash
         run: |
           mkdir -p "$RUNNER_TEMP/nftban-bin"

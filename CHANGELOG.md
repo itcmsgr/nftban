@@ -30,6 +30,12 @@ A fix release for v1.236.1. Its known issues and those of v1.236.0 still apply.
     matches; EL10 keeps matching the `/run/...` entries. The package relabels `/run/nftban` and
     `/run/nftban-writers` when it is installed, so an updated host is fixed without a reboot.
 
+### Security
+
+- **Go 1.26.11.** The binaries are built with Go 1.26.11 (was 1.26.10), which fixes CVE-2026-97054 / GO-2026-6859
+  in the standard library (`net/http`: an HTTP/1 server using `MaxBytesReader` or `MaxBytesHandler` could crash
+  from a header race). NFTBan's code does not call `MaxBytesReader` or `MaxBytesHandler`.
+
 ---
 
 ## [v1.236.1] - 2026-11-09 — Upgrade fix for nftables 1.0.2 and 1.0.6 (Ubuntu 22.04, Debian 12)
