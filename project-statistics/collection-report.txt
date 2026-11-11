@@ -1,5 +1,5 @@
-NFTBan statistics collection @ 2026-11-10T11:05:25Z
-releases_measured=512 assets=6965 package=12000 unclassified_legacy=2
+NFTBan statistics collection @ 2026-11-11T10:50:56Z
+releases_measured=512 assets=6965 package=12006 unclassified_legacy=2
 reconcile package==sum(platforms)==DEB+RPM: PASS
 traffic_auth: PASS
-snapshot_date=2026-11-10 package_delta=3398 traffic_daily_rows=134 dup_dates=0
+snapshot_date=2026-11-11 package_delta=6 traffic_daily_rows=135 dup_dates=0
