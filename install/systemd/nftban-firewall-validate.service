@@ -64,6 +64,12 @@ RemainAfterExit=no
 # root+CAP_NET_ADMIN under the same hardening template).
 User=root
 Group=root
+# v1.237: read-only access to the nftban-group files the validator's boot-content restoration
+# check renders (e.g. /var/lib/nftban/state/feed_authority, 0640 nftban:nftban in a 0750
+# nftban:nftban dir). Root here has no DAC override (CAP_NET_ADMIN only) and ProtectSystem=strict
+# keeps everything read-only except ReadWritePaths, so this adds group READ, nothing else.
+# Measured on EL9 Enforcing: without it the render is denied; with it the render matches root's.
+SupplementaryGroups=nftban
 AmbientCapabilities=CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_ADMIN
 
