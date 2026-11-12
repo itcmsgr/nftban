@@ -1251,7 +1251,7 @@ if command -v semodule >/dev/null 2>&1 && selinuxenabled 2>/dev/null; then
         ( cd "\$_nftban_sel" && make -f /usr/share/selinux/devel/Makefile nftban.pp 2>/dev/null \
             && semodule -i nftban.pp 2>/dev/null ) || true
     fi
-    restorecon -R /usr/sbin/nftban /usr/lib/nftban/bin /etc/nftban /var/lib/nftban /var/log/nftban /run/nftban /var/cache/nftban 2>/dev/null || true
+    restorecon -R /usr/sbin/nftban /usr/lib/nftban/bin /etc/nftban /var/lib/nftban /var/log/nftban /run/nftban /run/nftban-writers /var/cache/nftban 2>/dev/null || true
     unset _nftban_sel
 fi
 

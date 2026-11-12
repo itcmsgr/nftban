@@ -56,6 +56,14 @@
 /run/nftban-writers(/.*)?                                   gen_context(system_u:object_r:nftban_var_run_t,s0)
 /run/nftban/nftband\.sock                               -s  gen_context(system_u:object_r:nftban_var_run_t,s0)
 /run/nftban/nftband\.pid                                --  gen_context(system_u:object_r:nftban_var_run_t,s0)
+# v1.236.2: the same entries spelled /var/run. EL9's file_contexts.subs_dist maps "/run /var/run",
+# so every lookup of /run/... is made as /var/run/... and the /run entries above never match there:
+# /run/nftban-writers was labelled var_run_t and nftband_t could not open the writer lock after a
+# reboot (no AVC logged). EL10 maps the other way and keeps matching the /run entries above.
+/var/run/nftban(/.*)?                                       gen_context(system_u:object_r:nftban_var_run_t,s0)
+/var/run/nftban-writers(/.*)?                               gen_context(system_u:object_r:nftban_var_run_t,s0)
+/var/run/nftban/nftband\.sock                           -s  gen_context(system_u:object_r:nftban_var_run_t,s0)
+/var/run/nftban/nftband\.pid                            --  gen_context(system_u:object_r:nftban_var_run_t,s0)
 
 # Cache files (same as state)
 /var/cache/nftban(/.*)?                                     gen_context(system_u:object_r:nftban_var_lib_t,s0)

@@ -17,7 +17,7 @@
 # journalctl_exec_t / systemd_systemctl_exec_t which EL8 refpolicy 3.14.3 lacks;
 # wrap in optional_policy() if EL8 is ever in scope).
 
-policy_module(nftban, 1.2.3)
+policy_module(nftban, 1.2.4)
 
 ########################################
 # External type requires
