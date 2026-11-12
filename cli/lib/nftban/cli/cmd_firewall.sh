@@ -1943,7 +1943,21 @@ firewall_validate() {
             # --wait makes systemctl block until the oneshot finishes; the
             # exit code reflects whether the unit could be started, not the
             # ExecMainStatus. Fetch the validator's true rc separately.
+            local _es _rf="${NFTBAN_VALIDATE_DIR:-/run/nftban-firewall-validate}/last.json"
             if ! systemctl start --wait nftban-firewall-validate.service 2>/dev/null; then
+                # v1.237: a oneshot whose validator returns a VERDICT exit code (1=DEGRADED,
+                # 2=DOWN) is reported by systemctl as a failed start, although it ran and wrote
+                # this invocation's result. Falling back to the operator's own direct run turned
+                # every DEGRADED into DOWN (no CAP_NET_ADMIN). Use the unit's result when it ran
+                # now; fall back only when it did not run (e.g. polkit denial).
+                _es=$(systemctl show -p ExecMainStatus --value nftban-firewall-validate.service 2>/dev/null)
+                local _rf_mtime=0
+                _rf_mtime=$(stat -c %Y "$_rf" 2>/dev/null || echo 0)
+                if [[ "$_es" == "1" || "$_es" == "2" ]] && (( _rf_mtime >= _ts_start )); then
+                    _validator_exit=$_es
+                    cat "$_rf" 2>/dev/null
+                    return $_validator_exit
+                fi
                 # Service couldn't even start (e.g. polkit denial on a host
                 # where the user is not in the nftban group). Fall back to
                 # direct invocation so the v1.129 D6.B Remediation surfaces.
@@ -1951,7 +1965,6 @@ firewall_validate() {
                 _validator_exit=$?
                 return $_validator_exit
             fi
-            local _es
             _es=$(systemctl show -p ExecMainStatus --value nftban-firewall-validate.service 2>/dev/null)
             [[ -n "$_es" ]] && _validator_exit=$_es
             # V131.1 D13 fix: read the validator JSON from the group-readable
