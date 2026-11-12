@@ -58,6 +58,11 @@ StartLimitBurst=3
 [Service]
 Type=oneshot
 RemainAfterExit=no
+# v1.237: the validator's exit code is its VERDICT (0 PROTECTED/IDLE, 1 DEGRADED, 2 DOWN); 1 and 2 are
+# successful validation runs, not unit failures. Without this a DEGRADED host left this unit "failed",
+# which the installer's failed-units assertion then recorded as an install DEGRADED (lab EL9, PR #1462).
+# ExecMainStatus still carries the verdict; cmd_firewall.sh reads it.
+SuccessExitStatus=1 2
 
 # Run as root because nftban-validate needs CAP_NET_ADMIN to read nft state.
 # This is the same model as nftban-firewall-init.service (which already runs
