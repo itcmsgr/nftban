@@ -37,11 +37,11 @@ func TestReconcile_KeepsSourcedEntryMissingFromKernel(t *testing.T) {
 	si.Add("blacklist_ipv4", "192.0.2.44", "module")
 
 	si.ReconcileWithBackend(reconcileStubBackend{sets: map[string][]string{
-		"blacklist_ipv4": {"198.51.100.7", "45.155.205.1"}, // 45.155.205.1 = kernel-only
+		"blacklist_ipv4": {"198.51.100.7", "192.0.2.200"}, // 192.0.2.200 = kernel-only (documentation range)
 	}})
 
 	got := si.GetAllElements("blacklist_ipv4")
-	for _, want := range []string{"185.220.101.0/24", "198.51.100.7", "192.0.2.44", "45.155.205.1"} {
+	for _, want := range []string{"185.220.101.0/24", "198.51.100.7", "192.0.2.44", "192.0.2.200"} {
 		if !got[want] {
 			t.Errorf("%s must be in the index after reconcile, got %v", want, got)
 		}
@@ -49,7 +49,7 @@ func TestReconcile_KeepsSourcedEntryMissingFromKernel(t *testing.T) {
 	if got["203.0.113.9"] {
 		t.Errorf("an unknown-only entry missing from the kernel must be dropped")
 	}
-	if src := si.GetElementsBySource("blacklist_ipv4", "unknown"); !reconcileContains(src, "45.155.205.1") {
+	if src := si.GetElementsBySource("blacklist_ipv4", "unknown"); !reconcileContains(src, "192.0.2.200") {
 		t.Errorf("kernel-only element must be mirrored as unknown, got %v", src)
 	}
 }
