@@ -31,9 +31,9 @@ func (reconcileStubBackend) ReplaceSet(table, set string, e []SetElement) error 
 func TestReconcile_KeepsSourcedEntryMissingFromKernel(t *testing.T) {
 	si := NewSourceIndex(filepath.Join(t.TempDir(), "source_index.jsonl"))
 	si.Add("blacklist_ipv4", "203.0.113.0/24", "feeds") // recorded intent, lost from the kernel
-	si.Add("blacklist_ipv4", "203.0.113.9", "unknown")    // reconcile's own mirror, gone from the kernel
-	si.Add("blacklist_ipv4", "198.51.100.7", "geoban")    // recorded and still in the kernel
-	si.Add("blacklist_ipv4", "192.0.2.44", "unknown")     // mirror and also sourced
+	si.Add("blacklist_ipv4", "203.0.113.9", "unknown")  // reconcile's own mirror, gone from the kernel
+	si.Add("blacklist_ipv4", "198.51.100.7", "geoban")  // recorded and still in the kernel
+	si.Add("blacklist_ipv4", "192.0.2.44", "unknown")   // mirror and also sourced
 	si.Add("blacklist_ipv4", "192.0.2.44", "module")
 
 	si.ReconcileWithBackend(reconcileStubBackend{sets: map[string][]string{
