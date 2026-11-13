@@ -58,12 +58,23 @@ StartLimitBurst=3
 [Service]
 Type=oneshot
 RemainAfterExit=no
+# v1.237: the validator's exit code is its VERDICT (0 PROTECTED/IDLE, 1 DEGRADED, 2 DOWN); 1 and 2 are
+# successful validation runs, not unit failures. Without this a DEGRADED host left this unit "failed",
+# which the installer's failed-units assertion then recorded as an install DEGRADED (lab EL9, PR #1462).
+# ExecMainStatus still carries the verdict; cmd_firewall.sh reads it.
+SuccessExitStatus=1 2
 
 # Run as root because nftban-validate needs CAP_NET_ADMIN to read nft state.
 # This is the same model as nftban-firewall-init.service (which already runs
 # root+CAP_NET_ADMIN under the same hardening template).
 User=root
 Group=root
+# v1.237: read-only access to the nftban-group files the validator's boot-content restoration
+# check renders (e.g. /var/lib/nftban/state/feed_authority, 0640 nftban:nftban in a 0750
+# nftban:nftban dir). Root here has no DAC override (CAP_NET_ADMIN only) and ProtectSystem=strict
+# keeps everything read-only except ReadWritePaths, so this adds group READ, nothing else.
+# Measured on EL9 Enforcing: without it the render is denied; with it the render matches root's.
+SupplementaryGroups=nftban
 AmbientCapabilities=CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_ADMIN
 
@@ -112,9 +123,17 @@ StandardError=journal
 # does NOT expose the daemon's /run/nftban (which holds the live socket) and
 # does NOT re-chown /run/nftban — it is the narrowest writable surface that
 # lets the validator drop last.json for nftban-group operators to read.
+#
+# v1.237 (SEC-VALIDATE-UNIT-RUN-WRITABLE-UNDER-PROTECTSYSTEM-STRICT): the statement above was wrong for
+# /run. ProtectSystem=strict leaves /run (and /dev, /proc, /sys) writable on systemd 252/257. Measured on
+# EL9 and EL10: this unit could create files in /run/systemd/system and overwrite /run/nftban/
+# boot-content.state and the writer locks. ReadOnlyPaths=/run makes /run read-only;
+# the more specific ReadWritePaths= below re-opens only the handoff dir. That dir is separate from the
+# root-consumed state in /run/nftban and the writer locks in /run/nftban-writers, which stay read-only.
 PrivateTmp=yes
 ProtectHome=yes
 ProtectSystem=strict
+ReadOnlyPaths=/run
 ReadWritePaths=/run/nftban-firewall-validate
 
 # Kernel Protection

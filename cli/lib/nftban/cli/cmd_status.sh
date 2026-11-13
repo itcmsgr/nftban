@@ -318,10 +318,13 @@ _nftban_protection_state_validator() {
             echo "PROTECTED"
             ;;
         degraded)
-            # Extract first finding code for reason display
+            # Reason display: the first finding that CAUSED the degraded verdict (error/critical),
+            # else the first finding. v1.237: a non-error finding listed first used to mask the
+            # cause (lab f2-d12: VAL-BOOT-001 shown as D-VALIDATOR). Display only; the verdict
+            # itself is the validator's.
             local _first_code=""
             if command -v jq >/dev/null 2>&1; then
-                _first_code=$(echo "$_json" | jq -r '.findings[0].code // empty' 2>/dev/null)
+                _first_code=$(echo "$_json" | jq -r '([.findings[] | select(.severity == "error" or .severity == "critical")][0].code) // .findings[0].code // empty' 2>/dev/null)
             fi
             case "$_first_code" in
                 VAL-ANCHOR-*)  echo "DEGRADED:D-ANCHOR" ;;
@@ -329,6 +332,7 @@ _nftban_protection_state_validator() {
                 VAL-TABLE-*)   echo "DEGRADED:D-TABLE" ;;
                 VAL-SERVICE-*) echo "DEGRADED:D-DAEMON" ;;
                 VAL-TIMER-*)   echo "DEGRADED:D-NOTIMERS" ;;
+                VAL-BOOT-*)    echo "DEGRADED:D-BOOT-CONTENT" ;;  # v1.237: boot load failed, bans not yet restored
                 *)             echo "DEGRADED:D-VALIDATOR" ;;
             esac
             ;;

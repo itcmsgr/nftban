@@ -276,6 +276,13 @@ func ValidateKernel(ctx context.Context) (*ValidationResult, error) {
 		result.Findings = append(result.Findings, *f)
 	}
 
+	// v1.237 (BUG-STATUS-PROTECTED-DURING-BOOT-SET-LOAD-WINDOW): after THIS boot's content
+	// load failed or was refused, no PROTECTED until every durable ban element is in the
+	// kernel. Error severity = DEGRADED (not DOWN): the firewall structure is up.
+	if f := bootContentFinding(); f != nil {
+		result.Findings = append(result.Findings, *f)
+	}
+
 	// Compute summary
 	result.Summary = computeSummary(result)
 

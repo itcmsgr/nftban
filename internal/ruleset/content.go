@@ -114,6 +114,11 @@ type Result struct {
 	// CampaignRefused are campaign_prefix_ipv4 elements not carried: untimed (a campaign ban is
 	// never permanent), a range key, or a prefix the never-ban authority does not admit whole.
 	CampaignRefused int
+	// Keys are the rendered element keys per "family/set" (the same slices the script was
+	// written from; durable keys are plain, carried timed keys carry their " timeout" suffix).
+	// v1.237: the validator renders the durable content with an empty kernel reader and checks
+	// these keys against the kernel after a failed boot load (BUG-STATUS-PROTECTED-DURING-BOOT-SET-LOAD-WINDOW).
+	Keys map[string][]string
 }
 
 // prefixAdmitter is the all-or-nothing, fail-closed never-ban decision for an automatic
@@ -144,7 +149,7 @@ var dropSets = map[string]bool{
 
 // Render builds the content. read must reflect the kernel at the moment of the call.
 func Render(opts Options, read SetReader, ex Exemption) (*Result, error) {
-	res := &Result{Counts: map[string]int{}}
+	res := &Result{Counts: map[string]int{}, Keys: map[string][]string{}}
 	var script strings.Builder
 
 	state := runtime.NewRuntimeState(opts.ConfigDir)
@@ -372,6 +377,7 @@ func Render(opts Options, read SetReader, ex Exemption) (*Result, error) {
 	for _, p := range plans {
 		writeAdds(&script, p.fam.name, p.set, p.keys)
 		res.Counts[p.fam.name+"/"+p.set] = len(p.keys)
+		res.Keys[p.fam.name+"/"+p.set] = p.keys
 		res.Elements += len(p.keys)
 	}
 	res.Script = script.String()

@@ -429,6 +429,11 @@ const (
 	// StructuralState value exists that this consumer was never taught.
 	CodeConsistencyInvalidState = "VAL-CONS-004" // internal contract error: unrecognised StructuralState
 
+	// v1.237 boot content (BUG-STATUS-PROTECTED-DURING-BOOT-SET-LOAD-WINDOW): this boot's
+	// durable-content load failed or was refused, and restoration is not (yet) evidenced.
+	CodeBootContentNotRestored  = "VAL-BOOT-001" // durable ban elements still missing from the kernel
+	CodeBootContentUnverifiable = "VAL-BOOT-002" // restoration could not be established (render/read failed)
+
 	// System findings
 	CodeNftFailed   = "VAL-SYSTEM-001"
 	CodeNftNoOutput = "VAL-SYSTEM-002"
