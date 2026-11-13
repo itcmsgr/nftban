@@ -200,11 +200,7 @@ collect_all_metrics() {
                     # v1.150 F3: expose the manual subset (already summed into active_*).
                     manual_v4=$bl_manual_v4
                     manual_v6=$bl_manual_v6
-                    # Temp/perm split not available from daemon cache — report all as permanent
-                    blacklist_v4_temp=0
-                    blacklist_v6_temp=0
-                    blacklist_v4_perm=$active_v4
-                    blacklist_v6_perm=$active_v6
+                    # perm/temp: computed below for every source (v1.237)
                 else
                     # Legacy kernel format: .blacklist.ipv4
                     # v1.231.0: nftban_nft_count_all_sets now renders an
@@ -221,17 +217,9 @@ collect_all_metrics() {
                     active_v4=$(nftban_count_sum "$active_v4" "$manual_v4")
                     active_v6=$(nftban_count_sum "$active_v6" "$manual_v6")
                     # v1.152 (13.10): the legacy `.blacklist.<fam>` format carries NO
-                    # perm/temp split — the old `.permanent`/`.temporary` reads were
-                    # ALWAYS absent → 0, so total (active) never reconciled with
-                    # perm+temp (live "5 (perm:0 temp:0 manual:2)"). Report all-as-
-                    # permanent, exactly like the daemon-cache branch above, so
-                    # perm+temp == total; `manual_v*` stays a labeled SUBSET of total
+                    # perm/temp split; `manual_v*` stays a labeled SUBSET of total
                     # (operator decision SELECT_V152_1310_MANUAL_SEMANTICS=subset-of-total).
-                    # A real perm/temp split is a daemon-side concern (deferred Lane C).
-                    blacklist_v4_temp=0
-                    blacklist_v6_temp=0
-                    blacklist_v4_perm=$active_v4
-                    blacklist_v6_perm=$active_v6
+                    # perm/temp: computed below for every source (v1.237)
                 fi
             fi
         elif command -v nft &>/dev/null; then
@@ -253,23 +241,39 @@ collect_all_metrics() {
             # v1.150 F3: expose the manual subset (already summed into active_*).
             manual_v4=$fb_manual_v4
             manual_v6=$fb_manual_v6
-            blacklist_v4_temp=$(nftban_nft_count_set_with_timeout ip nftban blacklist_ipv4 2>/dev/null || echo UNKNOWN)
-            blacklist_v6_temp=$(nftban_nft_count_set_with_timeout ip6 nftban blacklist_ipv6 2>/dev/null || echo UNKNOWN)
-            # perm = active - temp, but only when BOTH operands are established.
-            # Subtracting an unknown temp count from a known total previously
-            # presented every ban as permanent.
-            if nftban_count_is_known "$active_v4" && nftban_count_is_known "$blacklist_v4_temp"; then
-                blacklist_v4_perm=$((active_v4 - blacklist_v4_temp))
-                [[ $blacklist_v4_perm -lt 0 ]] && blacklist_v4_perm=0
-            else
-                blacklist_v4_perm=UNKNOWN
-            fi
-            if nftban_count_is_known "$active_v6" && nftban_count_is_known "$blacklist_v6_temp"; then
-                blacklist_v6_perm=$((active_v6 - blacklist_v6_temp))
-                [[ $blacklist_v6_perm -lt 0 ]] && blacklist_v6_perm=0
-            else
-                blacklist_v6_perm=UNKNOWN
-            fi
+        fi
+
+        # v1.237 (BUG-STATS-TIMED-MANUAL-BANS-COUNTED-AS-PERMANENT): one perm/temp split for every
+        # count source. The daemon-cache and legacy branches used to publish temp=0 / perm=total, and
+        # the nft fallback counted timed elements in the interval set only. Timed bans live in the
+        # manual sets (CLI --timeout, module bans) as well as the interval sets (timed CIDR bans).
+        # temp = timed elements in the interval + manual set of each family, read from the kernel with
+        # the streaming per-element count; perm = active - temp, only when both are established.
+        # Measured cost (lab2): 6-19 ms per set, ~8 MB peak.
+        if command -v nft &>/dev/null && declare -f nftban_nft_count_set_with_timeout >/dev/null 2>&1; then
+            blacklist_v4_temp=$(nftban_count_sum \
+                "$(nftban_nft_count_set_with_timeout ip nftban blacklist_ipv4 2>/dev/null || echo UNKNOWN)" \
+                "$(nftban_nft_count_set_with_timeout ip nftban blacklist_manual_ipv4 2>/dev/null || echo UNKNOWN)")
+            blacklist_v6_temp=$(nftban_count_sum \
+                "$(nftban_nft_count_set_with_timeout ip6 nftban blacklist_ipv6 2>/dev/null || echo UNKNOWN)" \
+                "$(nftban_nft_count_set_with_timeout ip6 nftban blacklist_manual_ipv6 2>/dev/null || echo UNKNOWN)")
+        else
+            blacklist_v4_temp=UNKNOWN
+            blacklist_v6_temp=UNKNOWN
+        fi
+        # perm = active - temp, but only when BOTH operands are established. Subtracting an
+        # unknown temp count from a known total would present every ban as permanent.
+        if nftban_count_is_known "$active_v4" && nftban_count_is_known "$blacklist_v4_temp"; then
+            blacklist_v4_perm=$((active_v4 - blacklist_v4_temp))
+            [[ $blacklist_v4_perm -lt 0 ]] && blacklist_v4_perm=0
+        else
+            blacklist_v4_perm=UNKNOWN
+        fi
+        if nftban_count_is_known "$active_v6" && nftban_count_is_known "$blacklist_v6_temp"; then
+            blacklist_v6_perm=$((active_v6 - blacklist_v6_temp))
+            [[ $blacklist_v6_perm -lt 0 ]] && blacklist_v6_perm=0
+        else
+            blacklist_v6_perm=UNKNOWN
         fi
         active_total=$(nftban_count_sum "$active_v4" "$active_v6")
 
