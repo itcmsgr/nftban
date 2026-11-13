@@ -178,10 +178,18 @@ func isStaleClearableOneshot(basename string) bool {
 // DISTINCT from staleClearableOneshotStems (botscan/alert@), which clear
 // unconditionally for PRE-window latches; these clear ONLY on a proven clean re-run
 // (the gate is enforced host-side in the gatherer; the classifier consults its result).
+//
+// v1.237 (BUG-UPGRADE-PREEXISTING-FAILED-VALIDATE-UNIT-MARKS-INSTALL-DEGRADED): the on-demand
+// validate unit uses the same gate. Up to v1.236.x its unit had no SuccessExitStatus, so a
+// DEGRADED verdict (exit 1) left it failed. The v1.237 unit treats exit 1/2 as successful
+// runs, so the old failed state would block the upgrade although nothing is broken. The gate
+// re-runs it through the normal entry point. The fresh run decides: an execution failure or a
+// DOWN verdict stays FATAL (reverifyCadenceOneshot / validateUnitVerdictClean).
 var cadenceReverifiableOneshotStems = map[string]bool{
-	"nftban-watchdog":    true,
-	"nftban-soak":        true,
-	"nftban-maintenance": true,
+	"nftban-watchdog":          true,
+	"nftban-soak":              true,
+	"nftban-maintenance":       true,
+	"nftban-firewall-validate": true,
 }
 
 // isCadenceReverifiableOneshot reports whether an nftban unit basename is a

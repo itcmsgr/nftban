@@ -431,6 +431,9 @@ func reverifyCadenceOneshot(exec executor.Executor, unit string, log *logging.Lo
 		stillFailed = true
 	}
 	clean = startErr == nil && !stillFailed
+	if clean && unit == validateUnit {
+		clean = validateUnitVerdictClean(exec, log)
+	}
 	if log != nil {
 		if clean {
 			log.Info("v1.201 re-verify: %s cadence oneshot re-ran CLEAN — transient latch recovered (reset-failed + fresh start ok)", unit)
@@ -439,6 +442,45 @@ func reverifyCadenceOneshot(exec executor.Executor, unit string, log *logging.Lo
 		}
 	}
 	return true, clean
+}
+
+// validateUnit is the on-demand validator unit (v1.237 re-verify member).
+const validateUnit = "nftban-firewall-validate.service"
+
+// validateUnitVerdictClean reads the verdict of the validate unit's fresh run. Its exit code is
+// the verdict (0 PROTECTED/IDLE/CONVERGING, 1 DEGRADED, 2 DOWN). Exit 0 or 1 recovers the latch
+// left by an older release. The verdict is logged. A DOWN verdict, or a verdict that cannot be
+// read, keeps the unit FATAL. Execution failures are already caught by the start and is-failed
+// checks, because only exits 1 and 2 count as success.
+func validateUnitVerdictClean(exec executor.Executor, log *logging.Logger) bool {
+	r := exec.Run("systemctl", "show", "-p", "ExecMainStatus", "--value", validateUnit)
+	status := strings.TrimSpace(r.Stdout)
+	switch {
+	case r.ExitCode != 0:
+		if log != nil {
+			log.Warn("v1.237 re-verify: %s verdict unreadable (systemctl show exit %d) — keeping FATAL", validateUnit, r.ExitCode)
+		}
+		return false
+	case status == "0" || status == "1":
+		if log != nil {
+			v := "PROTECTED/IDLE"
+			if status == "1" {
+				v = "DEGRADED"
+			}
+			log.Warn("v1.237 re-verify: %s fresh run verdict %s (exit %s) — the earlier failed state was a verdict latch", validateUnit, v, status)
+		}
+		return true
+	case status == "2":
+		if log != nil {
+			log.Warn("v1.237 re-verify: %s fresh run verdict DOWN (exit 2) — keeping FATAL", validateUnit)
+		}
+		return false
+	default:
+		if log != nil {
+			log.Warn("v1.237 re-verify: %s unexpected ExecMainStatus %q — keeping FATAL", validateUnit, status)
+		}
+		return false
+	}
 }
 
 // queryUnitFailureTime asks systemd for a unit's last-failure timestamp via
