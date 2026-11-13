@@ -77,8 +77,20 @@ bad=$(jq -r '.modules | to_entries[] | select(.value | test("^(unavailable|insta
 [[ "$(jq -r '.communication.alert_transport_classes' "$V3" 2>/dev/null | grep -cE '^(none|local|email|webhook|mixed)$')" == "1" ]] && ok "alert_transport_classes is a class (no recipients)" || no "transport class invalid"
 
 # 6. PRIVACY GATE — zero forbidden data anywhere in the payload
-leak=$(grep -inE '([0-9]{1,3}\.){3}[0-9]{1,3}|@[a-z0-9.-]+\.[a-z]{2,}|[a-z0-9-]+\.(com|net|org|gr|io)|:(22|9580|55000)\b|"?(token|secret|password|passwd|bearer)"?[":= ]|/var/log|"hostname"' "$V3" | wc -l)
-[[ "$leak" == "0" ]] && ok "PRIVACY: no IP/hostname/domain/email/token/admin-port/log in payload" || { no "PRIVACY LEAK ($leak):"; grep -inE '([0-9]{1,3}\.){3}[0-9]{1,3}|@|token|hostname|/var/log' "$V3" | head; }
+# v1.237: the admin-port alternative requires a NON-DIGIT before the colon. The former `:(22|9580|55000)\b`
+# also matched the payload's own timestamp whenever its minutes or seconds were 22 (`T20:22:05Z`), a
+# time-of-day false positive (Policy Gates, PR #1463, 2026-11-11). `host:22`, `"port":22` and `]:55000` still
+# match; an `IP:port` is caught by the IP alternative. One pattern serves the count AND the printout.
+_privacy_re='([0-9]{1,3}\.){3}[0-9]{1,3}|@[a-z0-9.-]+\.[a-z]{2,}|[a-z0-9-]+\.(com|net|org|gr|io)|(^|[^0-9]):(22|9580|55000)([^0-9]|$)|"?(token|secret|password|passwd|bearer)"?[":= ]|/var/log|"hostname"'
+leak=$(grep -iE "$_privacy_re" "$V3" | wc -l)
+[[ "$leak" == "0" ]] && ok "PRIVACY: no IP/hostname/domain/email/token/admin-port/log in payload" || { no "PRIVACY LEAK ($leak):"; grep -inE "$_privacy_re" "$V3" | head; }
+
+# 6b. the privacy matcher itself: timestamps are not ports; real port forms still are
+_fp=0; for s in '"payload_created_at": "2026-11-11T20:22:05Z"' '"t": "2026-11-11T22:13:22Z"' '"t": "T09:55:00Z"'; do
+  grep -qiE "$_privacy_re" <<<"$s" && { _fp=1; echo "    false positive: $s"; }; done
+_fn=0; for s in '"api": "localhost:9580"' '"port":22' '"ssh": "myhost:22"' '"bind": "[::1]:55000"' '"x": ":22"'; do
+  grep -qiE "$_privacy_re" <<<"$s" || { _fn=1; echo "    missed: $s"; }; done
+[[ $_fp -eq 0 && $_fn -eq 0 ]] && ok "privacy matcher: timestamps pass, admin-port forms are detected" || no "privacy matcher misclassifies (fp=$_fp fn=$_fn)"
 
 # 7. no forbidden field NAMES (ban list / raw events / config / recipients)
 fbad=$(jq -r 'paths | join(".")' "$V3" 2>/dev/null | grep -icE 'recipient|ban_?list|raw|event|signature|log_|config_content|source_ip|dest_ip|domain|email|hostname|token'); fbad=${fbad:-0}
