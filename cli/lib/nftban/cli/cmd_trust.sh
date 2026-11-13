@@ -442,7 +442,7 @@ _nftban_trust_help() {
         nftban_banner
     fi
 
-    cat <<'HELP'
+    cat <<HELP
 
 USAGE:
     nftban trust <command> [provider] [--json]

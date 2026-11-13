@@ -591,7 +591,7 @@ nftban_feeds_status() {
         echo "Feed authority: $(jq -r '.state' <<<"$_fa" 2>/dev/null) (master switch $(jq -r 'if .master then "on" else "off" end' <<<"$_fa" 2>/dev/null)); enforced: $(jq -r '(.enforced // []) | if length == 0 then "none" else join(", ") end' <<<"$_fa" 2>/dev/null)"
         jq -r '(.reasons // []) as $r | (.texts // []) as $t | range(0; $r | length) | "  [\($r[.])] \($t[.])"' <<<"$_fa" 2>/dev/null || true
     else
-        echo "Feed authority: UNKNOWN (could not be decided — see: nftban-core feeds effective)"
+        echo "Feed authority: UNKNOWN (could not be decided — see: /usr/lib/nftban/bin/nftban-core feeds effective)"
     fi
 
     # v1.141 PR-C (D-feed-count): pre-v1.141 'Status:' line conflated three

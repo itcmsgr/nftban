@@ -327,7 +327,7 @@ func cmdGeoipUpdate(cfg *nftbanconf.Config) error {
 	}
 	fmt.Println()
 	fmt.Println("The database is now ready for IP lookups.")
-	fmt.Println("Use: nftban-geoip lookup <IP>")
+	fmt.Println("Use: nftban geoip lookup <IP>")
 	fmt.Println()
 
 	return nil
@@ -366,7 +366,7 @@ func cmdGeoipStatus(cfg *nftbanconf.Config) error {
 		fmt.Printf("   Checked: %v\n", dbFiles)
 		fmt.Println()
 		fmt.Println("To install the database:")
-		fmt.Println("  nftban-core geoip update")
+		fmt.Println("  nftban geoip update")
 		fmt.Println()
 		return fmt.Errorf("database not found")
 	}
@@ -462,7 +462,7 @@ func cmdGeoipLookup(cfg *nftbanconf.Config, ipStr string, jsonOutput bool) error
 	}
 
 	if db == nil {
-		return fmt.Errorf("failed to open GeoIP database\nTried: %v\nRun: nftban-core geoip update", dbFiles)
+		return fmt.Errorf("failed to open GeoIP database\nTried: %v\nRun: nftban geoip update", dbFiles)
 	}
 	defer db.Close()
 

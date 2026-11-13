@@ -73,7 +73,7 @@ _nftban_queue_help() {
         echo ""
     fi
 
-    cat <<'EOF'
+    cat <<EOF
 Task Queue Management
 =====================
 
