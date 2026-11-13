@@ -30,7 +30,7 @@ func (reconcileStubBackend) ReplaceSet(table, set string, e []SetElement) error 
 
 func TestReconcile_KeepsSourcedEntryMissingFromKernel(t *testing.T) {
 	si := NewSourceIndex(filepath.Join(t.TempDir(), "source_index.jsonl"))
-	si.Add("blacklist_ipv4", "185.220.101.0/24", "feeds") // recorded intent, lost from the kernel
+	si.Add("blacklist_ipv4", "203.0.113.0/24", "feeds") // recorded intent, lost from the kernel
 	si.Add("blacklist_ipv4", "203.0.113.9", "unknown")    // reconcile's own mirror, gone from the kernel
 	si.Add("blacklist_ipv4", "198.51.100.7", "geoban")    // recorded and still in the kernel
 	si.Add("blacklist_ipv4", "192.0.2.44", "unknown")     // mirror and also sourced
@@ -41,7 +41,7 @@ func TestReconcile_KeepsSourcedEntryMissingFromKernel(t *testing.T) {
 	}})
 
 	got := si.GetAllElements("blacklist_ipv4")
-	for _, want := range []string{"185.220.101.0/24", "198.51.100.7", "192.0.2.44", "192.0.2.200"} {
+	for _, want := range []string{"203.0.113.0/24", "198.51.100.7", "192.0.2.44", "192.0.2.200"} {
 		if !got[want] {
 			t.Errorf("%s must be in the index after reconcile, got %v", want, got)
 		}
@@ -58,7 +58,7 @@ func TestReconcile_KeepsSourcedEntryMissingFromKernel(t *testing.T) {
 // across reconcile when its element is not in the kernel (the 2026-11-11 legacy reproduction).
 func TestReconcile_KeepsLegacyPersistedFeedRecord(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "source_index.jsonl")
-	legacy := `{"set":"blacklist_ipv4","element":"185.220.101.0/24","sources":["feeds"],"updated":1780000000}` + "\n"
+	legacy := `{"set":"blacklist_ipv4","element":"203.0.113.0/24","sources":["feeds"],"updated":1780000000}` + "\n"
 	if err := os.WriteFile(p, []byte(legacy), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -66,11 +66,11 @@ func TestReconcile_KeepsLegacyPersistedFeedRecord(t *testing.T) {
 	if err := si.LoadFromDisk(); err != nil {
 		t.Fatal(err)
 	}
-	if !si.GetAllElements("blacklist_ipv4")["185.220.101.0/24"] {
+	if !si.GetAllElements("blacklist_ipv4")["203.0.113.0/24"] {
 		t.Fatal("legacy record not loaded")
 	}
 	si.ReconcileWithBackend(reconcileStubBackend{sets: map[string][]string{"blacklist_ipv4": nil}})
-	if !si.GetAllElements("blacklist_ipv4")["185.220.101.0/24"] {
+	if !si.GetAllElements("blacklist_ipv4")["203.0.113.0/24"] {
 		t.Fatal("legacy feeds record deleted by reconcile on kernel absence")
 	}
 }
@@ -79,19 +79,19 @@ func TestReconcile_KeepsLegacyPersistedFeedRecord(t *testing.T) {
 // expired timed entry is pruned, whether or not reconcile runs.
 func TestReconcile_UnbanAndExpiryUnchanged(t *testing.T) {
 	si := NewSourceIndex(filepath.Join(t.TempDir(), "source_index.jsonl"))
-	si.Add("blacklist_manual_ipv4", "23.129.97.222", "cli")
-	si.Remove("blacklist_manual_ipv4", "23.129.97.222", "cli") // explicit unban
-	si.AddWithExpiry("blacklist_manual_ipv4", "23.129.97.223", "botscan", time.Now().Add(-time.Second).Unix())
+	si.Add("blacklist_manual_ipv4", "198.51.100.22", "cli")
+	si.Remove("blacklist_manual_ipv4", "198.51.100.22", "cli") // explicit unban
+	si.AddWithExpiry("blacklist_manual_ipv4", "198.51.100.23", "botscan", time.Now().Add(-time.Second).Unix())
 
 	si.ReconcileWithBackend(reconcileStubBackend{sets: map[string][]string{"blacklist_manual_ipv4": nil}})
 	if n := si.PruneExpired(); n != 1 {
 		t.Errorf("expired timed entry must be pruned once, pruned=%d", n)
 	}
 	got := si.GetAllElements("blacklist_manual_ipv4")
-	if got["23.129.97.222"] {
+	if got["198.51.100.22"] {
 		t.Errorf("an explicitly removed (unbanned) entry must not come back")
 	}
-	if got["23.129.97.223"] {
+	if got["198.51.100.23"] {
 		t.Errorf("an expired timed entry must stay expired")
 	}
 }
