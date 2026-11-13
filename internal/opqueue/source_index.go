@@ -468,13 +468,41 @@ func (si *SourceIndex) ReconcileWithBackend(backend NetlinkBackend) {
 			}
 		}
 
-		// Elements in index but not in nft -> remove from index
+		// Elements in index but not in nft.
+		// v1.237 (BUG-RECONCILE-DELETES-KERNEL-MISSING-BANS-FROM-SOURCE-INDEX): kernel absence alone
+		// does not authorise deleting recorded intent. An entry that carries a real source (feeds,
+		// geoban, a module, or a record persisted by an earlier release) is KEPT and reported; only
+		// entries whose sole source is "unknown" — this reconcile's own mirror of the kernel, which
+		// records no intent — are dropped. Explicit removal stays with Remove/flush_source, and timed
+		// entries expire through PruneExpired (ExpiresAt); neither path changes here.
+		kept := 0
 		for elem := range indexed {
-			if !nftElements[elem] {
-				si.RemoveAll(setName, elem)
+			if nftElements[elem] {
+				continue
 			}
+			if si.onlyUnknownSources(setName, elem) {
+				si.RemoveAll(setName, elem)
+				continue
+			}
+			kept++
+		}
+		if kept > 0 {
+			log.Printf("[SourceIndex] reconcile: %s: %d recorded element(s) missing from the kernel kept (recorded intent is not deleted on kernel absence)", setName, kept)
 		}
 	}
 
 	si.markDirty()
+}
+
+// onlyUnknownSources reports whether every recorded source of the element is "unknown"
+// (or the element has no source record at all).
+func (si *SourceIndex) onlyUnknownSources(setName, element string) bool {
+	si.mu.RLock()
+	defer si.mu.RUnlock()
+	for src := range si.index[setName][element] {
+		if src != "unknown" {
+			return false
+		}
+	}
+	return true
 }
