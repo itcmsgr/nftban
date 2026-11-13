@@ -123,9 +123,17 @@ StandardError=journal
 # does NOT expose the daemon's /run/nftban (which holds the live socket) and
 # does NOT re-chown /run/nftban — it is the narrowest writable surface that
 # lets the validator drop last.json for nftban-group operators to read.
+#
+# v1.237 (SEC-VALIDATE-UNIT-RUN-WRITABLE-UNDER-PROTECTSYSTEM-STRICT): the statement above was wrong for
+# /run. ProtectSystem=strict leaves /run (and /dev, /proc, /sys) writable on systemd 252/257. Measured on
+# EL9 and EL10: this unit could create files in /run/systemd/system and overwrite /run/nftban/
+# boot-content.state and the writer locks. ReadOnlyPaths=/run makes /run read-only;
+# the more specific ReadWritePaths= below re-opens only the handoff dir. That dir is separate from the
+# root-consumed state in /run/nftban and the writer locks in /run/nftban-writers, which stay read-only.
 PrivateTmp=yes
 ProtectHome=yes
 ProtectSystem=strict
+ReadOnlyPaths=/run
 ReadWritePaths=/run/nftban-firewall-validate
 
 # Kernel Protection
