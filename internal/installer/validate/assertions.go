@@ -821,6 +821,18 @@ func assertTimerLiveness(exec executor.Executor, log *logging.Logger) AssertionR
 		return r
 	}
 	r.Detail = TimerLivenessCode + ": no active nftban timers after Configure — maintenance, watchdog, and exports will not run"
+	// v1.237 (BUG-INSTALLER-TIMER-LIVENESS-DETAIL-NAMES-ONE-TIMER): name every timer the installer
+	// reconciles that is not active, so the operator does not fix one and fail again. (With all of
+	// them masked, the only timer named was the critical one, from core_timers_active_or_scheduled_ok.)
+	var inactive []string
+	for _, t := range services.ReconciledTimers() {
+		if !exec.ServiceActive(t) {
+			inactive = append(inactive, t)
+		}
+	}
+	if len(inactive) > 0 {
+		r.Detail += "; not active: " + strings.Join(inactive, ", ")
+	}
 	log.Warn("ASSERT timer_liveness_ok: FAIL — %s", r.Detail)
 	return r
 }
