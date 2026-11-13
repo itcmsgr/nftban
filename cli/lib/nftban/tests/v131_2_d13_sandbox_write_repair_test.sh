@@ -80,6 +80,20 @@ else
     _t_assert "A1: unit grants ReadWritePaths=/run/nftban-firewall-validate" 1
 fi
 
+# A1b (v1.237): /run is read-only in the unit (ProtectSystem=strict alone leaves /run writable) and
+# the handoff dir is the ONLY writable path.
+if grep -qxE 'ReadOnlyPaths=/run' "$_unit_file"; then
+    _t_assert "A1b: unit sets ReadOnlyPaths=/run" 0
+else
+    _t_assert "A1b: unit sets ReadOnlyPaths=/run" 1 "ProtectSystem=strict leaves /run writable"
+fi
+_rw_lines="$(grep -E '^ReadWritePaths=' "$_unit_file" || true)"
+if [[ "$_rw_lines" == "ReadWritePaths=/run/nftban-firewall-validate" ]]; then
+    _t_assert "A1c: the handoff dir is the only ReadWritePaths entry" 0
+else
+    _t_assert "A1c: the handoff dir is the only ReadWritePaths entry" 1 "got: ${_rw_lines//$'\n'/ | }"
+fi
+
 # A2: ProtectSystem=strict is preserved (no global weakening).
 if grep -qE '^ProtectSystem=strict' "$_unit_file"; then
     _t_assert "A2: unit keeps ProtectSystem=strict" 0
@@ -324,6 +338,31 @@ STUB
     fi
 
     rm -rf "$_sbx"
+
+    # E3/E4 (v1.237): E2 runs in a mktemp dir, which is not under /run, so it never tested /run.
+    # These run under /run with the unit's own path properties. The handoff file is written
+    # (E3), and a sibling /run dir stays unwritable (E4) because ReadOnlyPaths=/run is set,
+    # not because of ProtectSystem=strict.
+    _rsbx="/run/nftban-v1237-sbx.$$"
+    mkdir -p "$_rsbx/out" "$_rsbx/other"
+    # shellcheck disable=SC2016  # expanded by the sandboxed bash, not here
+    systemd-run --quiet --pipe \
+        --property=ProtectSystem=strict \
+        --property=ReadOnlyPaths=/run \
+        --property=ReadWritePaths="$_rsbx/out" \
+        bash -c 'printf "%s\n" "{}" > "$0/out/last.json"; touch "$0/other/probe" 2>/dev/null; exit 0' "$_rsbx" >/dev/null 2>&1
+    if [[ -f "$_rsbx/out/last.json" ]]; then
+        _t_assert "E3: with ReadOnlyPaths=/run the handoff dir under /run is still writable" 0
+    else
+        _t_assert "E3: with ReadOnlyPaths=/run the handoff dir under /run is still writable" 1
+    fi
+    if [[ ! -e "$_rsbx/other/probe" ]]; then
+        _t_assert "E4: with ReadOnlyPaths=/run a sibling /run dir is NOT writable" 0
+    else
+        _t_assert "E4: with ReadOnlyPaths=/run a sibling /run dir is NOT writable" 1 \
+            "the unit's path properties leave /run writable"
+    fi
+    rm -rf "$_rsbx"
 else
     _t_skip "E1/E2: sandbox-aware systemd-run ProtectSystem=strict behavioral" \
         "not root or systemd-run unavailable; the real sandbox proof happens in lab package validation (§7)"
