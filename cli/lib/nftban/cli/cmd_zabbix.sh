@@ -980,6 +980,10 @@ _cmd_zabbix_discover() {
             # BUG-006 FIX: Corrected path from modules/geoban.conf to conf.d/geoban/main.conf
             if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf" ]]; then
                 source "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf" || true
+                # v1.237 (CONFIG-SHELL-CENTRAL-OVERRIDE-OVERWRITTEN-BY-LATE-BASE): central nftban.conf.local
+                # last, so discovery lists the countries the operator set, not the base file's.
+                declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+                    && nftban_config_apply_final_operator_overlay
                 local first=true
                 # IFS-safe split: strict.sh sets IFS=$'\n\t', so space-separated vars need explicit splitting
                 local _geoban_countries

@@ -87,6 +87,9 @@ fi
 if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf.local" ]]; then
     _source_local "${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf.local"
 fi
+# v1.237 (CONFIG-SHELL-CENTRAL-OVERRIDE-OVERWRITTEN-BY-LATE-BASE): central nftban.conf.local last.
+declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+    && nftban_config_apply_final_operator_overlay
 
 # Load global mail module for centralized email
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_mail.sh" ]]; then

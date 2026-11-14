@@ -80,6 +80,11 @@ fi
 # IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
 declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
 _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf.local"
+# v1.237 (CONFIG-SHELL-CENTRAL-OVERRIDE-OVERWRITTEN-BY-LATE-BASE): the base file above re-assigned keys
+# the operator set centrally in nftban.conf.local; apply the central overlay last, as the governed
+# consumers do.
+declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1 \
+    && nftban_config_apply_final_operator_overlay
 
 # Metrics endpoint defaults (fallbacks if not set in config)
 : "${NFTBAN_METRICS_PROMETHEUS_ADDR:=localhost:9090}"
