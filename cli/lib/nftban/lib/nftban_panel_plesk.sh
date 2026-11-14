@@ -519,6 +519,10 @@ nftban_panel_plesk_report() {
         declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
         _source_local "${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf.local"
     fi
+    # v1.237 (CONFIG-SHELL-CENTRAL-OVERRIDE-OVERWRITTEN-BY-LATE-BASE): central nftban.conf.local last.
+    if declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1; then
+        nftban_config_apply_final_operator_overlay
+    fi
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf" ]]; then
         echo "   TCP INPUT:  ${NFTBAN_PLESK_TCP_IN:-Not configured}"
         echo "   TCP OUTPUT: ${NFTBAN_PLESK_TCP_OUT:-Not configured}"
