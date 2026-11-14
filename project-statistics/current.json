@@ -1,6 +1,6 @@
 {
-  "snapshot_at": "2026-11-13T10:53:45Z",
-  "snapshot_date": "2026-11-13",
+  "snapshot_at": "2026-11-14T10:18:26Z",
+  "snapshot_date": "2026-11-14",
   "disclosure": "GitHub Release asset download requests and repository traffic counters. These INCLUDE NFTBan-operated infrastructure: an ~11-host fleet (dns1-4, srv1-4, monitor, lab2, lab4) self-updates by downloading DEB/RPM assets from GitHub Releases, and package-native validation downloads official assets too. GitHub exposes aggregate counts only, with no downloader identity or IP, so NFTBan-owned traffic cannot be identified or removed and historical counts are NOT retroactively adjusted. Do not read raw package downloads or clones as purely external adoption, or as unique users, installations, active systems, mirrors, CI jobs, or fleet size. Unique visitors are substantially less fleet-contaminated (automated hosts do not browse the repository web UI); non-release-day package-download deltas are the cleanest external-interest signal. A typical release-day internal baseline is approximately 11 fleet hosts plus validation downloads -- this is an ESTIMATE and is never subtracted from the reported counts. Future mirror routing of fleet updates can reduce this contamination prospectively (see OPEN_FLEET_UPDATE_MIRROR_SOURCE_SCOPE).",
   "fleet_contamination": {
     "raw_counts_include_nftban_infrastructure": true,
@@ -28,20 +28,20 @@
     "historical_counts_retroactively_adjusted": false,
     "fabricated_fleet_excluded_metric": false
   },
-  "package_downloads": 12062,
-  "package_delta": 53,
-  "deb_downloads": 8299,
-  "rpm_downloads": 3763,
-  "standalone_binary_downloads": 2034,
-  "metadata_downloads": 6198,
-  "all_release_asset_downloads": 21120,
+  "package_downloads": 12074,
+  "package_delta": 12,
+  "deb_downloads": 8310,
+  "rpm_downloads": 3764,
+  "standalone_binary_downloads": 2038,
+  "metadata_downloads": 6200,
+  "all_release_asset_downloads": 21138,
   "per_platform": {
     "Ubuntu 22.04": 1472,
-    "Ubuntu 24.04": 3409,
-    "Ubuntu 26.04": 578,
-    "Debian 12": 1494,
+    "Ubuntu 24.04": 3417,
+    "Ubuntu 26.04": 579,
+    "Debian 12": 1496,
     "Debian 13": 1346,
-    "EL9": 1908,
+    "EL9": 1909,
     "EL10": 1746,
     "Fedora 42": 54,
     "Fedora 43": 55
@@ -50,12 +50,12 @@
   "assets_scanned": 6980,
   "stars": 9,
   "forks": 2,
-  "open_issues": 12,
+  "open_issues": 17,
   "rolling_14d": {
-    "clones": 2545,
-    "unique_cloners": 146,
-    "views": 413,
-    "unique_visitors": 367
+    "clones": 3712,
+    "unique_cloners": 161,
+    "views": 324,
+    "unique_visitors": 251
   },
   "traffic_auth": "PASS",
   "reconciles": true
