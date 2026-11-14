@@ -154,7 +154,10 @@ nftban_module_scan() {
         # Store in inventory
         NFTBAN_MODULE_INVENTORY["$file"]="${name}|${version}|${module_type}|${created}|${depends}|${owner}|${homepage}|${description}"
 
-    done < <(find "$lib_dir" -type f -name "*.sh" -print0 2>/dev/null || true)
+    # v1.237 (BUG-MODULE-STATUS-LISTS-SHIPPED-TESTS-AS-MODULES): the shipped test suite under
+    # $lib_dir/tests is not a module. Pruning it removes the test scripts from the inventory
+    # (v1.236.2: 472 entries listed as ENABLED modules) and skips reading their meta tags.
+    done < <(find "$lib_dir" -path "$lib_dir/tests" -prune -o -type f -name "*.sh" -print0 2>/dev/null || true)
 }
 
 nftban_module_check_enabled() {

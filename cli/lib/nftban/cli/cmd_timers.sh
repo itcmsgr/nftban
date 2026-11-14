@@ -104,10 +104,22 @@ timer_exists() {
 #   - nftban_timer_next_run(timer) - get next scheduled run
 #   - nftban_service_is_enabled(timer) - check if timer is enabled
 
-# Get timer last trigger time
+# Get timer last trigger time.
+# v1.237 (BUG-CMD-TIMERS-LAST-RUN-SHOWS-NEXT-RUN): this used fields 3-4 of `systemctl list-timers`,
+# which are the NEXT run's time and zone, so "Last run" repeated the next run. It now reads systemd's
+# LastTriggerUSec. "never" when systemd records no trigger; "UNKNOWN" when the query itself fails
+# (an unread value is not "never").
 timer_last_trigger() {
-    local timer="$1"
-    systemctl list-timers "$timer" --all --no-legend 2>/dev/null | awk '{print $3, $4}' || echo "N/A"
+    local timer="$1" last
+    if ! last=$(systemctl show -p LastTriggerUSec --value "$timer" 2>/dev/null); then
+        echo "UNKNOWN"
+        return 0
+    fi
+    if [[ -z "$last" || "$last" == "n/a" || "$last" == "0" ]]; then
+        echo "never"
+    else
+        echo "$last"
+    fi
 }
 
 # =============================================================================
@@ -208,7 +220,7 @@ cmd_timers_status() {
             local last_trigger
             last_trigger=$(timer_last_trigger "$timer")
             echo "     Next run:    $next_run"
-            [[ "$last_trigger" != "N/A" && "$last_trigger" != "n/a" ]] && echo "     Last run:    $last_trigger" || true
+            echo "     Last run:    $last_trigger"
         fi
 
         echo ""
