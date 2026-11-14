@@ -96,12 +96,13 @@ nftban_cmd_rbl_help() {
     # Show RBL command help
 
     # v1.220.3 (BUG-RBL-HELP-STALE-VERSION): render the real running version in
-    # the banner instead of the frozen literal "v1.0.0". The body stays a quoted
-    # heredoc so ${NFTBAN_LOG_DIR} etc. remain literal documentation.
+    # the banner instead of the frozen literal "v1.0.0".
+    # v1.237 (BUG-CLI-HELP-PRINTS-LITERAL-NFTBAN_LOG_DIR): the body is an UNQUOTED heredoc so
+    # ${NFTBAN_LOG_DIR} prints the resolved path. Other $, ` and \ in the body are escaped.
     printf '╔══════════════════════════════════════════════════════════════════╗\n'
     printf '║%-66s║\n' "         NFTBan v${NFTBAN_VERSION:-?} - RBL Monitoring"
     printf '╚══════════════════════════════════════════════════════════════════╝\n'
-    cat <<'EOF'
+    cat <<EOF
 
 USAGE:
   nftban rbl <subcommand> [options]
@@ -198,7 +199,7 @@ CACHE LOCATION:
 PERFORMANCE:
   Parallel DNS queries (default): seconds for the configured providers
   Sequential DNS queries: minutes for the configured providers
-  (see `nftban rbl list` for the effective provider set)
+  (see \`nftban rbl list\` for the effective provider set)
 
 For more information: https://nftban.com/docs/rbl
 EOF

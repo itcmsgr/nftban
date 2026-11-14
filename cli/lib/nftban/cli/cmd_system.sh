@@ -667,7 +667,7 @@ nftban_cmd_system() {
 }
 
 _nftban_system_help() {
-    cat <<'EOF'
+    cat <<EOF
 NFTBan Service Control
 
 USAGE:

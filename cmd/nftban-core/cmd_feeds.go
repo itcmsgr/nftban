@@ -552,7 +552,7 @@ func cmdFeedsEnable(configPath, feedName string, enable bool) error {
 	// Check if feed exists in config (URL must be defined in feeds.conf)
 	urlVar := fmt.Sprintf("FEED_%s_URL", feedNameUpper)
 	if !strings.Contains(string(content), urlVar) {
-		return fmt.Errorf("feed '%s' not found in config\nAvailable feeds: run 'nftban-core feeds list'", feedName)
+		return fmt.Errorf("feed '%s' not found in config\nAvailable feeds: run 'nftban feeds list'", feedName)
 	}
 
 	// Central config architecture: write to nftban.conf.local (never modify package defaults)

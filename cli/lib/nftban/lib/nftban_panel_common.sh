@@ -460,7 +460,7 @@ _nftban_panel_simple_enable() {
     else
         echo ""
         echo "ERROR: Failed to sync firewall configuration" >&2
-        echo "Try running: nftban-core sync" >&2
+        echo "Try running: nftban sync" >&2
         return 1
     fi
 }

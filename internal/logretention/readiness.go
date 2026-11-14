@@ -74,7 +74,7 @@ type ReadinessOptions struct {
 	Validator    Validator // nil -> DefaultValidator (real logrotate -d)
 }
 
-const readinessRemediation = "run `nftban logs retention status`, then `nftban-core logretention generate install` (or restore the template), validate with `logrotate -d`, then rerun `nftban validate`"
+const readinessRemediation = "run `nftban logs retention status`, then `/usr/lib/nftban/bin/nftban-core logretention generate install` (or restore the template), validate with `logrotate -d`, then rerun `nftban validate`"
 
 func sha256Hex(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }
 

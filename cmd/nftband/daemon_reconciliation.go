@@ -241,7 +241,7 @@ func (d *Daemon) checkRulesetFingerprint() {
 	status, expected, actual, err := rulefp.VerifyLive(d.ctx, rulefp.BaselineFile)
 	switch status {
 	case rulefp.StatusMismatch:
-		log.Printf("[RULEFP] MISMATCH — live ruleset differs from baseline (possible rule injection / chain-policy flip); expected=%s actual=%s (run 'nftban-core verify-rules' to inspect; 'nftban firewall rebuild' to re-baseline a trusted ruleset)", expected, actual)
+		log.Printf("[RULEFP] MISMATCH — live ruleset differs from baseline (possible rule injection / chain-policy flip); expected=%s actual=%s (run '/usr/lib/nftban/bin/nftban-core verify-rules' to inspect; 'nftban firewall rebuild' to re-baseline a trusted ruleset)", expected, actual)
 	case rulefp.StatusNFTUnavailable:
 		log.Printf("[RULEFP] verify skipped during reconcile: %v", err)
 	case rulefp.StatusBaselineMissing, rulefp.StatusOK:
