@@ -106,6 +106,15 @@ func CriticalCoreTimers() []string {
 	return out
 }
 
+// ReconciledTimers returns the timers ReconcileTimers enables and starts (core + optional), in
+// that order. The timer-liveness assertion uses it to name the timers that are not active
+// (v1.237 BUG-INSTALLER-TIMER-LIVENESS-DETAIL-NAMES-ONE-TIMER).
+func ReconciledTimers() []string {
+	out := make([]string, 0, len(coreTimers)+len(optionalTimers))
+	out = append(out, coreTimers...)
+	return append(out, optionalTimers...)
+}
+
 // ReconcileTimers enables and starts all core timers.
 // Controlled by NFTBAN_RECONCILE_CORE_TIMERS in nftban.conf (default: true).
 func ReconcileTimers(exec executor.Executor, log *logging.Logger) {
