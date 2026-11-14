@@ -1734,12 +1734,11 @@ if [ -x "\$NFTBAN_INSTALLER" ]; then
     elif [ "\$INSTALL_MODE" = "upgrade" ] && [ -x /usr/sbin/nftban ] && [ "\$_nftban_switch" != "on" ]; then
         echo "[NFTBan] WARN: v1.235: the NFTBan master switch could not be read: no firewall reload on upgrade (check it, then run: nftban firewall reload)."
     elif [ "\$INSTALL_MODE" = "upgrade" ] && { [ "\${INSTALLER_EXIT:-0}" -le 1 ] || [ "\${INSTALLER_EXIT:-0}" -eq 14 ]; } && [ -x /usr/sbin/nftban ]; then
-        echo "[NFTBan] v1.145: re-applying set-driven SSH rate-limit rule (atomic firewall reload)..."
-        if /usr/sbin/nftban firewall reload --quiet >/dev/null 2>&1; then
-            echo "[NFTBan] v1.145: SSH brute-force rule migrated to @ssh_ports (set-driven)."
-        else
-            echo "[NFTBan] WARN: v1.145 firewall reload did not complete; previous ruleset retained — upgrade continues."
-            echo "[NFTBan] WARN: to finish the migration manually, run: nftban firewall reload"
+        # v1.237 (UX-UPDATE-OUTPUT-SHOWS-LEGACY-V1145-MIGRATION-LINES): the reload itself is unchanged.
+        # The v1.145 progress/success lines printed on every upgrade are dropped; a failure still warns.
+        if ! /usr/sbin/nftban firewall reload --quiet >/dev/null 2>&1; then
+            echo "[NFTBan] WARN: firewall reload after upgrade did not complete; previous ruleset retained — upgrade continues."
+            echo "[NFTBan] WARN: to apply it manually, run: nftban firewall reload"
         fi
     fi
 

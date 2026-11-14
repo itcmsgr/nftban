@@ -58,6 +58,13 @@ CapabilityBoundingSet=CAP_NET_ADMIN
 # Execute unified exporter
 ExecStart=/usr/lib/nftban/exporters/nftban_unified_exporter.sh
 
+# v1.237 (BUG-UPGRADE-INTERRUPTS-EXPORTER-RUN-LEAVES-FAILED-UNIT-UNTIL-NEXT-TIMER): a stop that lands
+# mid-collection (package upgrade, systemctl stop) is not a failure. The script's ERR trap logs
+# "interrupted by signal (rc=143) ... next scheduled run will collect" and exits 143. Without this,
+# the unit stayed `failed` until the next timer run (measured on v1.236.2: ExecMainStatus 143).
+# Real collection failures exit below 128 and still fail the unit.
+SuccessExitStatus=143 SIGTERM
+
 # Resource limits (prevent runaway)
 CPUQuota=15%
 MemoryMax=128M
