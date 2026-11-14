@@ -595,15 +595,20 @@ nftban_cmd_metrics() {
     local subcommand="${1:-status}"
     shift || true
 
-    # Show banner
-    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
-        # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
-        if [[ $(type -t nftban_banner) == "function" ]]; then
-            nftban_banner
+    # Show banner — not for machine output.
+    # v1.237 (BUG-CLI-BANNER-CONTRACT-INCONSISTENT-AND-MACHINE-OUTPUT-CONTAMINATED, scoped to the
+    # confirmed case only): `evidence-json` stdout must be the JSON alone; the banner and the blank
+    # line before it made `| jq` fail (confirmed on v1.236.2). The wider banner contract is unchanged.
+    if [[ "$subcommand" != "evidence-json" ]]; then
+        if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
+            # shellcheck source=/dev/null
+            source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" || return 1
+            if [[ $(type -t nftban_banner) == "function" ]]; then
+                nftban_banner
+            fi
         fi
+        echo ""
     fi
-    echo ""
 
     case "$subcommand" in
         evidence)
