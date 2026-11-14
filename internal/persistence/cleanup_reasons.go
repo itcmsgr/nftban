@@ -84,28 +84,75 @@ func readIPs(path string) ([]string, error) {
 	return ips, sc.Err()
 }
 
-// RemoveIPFromSourceIf removes ip from the ONE reason file of source, holding that file's sibling lock
-// (the boundary PersistBan uses) for the whole re-check + rewrite. recheck runs under the lock,
-// immediately before removal; if it returns false, nothing is changed and its reason is returned.
-// Every other reason file of the IP is left untouched (per-reason removal, design §0.4).
-// The rewrite is the existing atomic temp+rename; an interruption leaves the file either unchanged
-// or without the line, never partial.
-func RemoveIPFromSourceIf(configDir, ip, source string, recheck func() (bool, string)) (removed bool, skip string, err error) {
-	name, ok := FileForSource(source)
-	if !ok {
-		return false, "", fmt.Errorf("unknown source %q: no reason file", source)
+// LockAllReasons takes the sibling lock of EVERY known reason file, in KnownSources order (a fixed
+// order, so two holders cannot deadlock). This is the shared write boundary of the cleanup repair
+// (owner condition 2026-11-14): eligibility, protection and the remaining reasons are re-validated, and
+// the removal is done, while no reason file can change. PersistBan on any reason file waits until
+// unlock. While holding the set, the caller must use only the *Locked functions (a second flock on
+// another descriptor of the same lockfile would block on itself).
+func LockAllReasons(configDir string) (func(), error) {
+	dir := filepath.Join(configDir, "blacklist.d")
+	if err := os.MkdirAll(dir, 0750); err != nil {
+		return nil, fmt.Errorf("failed to create blacklist.d: %w", err)
 	}
-	path := filepath.Join(configDir, "blacklist.d", name)
-	unlock, err := lockSibling(path)
-	if err != nil {
-		return false, "", err
-	}
-	defer unlock()
-	if recheck != nil {
-		if allowed, why := recheck(); !allowed {
-			return false, why, nil
+	var unlocks []func()
+	release := func() {
+		for i := len(unlocks) - 1; i >= 0; i-- {
+			unlocks[i]()
 		}
 	}
-	removed, err = removeIPFromFileLocked(path, ip)
-	return removed, "", err
+	for _, src := range KnownSources() {
+		name, _ := FileForSource(src)
+		u, err := lockSibling(filepath.Join(dir, name))
+		if err != nil {
+			release()
+			return nil, err
+		}
+		unlocks = append(unlocks, u)
+	}
+	return release, nil
+}
+
+// WithAllReasonLocks runs fn while holding LockAllReasons: the shared write boundary for tracking
+// updates (TrackPermanentBan / protect / unprotect / cleanup), so a concurrent protect or new reason
+// is serialized with a cleanup re-check and removal. fn must not call PersistBan / UnpersistBan.
+func WithAllReasonLocks(configDir string, fn func() error) error {
+	unlock, err := LockAllReasons(configDir)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return fn()
+}
+
+// ReasonsForIP returns the sorted sources whose reason file holds ip.
+func ReasonsForIP(configDir, ip string) ([]string, error) {
+	dir := filepath.Join(configDir, "blacklist.d")
+	var out []string
+	for _, src := range KnownSources() {
+		name, _ := FileForSource(src)
+		ips, err := readIPs(filepath.Join(dir, name))
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", name, err)
+		}
+		for _, x := range ips {
+			if x == ip {
+				out = append(out, src)
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
+// RemoveIPFromSourceLocked removes ip from the ONE reason file of source. The caller holds
+// LockAllReasons. Every other reason file is untouched (per-reason removal, design §0.4). The rewrite
+// is the existing atomic temp+rename: an interruption leaves the file unchanged or without the line.
+// An unknown source is an error, never mapped to the manual file.
+func RemoveIPFromSourceLocked(configDir, ip, source string) (bool, error) {
+	name, ok := FileForSource(source)
+	if !ok {
+		return false, fmt.Errorf("unknown source %q: no reason file", source)
+	}
+	return removeIPFromFileLocked(filepath.Join(configDir, "blacklist.d", name), ip)
 }

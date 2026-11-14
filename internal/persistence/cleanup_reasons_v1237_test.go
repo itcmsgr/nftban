@@ -3,7 +3,7 @@
 // meta:name="persistence_cleanup_reasons_v1237_test"
 // meta:type="test"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-// meta:description="v1.237 cleanup repair: ReasonsForAll reports every reason file holding an IP; RemoveIPFromSourceIf removes the IP from exactly one reason file, keeps every other reason, honours a re-check that refuses under the lock, and uses the PersistBan sibling lock (removal and persist exclude each other). Addresses are RFC 5737 documentation ranges written directly into fixture files (in-memory/tempdir test; no traffic, no firewall)."
+// meta:description="v1.237 cleanup repair: ReasonsForAll / ReasonsForIP report every reason file holding an IP; RemoveIPFromSourceLocked removes the IP from exactly one reason file and keeps every other reason; LockAllReasons holds the PersistBan sibling lock of every reason file (a concurrent writer waits) and releases them all; removeIPFromFile uses the same sibling lock. In-memory/tempdir test with RFC 5737 documentation addresses written directly into fixture files; no traffic, no firewall."
 // meta:inventory.privileges="none"
 
 package persistence
@@ -13,8 +13,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
-	"sync"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -52,15 +50,23 @@ func TestReasonsForAll_EveryReasonFile(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("reasons = %v, want %v", got, want)
 	}
+	if r, _ := ReasonsForIP(d, "192.0.2.10"); !reflect.DeepEqual(r, []string{"manual", "persistent"}) {
+		t.Fatalf("ReasonsForIP = %v", r)
+	}
 }
 
-func TestRemoveIPFromSourceIf_OnlyThatReason(t *testing.T) {
+func TestRemoveIPFromSourceLocked_OnlyThatReason(t *testing.T) {
 	d := t.TempDir()
 	man := writeReasonFile(t, d, "manual", "192.0.2.10  # operator")
 	per := writeReasonFile(t, d, "persistent", "192.0.2.10  # escalated", "198.51.100.20")
-	removed, skip, err := RemoveIPFromSourceIf(d, "192.0.2.10", "persistent", func() (bool, string) { return true, "" })
-	if err != nil || !removed || skip != "" {
-		t.Fatalf("removed=%v skip=%q err=%v", removed, skip, err)
+	unlock, err := LockAllReasons(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	removed, err := RemoveIPFromSourceLocked(d, "192.0.2.10", "persistent")
+	unlock()
+	if err != nil || !removed {
+		t.Fatalf("removed=%v err=%v", removed, err)
 	}
 	pb, _ := os.ReadFile(per)
 	mb, _ := os.ReadFile(man)
@@ -72,51 +78,65 @@ func TestRemoveIPFromSourceIf_OnlyThatReason(t *testing.T) {
 	}
 }
 
-func TestRemoveIPFromSourceIf_RecheckRefusesUnderLock(t *testing.T) {
-	d := t.TempDir()
-	per := writeReasonFile(t, d, "persistent", "198.51.100.20")
-	removed, skip, err := RemoveIPFromSourceIf(d, "198.51.100.20", "persistent", func() (bool, string) { return false, "protected" })
-	if err != nil || removed || skip != "protected" {
-		t.Fatalf("removed=%v skip=%q err=%v", removed, skip, err)
-	}
-	if b, _ := os.ReadFile(per); !strings.Contains(string(b), "198.51.100.20") {
-		t.Errorf("a refused re-check must leave the reason in place")
-	}
-}
-
-func TestRemoveIPFromSourceIf_UnknownSourceNotGuessed(t *testing.T) {
-	if _, _, err := RemoveIPFromSourceIf(t.TempDir(), "198.51.100.20", "feeds", nil); err == nil {
+func TestRemoveIPFromSourceLocked_UnknownSourceNotGuessed(t *testing.T) {
+	if _, err := RemoveIPFromSourceLocked(t.TempDir(), "198.51.100.20", "feeds"); err == nil {
 		t.Fatal("an unknown source must be an error, never mapped to the manual file")
 	}
 }
 
-// Removal holds the same sibling lock as PersistBan: while another holder has it, removal waits.
-func TestRemoveIPFromSourceIf_UsesPersistBanSiblingLock(t *testing.T) {
+// LockAllReasons holds the PersistBan sibling lock of every reason file: a writer on ANY of them waits.
+func TestLockAllReasons_ExcludesWritersOnEveryReasonFile(t *testing.T) {
 	d := t.TempDir()
-	per := writeReasonFile(t, d, "persistent", "198.51.100.20")
-	lf, err := os.OpenFile(per+".lock", os.O_RDWR|os.O_CREATE, 0o600)
+	unlock, err := LockAllReasons(d)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lf.Close()
-	if err := syscall.Flock(int(lf.Fd()), syscall.LOCK_EX); err != nil {
+	for _, src := range KnownSources() {
+		name, _ := FileForSource(src)
+		got := make(chan struct{})
+		go func(p string) {
+			u, err := lockSibling(p) // the same lockfile PersistBan / removeIPFromFile take
+			if err == nil {
+				u()
+			}
+			close(got)
+		}(filepath.Join(d, "blacklist.d", name))
+		select {
+		case <-got:
+			t.Fatalf("%s: a writer got the lock while LockAllReasons held it", name)
+		case <-time.After(150 * time.Millisecond):
+		}
+		_ = got
+	}
+	unlock()
+	// after release every lock is obtainable again
+	for _, src := range KnownSources() {
+		name, _ := FileForSource(src)
+		u, err := lockSibling(filepath.Join(d, "blacklist.d", name))
+		if err != nil {
+			t.Fatalf("%s: lock not released: %v", name, err)
+		}
+		u()
+	}
+}
+
+// removeIPFromFile (UnpersistBan) now waits for the PersistBan sibling lock.
+func TestRemoveIPFromFile_UsesSiblingLock(t *testing.T) {
+	d := t.TempDir()
+	per := writeReasonFile(t, d, "persistent", "198.51.100.20")
+	u, err := lockSibling(per)
+	if err != nil {
 		t.Fatal(err)
 	}
-	var wg sync.WaitGroup
 	done := make(chan struct{})
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		_, _, _ = RemoveIPFromSourceIf(d, "198.51.100.20", "persistent", nil)
-		close(done)
-	}()
+	go func() { _, _ = removeIPFromFile(per, "198.51.100.20"); close(done) }()
 	select {
 	case <-done:
-		t.Fatal("removal proceeded while the PersistBan sibling lock was held")
+		t.Fatal("removeIPFromFile proceeded while the sibling lock was held")
 	case <-time.After(300 * time.Millisecond):
 	}
-	_ = syscall.Flock(int(lf.Fd()), syscall.LOCK_UN)
-	wg.Wait()
+	u()
+	<-done
 	if b, _ := os.ReadFile(per); strings.Contains(string(b), "198.51.100.20") {
 		t.Errorf("removal did not complete after the lock was released")
 	}

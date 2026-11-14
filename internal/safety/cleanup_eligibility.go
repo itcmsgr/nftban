@@ -10,6 +10,7 @@ package safety
 
 import (
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -30,8 +31,16 @@ const (
 	ExclSourceMismatch = "ambiguous-provenance"       // tracked source differs from the reason file (§0.1)
 	ExclBulkTimestamp  = "unreliable-age-bulk-window" // added_at inside a detected bulk timestamp window (§0.2)
 	ExclTooYoung       = "younger-than-threshold"
-	ExclNoReasonFile   = "tracking-without-reason" // tracked but no reason file holds it (reported; §0.4 recovery)
+	ExclNoReasonFile   = "tracking-without-reason" // tracked but no reason file holds it (reported only)
+	// v1.237 owner condition 2026-11-14: trust is established positively, never by the bulk heuristic.
+	ExclLegacyUnverified = "legacy-age-unverified" // no AgeSourceBanTime: provenance/age not established
+	ExclRolloutRewrite   = "rollout-rewrite"       // documented re-persist (dns1 2026-10-17), explicit
 )
+
+// RolloutRewriteReasonPrefix marks entries re-persisted by the v1.235.1 rollout harness (dns1
+// 2026-10-17, 344 entries; design §5). Their age and stored source were overwritten: always ineligible,
+// independent of the bulk-window heuristic.
+const RolloutRewriteReasonPrefix = "v1235.1-rollout-preserve"
 
 // CleanupDecision is the outcome for one (IP, reason source). For tracking-only entries Source is "".
 type CleanupDecision struct {
@@ -40,6 +49,9 @@ type CleanupDecision struct {
 	AddedAt   time.Time // zero when unknown
 	Eligible  bool
 	Exclusion string // empty when Eligible
+	// FinishPending: an earlier cleanup marked this entry and removed its last durable reason, but did
+	// not finish (kernel delete / tracking removal). The next run finishes it (recovery, §0.4).
+	FinishPending bool
 }
 
 // TimeWindow is a closed interval of detected bulk timestamps.
@@ -120,8 +132,12 @@ func EvaluateCleanup(reasons map[string][]string, state *PermanentBansState, now
 				d.Exclusion = ExclManualReason
 			case tr != nil && tr.Protected:
 				d.Exclusion = ExclProtected
+			case tr != nil && strings.HasPrefix(tr.Reason, RolloutRewriteReasonPrefix):
+				d.Exclusion = ExclRolloutRewrite
 			case tr == nil || tr.AddedAt.IsZero():
 				d.Exclusion = ExclNotTracked
+			case tr.AgeSource != AgeSourceBanTime:
+				d.Exclusion = ExclLegacyUnverified
 			case tr.Source != "" && tr.Source != s:
 				d.Exclusion = ExclSourceMismatch
 			case inAny(windows, tr.AddedAt):
@@ -136,7 +152,11 @@ func EvaluateCleanup(reasons map[string][]string, state *PermanentBansState, now
 	}
 	for ip, tr := range state.Bans {
 		if len(reasons[ip]) == 0 {
-			out = append(out, CleanupDecision{IP: ip, AddedAt: tr.AddedAt, Exclusion: ExclNoReasonFile})
+			d := CleanupDecision{IP: ip, Source: tr.CleanupPending, AddedAt: tr.AddedAt, Exclusion: ExclNoReasonFile}
+			if tr.CleanupPending != "" && !tr.Protected {
+				d.FinishPending = true // only a cleanup-marked entry is ever finished; others are reported
+			}
+			out = append(out, d)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
