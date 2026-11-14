@@ -897,10 +897,13 @@ nftban_nft_count_set_with_timeout() {
     local table="${2:-nftban}"
     local set="${3:-blacklist_ipv4}"
 
-    # ⛔ This counts LINES containing the word "timeout" in the text dump, which
-    #    is a lower bound on timeout-wrapped elements and says nothing at all
-    #    about plain elements. It is retained only because the perm/temp split
-    #    has no cheaper source; do not promote it to a membership count.
+    # ⛔ Not a membership count: it counts timed elements only, for the perm/temp split.
+    #
+    # v1.237 (BUG-STATS-TIMED-MANUAL-BANS-COUNTED-AS-PERMANENT): this used to count LINES containing
+    # "timeout". nft prints several elements per line ("a timeout 1h expires …, b timeout 1d …"), and
+    # the "flags …timeout" declaration line matched too. It now counts each element's "timeout <n>"
+    # from the `elements =` line on, so a declaration cannot match. Text, not `nft -j`: this streams,
+    # and the exporter (MemoryMax=128M) reads the large feed interval sets with it every cycle.
     #
     # v1.231.0: separate "nft could not be read" from "no timeout elements".
     # The old form ran the read inside a pipeline whose exit status belonged to
@@ -910,7 +913,7 @@ nftban_nft_count_set_with_timeout() {
     local _raw _twc
     _raw=$(nft list set "$family" "$table" "$set" 2>/dev/null) || { echo "UNKNOWN"; return 0; }
     nftban_has_non_whitespace "$_raw" || { echo "UNKNOWN"; return 0; }
-    _twc=$(printf '%s\n' "$_raw" | grep -c "timeout" || true)
+    _twc=$(printf '%s\n' "$_raw" | awk '/elements = /{e=1} e{n+=gsub(/timeout [0-9]/, "&")} END{print n+0}')
     # Inline regex, not the helper — per-set primitive, see the note in
     # nftban_nft_count_set_elements.
     [[ "$_twc" =~ ^[0-9]+$ ]] || { echo "UNKNOWN"; return 0; }
