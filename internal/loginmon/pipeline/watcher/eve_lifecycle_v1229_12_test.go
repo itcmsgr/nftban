@@ -229,6 +229,13 @@ func TestPollingWatcher_W01_FingerprintPresentAfterInitialOpenAtEOF(t *testing.T
 	// committed and the sample can only come from open() itself.
 	time.Sleep(300 * time.Millisecond)
 
+	// v1.237 port: stop (Stop waits for the run goroutine) BEFORE reading the watcher's internal
+	// state. Reading w.offset / w.sample while run() still writes them was a data race under -race
+	// (the reader itself is unaffected: these fields are only touched by run()).
+	if err := w.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
 	if w.offset <= 0 {
 		t.Fatalf("precondition failed: open-at-EOF should leave a non-zero offset, got %d", w.offset)
 	}
