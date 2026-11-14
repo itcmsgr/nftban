@@ -274,7 +274,10 @@ _nftban_protection_state_validator() {
     if [[ -n "$_NFTBAN_VALIDATOR_CACHE" ]]; then
         _json="$_NFTBAN_VALIDATOR_CACHE"
     else
-        _json=$("$_NFTBAN_VALIDATOR_BIN" --json 2>/dev/null) || _exit_code=$?
+        # v1.237 (BUG-STATUS-BRIEF-NONROOT-OPERATOR-REPORTS-DOWN-WHILE-PROTECTED): routed like
+        # `nftban firewall validate` — a non-root operator goes through the validate unit instead of
+        # running the validator without CAP_NET_ADMIN (which read DOWN while protected).
+        _json=$(nftban_validator_json_routed) || _exit_code=$?
     fi
 
     if [[ -z "$_json" ]]; then
@@ -478,7 +481,7 @@ nftban_cmd_status() {
 
     # v1.83 Win-3: Pre-populate validator cache ONCE before any rendering.
     if [[ -x "$_NFTBAN_VALIDATOR_BIN" && -z "$_NFTBAN_VALIDATOR_CACHE" ]]; then
-        _NFTBAN_VALIDATOR_CACHE=$("$_NFTBAN_VALIDATOR_BIN" --json 2>/dev/null || true)
+        _NFTBAN_VALIDATOR_CACHE=$(nftban_validator_json_routed || true)   # v1.237: same routing
     fi
 
     # v1.83 Win-2: Batch-prefetch all systemctl unit states in one call.
