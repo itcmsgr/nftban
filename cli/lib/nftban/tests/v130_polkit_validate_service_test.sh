@@ -64,6 +64,11 @@ _unit_file="${_repo_root}/install/systemd/nftban-firewall-validate.service"
 _polkit_file="${_repo_root}/packaging/polkit-1/rules.d/10-nftban-systemd.rules"
 _install_list="${_repo_root}/install/packaging/systemd/nftban-systemd-install.list"
 _firewall_cli="${NFTBAN_LIB_DIR}/cli/cmd_firewall.sh"
+# v1.237: the non-root routing moved unchanged from cmd_firewall.sh into the shared
+# nftban_validator_json_routed (also used by `nftban status`); section D checks it there and
+# checks that both commands call it.
+_routing_src="${NFTBAN_LIB_DIR}/lib/nftban_service_control.sh"
+_status_cli="${NFTBAN_LIB_DIR}/cli/cmd_status.sh"
 _validator_go="${_repo_root}/internal/validator/validator.go"
 
 echo "==============================================================================="
@@ -194,19 +199,24 @@ fi
 # ----------------------------------------------------------------------------
 # D: CLI wrapper routes non-root via systemctl
 # ----------------------------------------------------------------------------
-echo "--- D: cmd_firewall.sh routing ---"
+echo "--- D: validator routing (nftban_validator_json_routed) ---"
 
-grep -qE '_route_via_systemd' "$_firewall_cli" \
-    && _t_assert "D1: cmd_firewall.sh has _route_via_systemd branch" 0 \
-    || _t_assert "D1: cmd_firewall.sh has _route_via_systemd branch" 1
+if grep -qE '^nftban_validator_json_routed\(\)' "$_routing_src" \
+   && grep -qE '^\s+nftban_validator_json_routed\s*$' "$_firewall_cli" \
+   && [[ $(grep -c 'nftban_validator_json_routed' "$_status_cli") -ge 2 ]] \
+   && ! grep -qE '"\$_NFTBAN_VALIDATOR_BIN" --json' "$_status_cli"; then
+    _t_assert "D1: one routing authority; cmd_firewall.sh and cmd_status.sh both call it (no direct validator run in status)" 0
+else
+    _t_assert "D1: one routing authority; cmd_firewall.sh and cmd_status.sh both call it (no direct validator run in status)" 1
+fi
 
-grep -qE 'systemctl start --wait nftban-firewall-validate\.service' "$_firewall_cli" \
-    && _t_assert "D2: cmd_firewall.sh calls 'systemctl start --wait nftban-firewall-validate.service'" 0 \
-    || _t_assert "D2: cmd_firewall.sh calls 'systemctl start --wait nftban-firewall-validate.service'" 1
+grep -qE 'systemctl start --wait nftban-firewall-validate\.service' "$_routing_src" \
+    && _t_assert "D2: the routing calls 'systemctl start --wait nftban-firewall-validate.service'" 0 \
+    || _t_assert "D2: the routing calls 'systemctl start --wait nftban-firewall-validate.service'" 1
 
-grep -qE 'EUID -ne 0' "$_firewall_cli" \
-    && _t_assert "D3: cmd_firewall.sh gates the systemd route on \$EUID -ne 0" 0 \
-    || _t_assert "D3: cmd_firewall.sh gates the systemd route on \$EUID -ne 0" 1
+grep -qE 'EUID -ne 0' "$_routing_src" \
+    && _t_assert "D3: the routing gates the systemd route on \$EUID -ne 0" 0 \
+    || _t_assert "D3: the routing gates the systemd route on \$EUID -ne 0" 1
 
 # V131.1 D13: the PRIMARY validator-output source is now the group-readable
 # /run/nftban/firewall-validate/last.json file the ExecStart wrapper writes,
@@ -214,15 +224,15 @@ grep -qE 'EUID -ne 0' "$_firewall_cli" \
 # journal without systemd-journal/adm membership). A single best-effort
 # journalctl call remains ONLY as a last-resort root fallback if the file is
 # empty.
-grep -qE 'firewall-validate/last\.json' "$_firewall_cli" \
-    && _t_assert "D4 (D13): cmd_firewall.sh reads the validator JSON from the /run/nftban last.json file" 0 \
-    || _t_assert "D4 (D13): cmd_firewall.sh reads the validator JSON from the /run/nftban last.json file" 1
+grep -qE 'nftban-firewall-validate\}?/last\.json' "$_routing_src" \
+    && _t_assert "D4 (D13): the routing reads the validator JSON from the last.json file" 0 \
+    || _t_assert "D4 (D13): the routing reads the validator JSON from the last.json file" 1
 
 # Fallback path: if the unit isn't installed (pre-v1.130 host), the CLI still
 # falls through to direct invocation (which surfaces the D6.B Remediation).
-grep -qE 'systemctl cat nftban-firewall-validate\.service' "$_firewall_cli" \
-    && _t_assert "D5: cmd_firewall.sh checks unit existence (systemctl cat) before routing" 0 \
-    || _t_assert "D5: cmd_firewall.sh checks unit existence (systemctl cat) before routing" 1
+grep -qE 'systemctl cat nftban-firewall-validate\.service' "$_routing_src" \
+    && _t_assert "D5: the routing checks unit existence (systemctl cat) before routing" 0 \
+    || _t_assert "D5: the routing checks unit existence (systemctl cat) before routing" 1
 
 # V131.1 D13: the D10 journalctl retry loop was superseded. journald read is
 # unreadable for the non-root nftban-group operators Option C exists to serve
@@ -230,19 +240,21 @@ grep -qE 'systemctl cat nftban-firewall-validate\.service' "$_firewall_cli" \
 # file the ExecStart wrapper writes. The file read is the contract; the journal
 # call is demoted to a single best-effort root-only fallback.
 
-# D6: the CLI honors the NFTBAN_RUN_DIR override when resolving the run file
-# (so the read path is the same one the wrapper writes, and tests can redirect
-# it on a dev host).
-if grep -qE 'NFTBAN_RUN_DIR' "$_firewall_cli"; then
-    _t_assert "D6 (D13): cmd_firewall.sh resolves the run file under \${NFTBAN_RUN_DIR:-/run/nftban}" 0
+# D6: the routing honors the same override the wrapper writes to (NFTBAN_VALIDATE_DIR), so the
+# read path is the one the wrapper writes and tests can redirect it on a dev host.
+# v1.237: this checked NFTBAN_RUN_DIR in cmd_firewall.sh, which the routing never used (it passed
+# because that name appears elsewhere in the file); the wrapper's and the routing's variable is
+# NFTBAN_VALIDATE_DIR.
+if grep -qE 'NFTBAN_VALIDATE_DIR' "$_routing_src"; then
+    _t_assert "D6 (D13): the routing resolves the run file under \${NFTBAN_VALIDATE_DIR:-/run/nftban-firewall-validate}" 0
 else
-    _t_assert "D6 (D13): cmd_firewall.sh resolves the run file under \${NFTBAN_RUN_DIR:-/run/nftban}" 1
+    _t_assert "D6 (D13): the routing resolves the run file under \${NFTBAN_VALIDATE_DIR:-/run/nftban-firewall-validate}" 1
 fi
 
 # D7: the run file is read AFTER the systemctl start --wait (the wrapper writes
 # it during that run). Verify the file-read appears after the start line.
-_start_ln=$(grep -nE 'systemctl start --wait nftban-firewall-validate\.service' "$_firewall_cli" | head -1 | cut -d: -f1)
-_read_ln=$(grep -nE 'firewall-validate/last\.json' "$_firewall_cli" | head -1 | cut -d: -f1)
+_start_ln=$(grep -nE 'systemctl start --wait nftban-firewall-validate\.service' "$_routing_src" | head -1 | cut -d: -f1)
+_read_ln=$(grep -nE 'cat "\$_rf"' "$_routing_src" | head -1 | cut -d: -f1)
 if [[ -n "$_start_ln" && -n "$_read_ln" && "$_read_ln" -gt "$_start_ln" ]]; then
     _t_assert "D7 (D13): the last.json read happens after 'systemctl start --wait'" 0
 else
