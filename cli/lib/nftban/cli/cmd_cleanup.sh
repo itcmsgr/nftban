@@ -180,10 +180,11 @@ _cleanup_dry_run() {
         return 1
     fi
 
-    local success ips_json
+    local success ips_json excluded_json='{}'
     if command -v jq &>/dev/null; then
         success=$(echo "$response" | jq -r '.success // false')
         ips_json=$(echo "$response" | jq -r '.data.ips // []')
+        excluded_json=$(echo "$response" | jq -c '.data.excluded // {}')
     else
         if [[ "$response" == *'"success":true'* ]]; then
             success="true"
@@ -195,7 +196,7 @@ _cleanup_dry_run() {
 
     if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
         if [[ "$success" == "true" ]]; then
-            json_output "true" "{\"mode\":\"dry-run\",\"ips\":$ips_json}"
+            json_output "true" "{\"mode\":\"dry-run\",\"ips\":$ips_json,\"excluded\":$excluded_json}"
         else
             json_output "false" '{}' "Failed to get evictable bans"
         fi
