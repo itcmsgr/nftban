@@ -61,7 +61,11 @@ jobs:
 
       - name: Open PR with refreshed suppressions
         if: steps.refresh.outputs.no_changes == 'false'
-        uses: peter-evans/create-pull-request@v6
+        # v1.237 (SEC-CI-THIRD-PARTY-ACTION-MUTABLE-TAG-WITH-CONTENTS-WRITE): pinned to the commit `@v6`
+        # resolved to on 2026-11-14 (v6.1.0). This job holds contents: write, which can push a v* tag, and a
+        # v* tag triggers release.yml (draft + signed SLSA provenance). A mutable third-party tag must not
+        # hold that token.
+        uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c # v6.1.0
         with:
           commit-message: |
             chore(security): refresh OSV stdlib suppress list
