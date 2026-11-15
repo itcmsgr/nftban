@@ -52,8 +52,13 @@ if grep -qE 'os\.WriteFile\(c\.snapshotPath' "$CACHE"; then no "cache.go still r
 
 echo "=== §4.3a-c safety state files are atomic ==="
 for v in ProtectionStateFile FilterStateFile PermanentBansFile; do
-  if grep -qE "SafeWriteFile\($v" "$LIMITS"; then ok "limits.go $v → SafeWriteFile"; else no "limits.go $v not SafeWriteFile"; fi
-  if grep -qE "os\.WriteFile\($v" "$LIMITS"; then no "limits.go still raw os.WriteFile($v)"; fi
+  w="$v"
+  # v1.237 (cleanup repair): the tracking file is written through permanentBansPath, a variable
+  # initialised to PermanentBansFile that only tests redirect. The guard follows that indirection
+  # and requires the initialiser, so production still writes PermanentBansFile atomically.
+  if [[ "$v" == PermanentBansFile ]] && grep -qE '^var permanentBansPath = PermanentBansFile$' "$LIMITS"; then w=permanentBansPath; fi
+  if grep -qE "SafeWriteFile\($w" "$LIMITS"; then ok "limits.go $v → SafeWriteFile (via $w)"; else no "limits.go $v not SafeWriteFile"; fi
+  if grep -qE "os\.WriteFile\($w|os\.WriteFile\($v" "$LIMITS"; then no "limits.go still raw os.WriteFile($v)"; fi
 done
 
 echo "=== §4.3d panel state file is atomic (no streamed os.Create) ==="
