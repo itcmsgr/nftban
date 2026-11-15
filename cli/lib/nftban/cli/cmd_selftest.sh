@@ -666,7 +666,7 @@ _verify_geoban() {
         printf "     ✅ PASS: Blacklist has %'d entries (includes country blocks)\n" "$blacklist_count"
     else
         echo "     ⚠️  WARN: Blacklist is empty - country blocks may not be loaded"
-        echo "              Run: nftban-core sync"
+        echo "              Run: nftban sync"
     fi
 
     echo ""

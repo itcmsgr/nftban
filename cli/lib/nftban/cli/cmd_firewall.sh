@@ -1925,70 +1925,16 @@ firewall_validate() {
     # sudo. If the unit is missing (e.g. partially-upgraded host pre-v1.130),
     # fall through to direct invocation (which will surface the permission
     # error with the v1.129 PR-C D6.B polkit-aware Remediation).
-    local _route_via_systemd=false
-    if [[ $EUID -ne 0 ]] \
-       && command -v systemctl >/dev/null 2>&1 \
-       && systemctl cat nftban-firewall-validate.service &>/dev/null; then
-        _route_via_systemd=true
-    fi
-
-    # Helper: emit validator JSON to stdout, set _validator_exit to the
-    # validator's exit code. Uses direct invocation if root; uses
-    # systemctl-then-journal if non-root with the service installed.
+    #
+    # v1.237: the routing lives in lib/nftban_service_control.sh nftban_validator_json_routed (moved
+    # there unchanged), the single authority shared with `nftban status`
+    # (BUG-STATUS-BRIEF-NONROOT-OPERATOR-REPORTS-DOWN-WHILE-PROTECTED).
+    # Helper: emit validator JSON to stdout, set _validator_exit to the validator's exit code.
     _invoke_validator_json() {
         _validator_exit=0
-        if [[ "$_route_via_systemd" == "true" ]]; then
-            local _ts_start
-            _ts_start=$(date +%s)
-            # --wait makes systemctl block until the oneshot finishes; the
-            # exit code reflects whether the unit could be started, not the
-            # ExecMainStatus. Fetch the validator's true rc separately.
-            local _es _rf="${NFTBAN_VALIDATE_DIR:-/run/nftban-firewall-validate}/last.json"
-            if ! systemctl start --wait nftban-firewall-validate.service 2>/dev/null; then
-                # v1.237: a oneshot whose validator returns a VERDICT exit code (1=DEGRADED,
-                # 2=DOWN) is reported by systemctl as a failed start, although it ran and wrote
-                # this invocation's result. Falling back to the operator's own direct run turned
-                # every DEGRADED into DOWN (no CAP_NET_ADMIN). Use the unit's result when it ran
-                # now; fall back only when it did not run (e.g. polkit denial).
-                _es=$(systemctl show -p ExecMainStatus --value nftban-firewall-validate.service 2>/dev/null)
-                local _rf_mtime=0
-                _rf_mtime=$(stat -c %Y "$_rf" 2>/dev/null || echo 0)
-                if [[ "$_es" == "1" || "$_es" == "2" ]] && (( _rf_mtime >= _ts_start )); then
-                    _validator_exit=$_es
-                    cat "$_rf" 2>/dev/null
-                    return $_validator_exit
-                fi
-                # Service couldn't even start (e.g. polkit denial on a host
-                # where the user is not in the nftban group). Fall back to
-                # direct invocation so the v1.129 D6.B Remediation surfaces.
-                "$_go_validator" --json 2>/dev/null
-                _validator_exit=$?
-                return $_validator_exit
-            fi
-            _es=$(systemctl show -p ExecMainStatus --value nftban-firewall-validate.service 2>/dev/null)
-            [[ -n "$_es" ]] && _validator_exit=$_es
-            # V131.1 D13 fix: read the validator JSON from the group-readable
-            # file the ExecStart wrapper (firewall_validate_run.sh) writes,
-            # NOT from the unit journal. A non-root nftban-group operator (the
-            # whole point of Option C) cannot read this unit's journal without
-            # systemd-journal/adm membership, so the old journalctl read (D10)
-            # returned empty for exactly the users this service exists to serve.
-            # The wrapper writes /run/nftban-firewall-validate/last.json with
-            # chgrp nftban + chmod 0640 — that file is the PRIMARY source now.
-            local _runfile="${NFTBAN_VALIDATE_DIR:-/run/nftban-firewall-validate}/last.json"
-            local _output=""
-            _output=$(cat "$_runfile" 2>/dev/null)
-            # Last-resort fallback ONLY if the file is empty/unreadable (e.g. an
-            # unusual /run on a root invocation): try the journal once so root
-            # still works. Non-root operators rely on the file above.
-            if [[ -z "$_output" ]]; then
-                _output=$(journalctl -u nftban-firewall-validate.service --since "@${_ts_start}" -o cat 2>/dev/null)
-            fi
-            printf '%s' "$_output"
-        else
-            "$_go_validator" --json 2>/dev/null
-            _validator_exit=$?
-        fi
+        nftban_validator_json_routed
+        _validator_exit=$?
+        return $_validator_exit
     }
 
     local validation_result=$VALIDATE_OK

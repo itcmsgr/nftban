@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +40,8 @@ import (
 	"github.com/itcmsgr/nftban/internal/netutil"
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
 	"github.com/itcmsgr/nftban/internal/opqueue"
+	"github.com/itcmsgr/nftban/internal/persistence"
+	"github.com/itcmsgr/nftban/internal/safety"
 	"github.com/itcmsgr/nftban/internal/timeutil"
 	"github.com/itcmsgr/nftban/internal/whitelist"
 	"github.com/itcmsgr/nftban/pkg/ipc"
@@ -455,6 +458,15 @@ func checkPersistentOffender(configDir, ip, filterName string) (bool, error) {
 		reason := fmt.Sprintf(">=%d bans in %s from %s", filterCfg.Threshold, filterCfg.Period, filterName)
 		if err := escalation.AddToPersistentOffenders(cfg.OffendersConf, ip, reason); err != nil {
 			return false, fmt.Errorf("failed to add to persistent offenders: %w", err)
+		}
+		// v1.237 (BUG-PERMANENT-BANS-TRACKING-LIST-NOT-FED-BY-MODULE-PERMANENT-BANS): this escalation is
+		// the ban event, so it is tracked with its ban-time age under the shared reason-file lock set
+		// (same as the daemon's escalation path). Non-fatal: the durable ban is already written.
+		confDir := filepath.Dir(filepath.Dir(cfg.OffendersConf))
+		if err := persistence.WithAllReasonLocks(confDir, func() error {
+			return safety.TrackPermanentBan(ip, reason, "persistent", false)
+		}); err != nil {
+			fmt.Printf("  ⚠️  Warning: persistent offender %s persisted but not tracked: %v\n", ip, err)
 		}
 
 		return true, nil

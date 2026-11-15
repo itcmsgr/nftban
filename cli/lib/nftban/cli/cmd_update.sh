@@ -2050,7 +2050,7 @@ _cmd_update_auto_apply() {
 }
 
 _cmd_update_help() {
-    cat << 'EOF'
+    cat << EOF
 NFTBan Update - Multi-source update system
 
 USAGE:
@@ -2204,12 +2204,12 @@ EXIT CODES:
 SEE ALSO:
     nftban version             # Show current installed NFTBan version
     nftban version --update    # Check GitHub for newer version (read-only;
-                               # equivalent to `nftban update check` for
+                               # equivalent to \`nftban update check\` for
                                # discovery purposes, does not install)
     nftban update check        # Check if an update is available (no changes)
 
 NOTES:
-    --dry-run is NOT supported on `nftban update`. (`nftban ban --dry-run`
+    --dry-run is NOT supported on \`nftban update\`. (\`nftban ban --dry-run\`
     is supported; that asymmetry is intentional — update mutations span
     package-manager transactions where dry-run cannot be safely simulated
     end-to-end.) To preview available versions without installing, run:

@@ -174,12 +174,22 @@ perms_enforce_etc_files() {
         fi
 
         # Fix whitelist.d, blacklist.d, etc.
+        # v1.237: blacklist.d/*.conf.lock are the persistence sibling locks, not config. FHS spec
+        # (file_permissions, /etc/nftban/blacklist.d *.conf.lock): 0600 root:root, writer-owned. They
+        # are excluded from the 0640 root:nftban config mode (group read would let an nftban-group
+        # process take flock(LOCK_EX) on a read-only fd and stall every writer) and restored to the
+        # spec triple in place: chown/chmod keep the inode, so a lock held across the repair still
+        # excludes. Config file permissions are unchanged.
         for subdir in whitelist.d blacklist.d ports.d rules.d patterns.d; do
             if [[ -d "$PERMS_ETC/$subdir" ]]; then
-                perms_run find "$PERMS_ETC/$subdir" -type f -exec chown root:nftban {} \;
-                perms_run find "$PERMS_ETC/$subdir" -type f -exec chmod 0640 {} \;
+                perms_run find "$PERMS_ETC/$subdir" -type f ! -name "*.conf.lock" -exec chown root:nftban {} \;
+                perms_run find "$PERMS_ETC/$subdir" -type f ! -name "*.conf.lock" -exec chmod 0640 {} \;
             fi
         done
+        if [[ -d "$PERMS_ETC/blacklist.d" ]]; then
+            perms_run find "$PERMS_ETC/blacklist.d" -maxdepth 1 -type f -name "*.conf.lock" -exec chown root:root {} \;
+            perms_run find "$PERMS_ETC/blacklist.d" -maxdepth 1 -type f -name "*.conf.lock" -exec chmod 0600 {} \;
+        fi
 
         # Handle .local files (user overrides)
         perms_run find "$PERMS_ETC" -type f -name "*.local" -exec chown root:nftban {} \;

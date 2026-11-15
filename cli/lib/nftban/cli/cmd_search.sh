@@ -705,7 +705,7 @@ _suggest_actions() {
 _nftban_search_help() {
     nftban_banner "search"
 
-    cat <<'HELP'
+    cat <<HELP
 
 USAGE:
     nftban search <ip|port> [--no-interactive]

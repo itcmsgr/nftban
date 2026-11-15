@@ -263,11 +263,42 @@ func UnpersistBan(configDir, ip string) (int, error) {
 	return modified, nil
 }
 
+// lockSibling takes the exclusive flock on the STABLE sibling lockfile `filePath + ".lock"`, the same
+// boundary PersistBan uses (D-UXV-17: the atomic rename replaces the file's inode, so a flock on the
+// file's own fd does not exclude a concurrent writer). Returns the unlock function.
+func lockSibling(filePath string) (func(), error) {
+	lockPath := filePath + ".lock"
+	lockF, err := os.OpenFile(filepath.Clean(lockPath), os.O_RDWR|os.O_CREATE, 0600)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open lock %s: %w", lockPath, err)
+	}
+	// G115: Fd() returns uintptr, but a file descriptor always fits in int.
+	if err := syscall.Flock(int(lockF.Fd()), syscall.LOCK_EX); err != nil { // #nosec G115
+		_ = lockF.Close()
+		return nil, fmt.Errorf("failed to lock %s: %w", lockPath, err)
+	}
+	return func() {
+		_ = syscall.Flock(int(lockF.Fd()), syscall.LOCK_UN) // #nosec G115
+		_ = lockF.Close()
+	}, nil
+}
+
 // removeIPFromFile removes an IP from a single file using atomic rewrite.
-// Uses flock for concurrency + temp+rename for crash safety.
+// v1.237 (cleanup repair, design §0.3): serialized on the same sibling lockfile as PersistBan.
+// It used to flock the file's own fd, which did not exclude a concurrent PersistBan on that file.
 func removeIPFromFile(filePath, ip string) (bool, error) {
-	// Open original file for locking and reading
-	f, err := os.OpenFile(filePath, os.O_RDONLY, 0640)
+	unlock, err := lockSibling(filePath)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+	return removeIPFromFileLocked(filePath, ip)
+}
+
+// removeIPFromFileLocked does the read-filter-rename of removeIPFromFile. The caller holds the
+// file's sibling lock.
+func removeIPFromFileLocked(filePath, ip string) (bool, error) {
+	f, err := os.OpenFile(filepath.Clean(filePath), os.O_RDONLY, 0600) // read-only, no O_CREATE: mode unused
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
@@ -275,14 +306,6 @@ func removeIPFromFile(filePath, ip string) (bool, error) {
 		return false, err
 	}
 	defer f.Close()
-
-	// Acquire exclusive lock on original file
-	// This serializes concurrent access even across processes
-	// G115: f.Fd() returns uintptr, but file descriptors are small positive ints (safe)
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil { // #nosec G115 -: fd always fits in int
-		return false, fmt.Errorf("failed to lock: %w", err)
-	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN) // #nosec G115 -: fd always fits in int
 
 	// Read all lines, filtering out the target IP
 	var lines []string
