@@ -81,6 +81,17 @@ func (d *Daemon) Run() error {
 		return fmt.Errorf("failed to create directories: %w", err)
 	}
 
+	// v1.237 (tracking integrity): the one-time copy of the legacy tracking file to the root-owned
+	// location happens HERE, under the shared reason-file lock set and before any module can ban, so
+	// no concurrent writer can race the migration. Non-fatal: cleanup refuses on its own if the state
+	// is not trusted.
+	if err := persistence.WithAllReasonLocks(d.configDir, func() error {
+		_, lerr := safety.LoadPermanentBans()
+		return lerr
+	}); err != nil {
+		log.Printf("[TRACKING] Warning: tracking state load/migration failed: %v", err)
+	}
+
 	// v1.34.0: Pre-create nft lock file for early operations (LIVE-BUG-1 fix)
 	if _, err := os.OpenFile(nftlock.LockPath, os.O_CREATE|os.O_RDWR, 0640); err != nil { // #nosec G302
 		log.Printf("Warning: could not pre-create nft lock file: %v", err)

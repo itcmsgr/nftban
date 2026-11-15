@@ -161,7 +161,7 @@ Examples:
 Notes:
   - Only permanent bans can be protected
   - Use 'nftban unprotect' to remove protection
-  - Protected bans are tracked in /var/lib/nftban/state/permanent_bans.json
+  - Protected bans are tracked in /var/lib/nftban/permanent_bans.json
 
 See also:
   nftban unprotect <ip>   Remove protection from a ban

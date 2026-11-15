@@ -1512,7 +1512,35 @@ file_permissions:
     owner: nftban
     group: nftban
     recursive: true
-    exclude: "/var/lib/nftban/reports/auditors"
+    # exclude: a path (string) or a list. Each entry excludes the path itself and everything
+    # below it from this sweep (generator: -not -path E -not -path "E/*").
+    exclude:
+      - "/var/lib/nftban/reports/auditors"
+      # v1.237 tracking integrity (entry below): never re-owned to the service account, nor
+      # the atomic-write temps it is renamed from (WriteFileDurable: <dir>/.nftban-safe-*).
+      - "/var/lib/nftban/permanent_bans.json"
+      - "/var/lib/nftban/.nftban-safe-*"
+
+  # v1.237 (owner 2026-11-15, cleanup acceptance condition) — permanent-ban TRACKING STATE.
+  # Cleanup uses it to authorize permanent removal (eligibility age/provenance, protection,
+  # interrupted-removal markers), so the nftban service account must not modify, replace or
+  # unlink it. Location: the root-owned data directory itself (reuse; no new directory).
+  # Parent chain: /var/lib/nftban 0750 root:nftban, /var/lib, /var, / — all root-owned, no
+  # group/other write. File: root:nftban 0640 (status/health read it through the nftban group;
+  # nothing flocks it). Writer-owned (install_enforce:false): internal/safety SavePermanentBans
+  # sets the triple; the permission-repair consumers (nftban_permissions.sh
+  # perms_enforce_var_files, helpers/autoheal.sh) exclude it from the nftban:nftban sweep and
+  # restore this triple in place. Cleanup refuses to act unless the file and every parent pass
+  # the ownership check (internal/safety/tracking_integrity_v1237.go).
+  # Legacy /var/lib/nftban/state/permanent_bans.json (nftban-owned directory): copied once by the
+  # daemon at start, left in place, never read again.
+  - path: /var/lib/nftban
+    artifact_class: state
+    pattern: "permanent_bans.json"
+    mode: "0640"
+    owner: root
+    group: nftban
+    install_enforce: false
 
   # /var/lib/nftban/reports/auditors - auditor access
   - path: /var/lib/nftban/reports/auditors

@@ -850,14 +850,15 @@ PERMS_HEADER
     # install_enforce:false emits no chown/chmod. Absent field = enforced, as before.
     # jq expression (if/then/else, \( ) interpolation): mikefarah yq v4 rejects it, so the
     # spec is converted to JSON and the expression runs in jq, under either yq variant.
+    # v1.237: exclude may be a string or a list; each entry excludes the path and everything below it.
     if ! spec_json | jq -r '.file_permissions[] | select(.install_enforce != false) |
         "    # \(.path) - \(.pattern // "*")\n" +
         (if .recursive == true then
             "    find \"\(.path)\" -type f -name \"\(.pattern // "*")\"" +
-            (if .exclude then " -not -path \"\(.exclude)/*\"" else "" end) +
+            (if .exclude then ([.exclude] | flatten | map(" -not -path \"\(.)\" -not -path \"\(.)/*\"") | join("")) else "" end) +
             " -exec chown \(.owner):\(.group) {} \\; 2>/dev/null || true\n" +
             "    find \"\(.path)\" -type f -name \"\(.pattern // "*")\"" +
-            (if .exclude then " -not -path \"\(.exclude)/*\"" else "" end) +
+            (if .exclude then ([.exclude] | flatten | map(" -not -path \"\(.)\" -not -path \"\(.)/*\"") | join("")) else "" end) +
             " -exec chmod \(.mode) {} \\; 2>/dev/null || true"
         else
             "    chown \(.owner):\(.group) \"\(.path)\"/\(.pattern // "*") 2>/dev/null || true\n" +

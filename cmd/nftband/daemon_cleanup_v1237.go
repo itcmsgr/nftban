@@ -4,7 +4,7 @@
 // meta:type="daemon"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:description="v1.237 permanent-ban cleanup repair (design V1237_CLEANUP_REPAIR_DESIGN_2026_11_14 §0): dry-run, execute and stats use the single EvaluateCleanup calculation; execute re-validates eligibility, protection and the remaining reasons under the shared reason-file lock set, removes only the eligible reason, deletes the kernel element only when no reason remains, and records an intent marker so an interrupted removal is finished by the next run. protect works for every durable ban."
-// meta:inventory.files="/etc/nftban/blacklist.d,/var/lib/nftban/state/permanent_bans.json"
+// meta:inventory.files="/etc/nftban/blacklist.d,/var/lib/nftban/permanent_bans.json"
 // meta:inventory.privileges="root"
 
 package main
@@ -56,7 +56,7 @@ func cleanupEvaluate(configDir string, now time.Time) ([]safety.CleanupDecision,
 	if err != nil {
 		return nil, nil, err
 	}
-	st, err := safety.LoadPermanentBans()
+	st, err := safety.LoadPermanentBansForCleanup()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -157,7 +157,7 @@ func cleanupRemoveOne(configDir, ip, source string, now time.Time, k cleanupKern
 	if err != nil {
 		return "failed:" + err.Error(), false
 	}
-	st, err := safety.LoadPermanentBans()
+	st, err := safety.LoadPermanentBansForCleanup()
 	if err != nil {
 		return "failed:" + err.Error(), false
 	}
@@ -217,7 +217,7 @@ func cleanupFinishPending(configDir, ip string, k cleanupKernel) string {
 		return "failed:" + err.Error()
 	}
 	defer unlock()
-	st, err := safety.LoadPermanentBans()
+	st, err := safety.LoadPermanentBansForCleanup()
 	if err != nil {
 		return "failed:" + err.Error()
 	}

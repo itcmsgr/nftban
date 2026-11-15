@@ -106,8 +106,7 @@ func TestEvaluateCleanup_BulkWindowExcludesOnly(t *testing.T) {
 }
 
 func TestTracking_NeverOverwritesProvenanceOrInventsAge(t *testing.T) {
-	permanentBansPath = filepath.Join(t.TempDir(), "permanent_bans.json")
-	t.Cleanup(func() { permanentBansPath = PermanentBansFile })
+	t.Cleanup(SetPermanentBansPathForTest(filepath.Join(t.TempDir(), "permanent_bans.json")))
 
 	if err := TrackDurableUnknownAge("198.51.100.60", "persistent", false); err != nil {
 		t.Fatal(err)
