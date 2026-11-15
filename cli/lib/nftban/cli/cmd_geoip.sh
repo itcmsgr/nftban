@@ -673,7 +673,7 @@ nftban_geoip_cmd_help() {
     nftban_banner "geoip"
     echo ""
 
-    cat << 'EOF'
+    cat << EOF
 nftban geoip - Fast IP geolocation lookups + Country blocking (GeoBan)
 
 USAGE:

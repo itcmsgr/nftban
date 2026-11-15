@@ -128,7 +128,7 @@ nftban_cmd_permissions() {
 
 
 nftban_permissions_cmd_help() {
-    cat <<'EOF'
+    cat <<EOF
 Usage: nftban permissions <subcommand> [options]
 
 Manage and audit file permissions and ownership for NFTBan.

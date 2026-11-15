@@ -339,7 +339,7 @@ EOF
         echo "❌ ERROR: Failed to sync firewall configuration" >&2
         echo ""
         echo "cPanel/WHM is marked as enabled but ports may not be loaded." >&2
-        echo "Try running: nftban-core sync" >&2
+        echo "Try running: nftban sync" >&2
         return 1
     fi
 }
@@ -425,7 +425,7 @@ nftban_panel_cpanel_disable() {
         echo "❌ ERROR: Failed to sync firewall configuration" >&2
         echo ""
         echo "cPanel/WHM is marked as disabled but ports may still be active." >&2
-        echo "Try running: nftban-core sync" >&2
+        echo "Try running: nftban sync" >&2
         return 1
     fi
 }

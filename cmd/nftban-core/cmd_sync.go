@@ -175,7 +175,7 @@ func cmdSync(cfg *nftbanconf.Config) error {
 			}
 			msg := fmt.Sprintf("sync completion unknown: %v", err)
 			if gen != "" {
-				msg += "\nJoin with: nftban-core sync --join " + gen
+				msg += "\nJoin with: nftban sync --join " + gen
 			}
 			return &syncExit{syncExitUnknown, msg}
 		}
@@ -189,7 +189,7 @@ func cmdSync(cfg *nftbanconf.Config) error {
 
 	switch exec {
 	case ipc.ExecRunning:
-		return &syncExit{syncExitRunning, fmt.Sprintf("sync still running after %v (generation %s); not reported as complete\nJoin with: nftban-core sync --join %s", total, gen, gen)}
+		return &syncExit{syncExitRunning, fmt.Sprintf("sync still running after %v (generation %s); not reported as complete\nJoin with: nftban sync --join %s", total, gen, gen)}
 	case ipc.ExecUnknown:
 		return &syncExit{syncExitUnknown, resp.Error}
 	case ipc.ExecFailed:
