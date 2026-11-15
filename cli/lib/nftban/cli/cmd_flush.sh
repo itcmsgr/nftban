@@ -886,7 +886,7 @@ _flush_all() {
     echo "All sets flushed. System whitelist restored."
     echo ""
     echo "To reload configuration:"
-    echo "  nftban-core sync    # Reload all feeds, geoban, etc."
+    echo "  nftban sync         # Reload all feeds, geoban, etc."
 
     return 0
 }

@@ -1373,7 +1373,7 @@ nftban_stats_cmd_trend() {
 # =============================================================================
 
 nftban_stats_cmd_help() {
-    cat <<'EOF'
+    cat <<EOF
 NFTBan Statistics & Metrics
 
 USAGE:

@@ -59,7 +59,7 @@ _nftban_botscan_help() {
         nftban_banner "botscan"
     fi
 
-    cat <<'HELP'
+    cat <<HELP
 
 USAGE:
     nftban botscan <command> [options]
@@ -198,7 +198,7 @@ EXAMPLES:
     nftban botscan patterns list enabled
 
     # Add custom pattern
-    nftban botscan patterns add MY_PATTERN "malicious\.php" url-404 3 60 3600 "My pattern"
+    nftban botscan patterns add MY_PATTERN "malicious\\.php" url-404 3 60 3600 "My pattern"
 
     # Show detection history
     nftban botscan history
