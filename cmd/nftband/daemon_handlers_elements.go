@@ -305,7 +305,8 @@ func (d *Daemon) handlePersistBanRequest(params map[string]any) SocketResponse {
 
 	// Track permanent ban for protect/evict functionality
 	// This enables 'nftban protect' and 'nftban cleanup' commands to work
-	if err := safety.TrackPermanentBan(ip, reason, source, false); err != nil {
+	// v1.237: tracked at ban time under the shared reason-file lock set (cleanup repair).
+	if err := trackAtBanTime(configDir, ip, reason, source, false); err != nil {
 		log.Printf("[PERSIST] Warning: failed to track permanent ban for %s: %v", ip, err)
 	}
 

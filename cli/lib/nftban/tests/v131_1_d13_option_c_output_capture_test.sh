@@ -125,12 +125,15 @@ else
     _t_assert "A8: wrapper preserves validator exit code (exit \$rc)" 1
 fi
 
-# A9: cmd_firewall.sh service branch reads the last.json file (no longer SOLELY
-#     dependent on journalctl).
-if grep -qE 'firewall-validate/last\.json' "$_firewall_cli"; then
-    _t_assert "A9: cmd_firewall.sh reads the last.json file" 0
+# A9: the service branch reads the last.json file (no longer SOLELY dependent on journalctl).
+#     v1.237: that branch moved unchanged into the shared nftban_validator_json_routed
+#     (lib/nftban_service_control.sh), which cmd_firewall.sh calls.
+_routing_src="${_repo_root}/cli/lib/nftban/lib/nftban_service_control.sh"
+if grep -qE 'nftban-firewall-validate\}?/last\.json' "$_routing_src" \
+   && grep -qE '^\s+nftban_validator_json_routed\s*$' "$_firewall_cli"; then
+    _t_assert "A9: the routing (used by cmd_firewall.sh) reads the last.json file" 0
 else
-    _t_assert "A9: cmd_firewall.sh reads the last.json file" 1
+    _t_assert "A9: the routing (used by cmd_firewall.sh) reads the last.json file" 1
 fi
 
 # A10: V131.2 D13 — the wrapper writes under ProtectSystem=strict, so the unit

@@ -296,7 +296,7 @@ EOF
         echo "❌ ERROR: Failed to sync firewall configuration" >&2
         echo ""
         echo "Plesk is marked as enabled but ports may not be loaded." >&2
-        echo "Try running: nftban-core sync" >&2
+        echo "Try running: nftban sync" >&2
         return 1
     fi
 }
@@ -377,7 +377,7 @@ nftban_panel_plesk_disable() {
         echo "❌ ERROR: Failed to sync firewall configuration" >&2
         echo ""
         echo "Plesk is marked as disabled but ports may still be active." >&2
-        echo "Try running: nftban-core sync" >&2
+        echo "Try running: nftban sync" >&2
         return 1
     fi
 }
@@ -518,6 +518,10 @@ nftban_panel_plesk_report() {
         # IMPL-1: ensure _source_local is defined wherever this file is loaded (env.sh idempotent)
         declare -F _source_local >/dev/null 2>&1 || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh" 2>/dev/null || true
         _source_local "${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf.local"
+    fi
+    # v1.237 (CONFIG-SHELL-CENTRAL-OVERRIDE-OVERWRITTEN-BY-LATE-BASE): central nftban.conf.local last.
+    if declare -F nftban_config_apply_final_operator_overlay >/dev/null 2>&1; then
+        nftban_config_apply_final_operator_overlay
     fi
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/panels/plesk/main.conf" ]]; then
         echo "   TCP INPUT:  ${NFTBAN_PLESK_TCP_IN:-Not configured}"

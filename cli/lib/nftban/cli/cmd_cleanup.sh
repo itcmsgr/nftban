@@ -55,25 +55,33 @@ nftban_cmd_cleanup() {
     json_mode=$(cmd_is_json_mode "$@")
     cmd_load_helpers json
 
-    # Parse arguments
+    # v1.237 (BUG-CLEANUP-CLI-AND-METRIC-GAPS): conflicting modes are refused (was: last one wins);
+    # --count must be a positive integer; --execute needs a confirmation or an explicit --yes, also
+    # with --json (was: --json silently skipped the confirmation).
+    local mode_set="" assume_yes="false"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --json)
                 shift
                 ;;
-            --dry-run)
-                mode="dry-run"
+            --yes|-y)
+                assume_yes="true"
                 shift
                 ;;
-            --execute)
-                mode="execute"
-                shift
-                ;;
-            --stats)
-                mode="stats"
+            --dry-run|--execute|--stats)
+                local m="${1#--}"
+                if [[ -n "$mode_set" && "$mode_set" != "$m" ]]; then
+                    cmd_error "Conflicting modes: --$mode_set and --$m (choose one)" "$json_mode" nftban_cmd_cleanup_usage
+                    return 1
+                fi
+                mode_set="$m"; mode="$m"
                 shift
                 ;;
             --count)
+                if [[ $# -lt 2 || ! "$2" =~ ^[1-9][0-9]{0,5}$ ]]; then
+                    cmd_error "--count needs a positive integer (1-999999)" "$json_mode" nftban_cmd_cleanup_usage
+                    return 1
+                fi
                 count="$2"
                 shift 2
                 ;;
@@ -102,7 +110,7 @@ nftban_cmd_cleanup() {
             _cleanup_dry_run "$socket_path" "$count" "$json_mode"
             ;;
         execute)
-            _cleanup_execute "$socket_path" "$count" "$json_mode"
+            _cleanup_execute "$socket_path" "$count" "$json_mode" "$assume_yes"
             ;;
     esac
 }
@@ -172,10 +180,11 @@ _cleanup_dry_run() {
         return 1
     fi
 
-    local success ips_json
+    local success ips_json excluded_json='{}'
     if command -v jq &>/dev/null; then
         success=$(echo "$response" | jq -r '.success // false')
         ips_json=$(echo "$response" | jq -r '.data.ips // []')
+        excluded_json=$(echo "$response" | jq -c '.data.excluded // {}')
     else
         if [[ "$response" == *'"success":true'* ]]; then
             success="true"
@@ -187,7 +196,7 @@ _cleanup_dry_run() {
 
     if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
         if [[ "$success" == "true" ]]; then
-            json_output "true" "{\"mode\":\"dry-run\",\"ips\":$ips_json}"
+            json_output "true" "{\"mode\":\"dry-run\",\"ips\":$ips_json,\"excluded\":$excluded_json}"
         else
             json_output "false" '{}' "Failed to get evictable bans"
         fi
@@ -195,7 +204,8 @@ _cleanup_dry_run() {
         if [[ "$success" == "true" ]]; then
             echo "=== DRY RUN - No changes made ==="
             echo ""
-            echo "IPs eligible for eviction (>30 days old, unprotected):"
+            echo "Automatic ban reasons eligible for removal (tracked at ban time, old enough, unprotected,"
+            echo "no manual reason; the same selection --execute uses):"
             echo ""
 
             if command -v jq &>/dev/null; then
@@ -212,7 +222,14 @@ _cleanup_dry_run() {
                     done
                 fi
                 echo ""
-                echo "Total: $ip_count IPs would be evicted"
+                echo "Total: $ip_count reason(s) would be removed"
+                local excl
+                excl=$(echo "$response" | jq -r '(.data.excluded // {}) | to_entries | map("  - \(.key): \(.value)") | .[]' 2>/dev/null)
+                if [[ -n "$excl" ]]; then
+                    echo ""
+                    echo "Excluded (never selected):"
+                    echo "$excl"
+                fi
             else
                 echo "  (use jq for detailed output)"
             fi
@@ -229,10 +246,16 @@ _cleanup_execute() {
     local socket_path="$1"
     local count="$2"
     local json_mode="$3"
+    local assume_yes="${4:-false}"
 
-    # Confirm with user (unless in JSON mode which is assumed to be scripted)
-    if [[ "$json_mode" != "true" ]]; then
-        echo "WARNING: This will permanently remove old bans from nftables."
+    # Confirm with the operator unless --yes. JSON mode no longer implies consent; without a terminal
+    # and without --yes the execute is refused (v1.237).
+    if [[ "$assume_yes" != "true" ]]; then
+        if [[ "$json_mode" == "true" || ! -t 0 ]]; then
+            cmd_error "--execute without a terminal (or with --json) needs an explicit --yes" "$json_mode"
+            return 1
+        fi
+        echo "WARNING: This removes the selected automatic ban reasons; a ban leaves the kernel only when no other reason holds it."
         echo ""
         read -r -p "Are you sure you want to proceed? [y/N] " confirm
         if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
@@ -255,11 +278,15 @@ _cleanup_execute() {
     local success evicted_count
     if command -v jq &>/dev/null; then
         success=$(echo "$response" | jq -r '.success // false')
-        evicted_count=$(echo "$response" | jq -r '.data.evicted_count // 0')
+        # v1.237: the daemon returns "evicted"; the CLI read "evicted_count" and always printed 0.
+        evicted_count=$(echo "$response" | jq -r '.data.evicted // 0')
+        finished_count=$(echo "$response" | jq -r '.data.finished_pending // 0')
+        failed_count=$(echo "$response" | jq -r '.data.failed // 0')
+        excluded_txt=$(echo "$response" | jq -r '(.data.excluded // {}) | to_entries | map("\(.key)=\(.value)") | join(", ")')
     else
         if [[ "$response" == *'"success":true'* ]]; then
             success="true"
-            evicted_count=$(echo "$response" | grep -oP '"evicted_count":\K\d+' || echo "0")
+            evicted_count=$(echo "$response" | grep -oP '"evicted":\K\d+' || echo "0")
         else
             success="false"
         fi
@@ -267,16 +294,19 @@ _cleanup_execute() {
 
     if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
         if [[ "$success" == "true" ]]; then
-            json_output "true" "{\"mode\":\"execute\",\"evicted_count\":$evicted_count}"
+            json_output "true" "{\"mode\":\"execute\",\"evicted_count\":${evicted_count:-0},\"finished_pending\":${finished_count:-0},\"failed\":${failed_count:-0}}"
         else
             json_output "false" '{}' "Failed to evict bans"
         fi
     else
         if [[ "$success" == "true" ]]; then
-            echo "Cleanup complete!"
-            echo "  Evicted: $evicted_count IPs"
+            echo "Cleanup complete."
+            echo "  Removed reasons:           ${evicted_count:-0}"
+            echo "  Finished (earlier interrupted): ${finished_count:-0}"
+            echo "  Failed:                    ${failed_count:-0}"
+            [[ -n "${excluded_txt:-}" ]] && echo "  Excluded by reason:        $excluded_txt"
             echo ""
-            echo "Memory freed. Run 'nftban cleanup --stats' to see current state."
+            echo "Run 'nftban cleanup --stats' to see the current state."
         else
             echo "ERROR: Failed to evict bans" >&2
             return 1
@@ -299,7 +329,8 @@ that are older than 30 days and not marked as protected.
 
 Options:
   --dry-run             Show what would be evicted (default, safe mode)
-  --execute             Actually evict old bans (requires confirmation)
+  --execute             Remove the eligible reasons (requires confirmation, or --yes)
+  --yes, -y             Confirm --execute without a prompt (required with --json or without a terminal)
   --stats               Show permanent ban statistics
   --count N             Maximum number of IPs to process (default: 100)
   --json                Output in JSON format

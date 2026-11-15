@@ -259,6 +259,10 @@ func (d *Daemon) Run() error {
 				if timeout == 0 {
 					if _, _, perr := persistence.PersistBan(d.configDir, e.IP, reason, persistKey); perr != nil {
 						log.Printf("[BAN] Warning: permanent ban %s (source=%s) NOT persisted, lost at the next reboot: %v", e.IP, e.Source, perr)
+					} else if terr := trackAtBanTime(d.configDir, e.IP, reason, persistKey, false); terr != nil {
+						// v1.237 (BUG-PERMANENT-BANS-TRACKING-LIST-NOT-FED-BY-MODULE-PERMANENT-BANS): this is the
+						// module ban event itself, so the age is the real ban time.
+						log.Printf("[BAN] Warning: permanent ban %s persisted but not tracked: %v", e.IP, terr)
 					}
 				}
 
