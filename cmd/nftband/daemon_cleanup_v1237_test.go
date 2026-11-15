@@ -50,6 +50,10 @@ func newCleanupFixture(t *testing.T) *cleanupFixture {
 	t.Helper()
 	dir := t.TempDir()
 	t.Cleanup(safety.SetPermanentBansPathForTest(filepath.Join(dir, "state", "permanent_bans.json")))
+	// v1.237 state boundary: the trust marker exists before any tracked entry (as on a host after nftband start).
+	if _, err := safety.EstablishTrackingTrust(); err != nil {
+		t.Fatal(err)
+	}
 	return &cleanupFixture{t: t, dir: dir, now: time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC), kern: &fakeKernel{banned: map[string]bool{}}}
 }
 

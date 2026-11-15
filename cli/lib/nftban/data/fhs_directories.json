@@ -756,9 +756,9 @@
       {
         "path": "/var/lib/nftban/state",
         "mode": "0750",
-        "owner": "nftban",
+        "owner": "root",
         "group": "nftban",
-        "description": "Critical runtime state files",
+        "description": "Critical runtime state files: written by root, read by the nftban group",
         "created_by": "tmpfiles"
       },
       {

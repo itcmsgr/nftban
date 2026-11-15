@@ -525,13 +525,10 @@ func ShouldSkipFeeds() bool {
 // =============================================================================
 
 const (
-	// PermanentBansDir is where permanent ban tracking is stored. v1.237 (owner 2026-11-15, cleanup
-	// acceptance condition): the root-owned data directory (fhs-spec /var/lib/nftban 0750 root:nftban;
-	// every parent root-owned), not /var/lib/nftban/state (0750 nftban:nftban), where the service
-	// account could forge eligibility, protection or recovery markers. See tracking_integrity_v1237.go.
-	PermanentBansDir = "/var/lib/nftban"
-	// PermanentBansFile tracks permanent bans with metadata (root:nftban 0640, fhs-spec file_permissions)
-	PermanentBansFile = "/var/lib/nftban/permanent_bans.json"
+	// PermanentBansDir is where permanent ban tracking is stored
+	PermanentBansDir = "/var/lib/nftban/state"
+	// PermanentBansFile tracks permanent bans with metadata
+	PermanentBansFile = "/var/lib/nftban/state/permanent_bans.json"
 )
 
 // permanentBansPath is the tracking file used by Load/Save (tests redirect it).
@@ -542,9 +539,8 @@ var permanentBansPath = PermanentBansFile
 func SetPermanentBansPathForTest(p string) (restore func()) {
 	old := permanentBansPath
 	permanentBansPath = p
-	// v1.237: tests never read the host's legacy tracking file and run unprivileged inside a temp dir:
-	// legacy -> a path that does not exist, owner = the test uid, parent walk ends at the file's dir.
-	restoreIntegrity := SetTrackingIntegrityForTest(p+".no-legacy-in-tests", os.Getuid(), filepath.Dir(p))
+	// v1.237: tests run unprivileged inside a temp dir: owner = the test uid, parent walk ends there.
+	restoreIntegrity := SetTrackingIntegrityForTest(os.Getuid(), filepath.Dir(p))
 	return func() { restoreIntegrity(); permanentBansPath = old }
 }
 
@@ -566,6 +562,9 @@ type PermanentBan struct {
 	// v1.237: set under the reason-file lock set just before a cleanup removes a durable reason, so
 	// an interrupted removal is finished by the next run (recovery, design §0.4).
 	CleanupPending string `json:"cleanup_pending,omitempty"` // the reason source being removed
+	// v1.237 (state boundary, owner 2026-11-15): a pending marker that existed before the root-owned
+	// state boundary was established is kept (recorded state) but flagged: reported, never finished.
+	CleanupPendingUnverified bool `json:"cleanup_pending_unverified,omitempty"`
 }
 
 // PermanentBansState holds all tracked permanent bans
@@ -579,10 +578,6 @@ func LoadPermanentBans() (*PermanentBansState, error) {
 	data, err := os.ReadFile(permanentBansPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// v1.237: first load after the move to the root-owned location copies the legacy file once.
-			if st, merr := migrateLegacyPermanentBans(); merr != nil || st != nil {
-				return st, merr
-			}
 			// Return empty state
 			return &PermanentBansState{
 				UpdatedAt: time.Now(),
@@ -606,7 +601,7 @@ func LoadPermanentBans() (*PermanentBansState, error) {
 
 // SavePermanentBans saves the permanent bans state to disk
 func SavePermanentBans(state *PermanentBansState) error {
-	if err := os.MkdirAll(filepath.Dir(permanentBansPath), 0750); err != nil { // only when missing; fhs-spec /var/lib/nftban is 0750
+	if err := os.MkdirAll(filepath.Dir(permanentBansPath), 0750); err != nil { // only when missing; fhs-spec state dir is 0750
 		return err
 	}
 
@@ -617,7 +612,8 @@ func SavePermanentBans(state *PermanentBansState) error {
 		return err
 	}
 
-	// v1.171 §4.3c: atomic write via the in-package gold helper. v1.237: root:nftban 0640 (fhs-spec).
+	// v1.171 §4.3c: atomic write via the in-package gold helper.
+	// v1.237: root:nftban 0640 (fhs-spec file_permissions, state/permanent_bans.json).
 	if err := SafeWriteFile(permanentBansPath, data, PermanentBansFileMode); err != nil {
 		return err
 	}
@@ -692,6 +688,7 @@ func SetCleanupPending(ip, source string) error {
 		return fmt.Errorf("IP %s not found in permanent bans", ip)
 	}
 	b.CleanupPending = source
+	b.CleanupPendingUnverified = false // written now, by root, under the boundary
 	return SavePermanentBans(state)
 }
 

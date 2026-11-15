@@ -351,6 +351,7 @@ snapshot_source_time_dispatch_v1228_2_test	cli/lib/nftban/tests/snapshot_source_
 ssh_admin_port_guard_v150_test	cli/lib/nftban/tests/ssh_admin_port_guard_v150_test.sh	firewall	test	ssh-admin-port-guard	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 ssh_port_change_lifecycle_v155_test	cli/lib/nftban/tests/ssh_port_change_lifecycle_v155_test.sh	firewall	test	ssh-port-lifecycle-validate	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 ssh_socket_port_mismatch_v155_test	cli/lib/nftban/tests/ssh_socket_port_mismatch_v155_test.sh	firewall	test	ssh-admin-port-guard	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
+state_boundary_v1237_test	cli/lib/nftban/tests/state_boundary_v1237_test.sh	core	test	state-boundary	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 state_write_atomicity_v171_test	cli/lib/nftban/tests/state_write_atomicity_v171_test.sh	core	test	state-write-atomicity	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 stats_count_reconcile_v206_2_test	cli/lib/nftban/tests/stats_count_reconcile_v206_2_test.sh	metrics	test	stats	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 stats_counter_bases_v1235_test	cli/lib/nftban/tests/stats_counter_bases_v1235_test.sh	metrics	test	stats	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
@@ -373,7 +374,6 @@ sysctl_safe_default_v216_test	cli/lib/nftban/tests/sysctl_safe_default_v216_test
 systemd_cli_token_dispatch_v1228_1_test	cli/lib/nftban/tests/systemd_cli_token_dispatch_v1228_1_test.sh	cli	test	dispatcher	CI_STATIC	ci-bash	true	false	false	false	false	false			
 test_count_floor_v1229_4_test	cli/lib/nftban/tests/test_count_floor_v1229_4_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 tmpfiles_zz_v139_test	cli/lib/nftban/tests/tmpfiles_zz_v139_test.sh	packaging	test	fhs	PACKAGE_BUILD	package-build	true	false	false	false	false	false			
-tracking_state_root_owned_v1237_test	cli/lib/nftban/tests/tracking_state_root_owned_v1237_test.sh	core	test	tracking-state-integrity	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 trust_load_missing_whitelist_test	cli/lib/nftban/tests/trust_load_missing_whitelist_test.sh	trust	test	trust-load	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 trust_provider_range_admission_v1232_test	cli/lib/nftban/tests/trust_provider_range_admission_v1232_test.sh	trust	test	trust-provider-admission	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 trusted_flow_tempfile_lifecycle_v1229_3_test	cli/lib/nftban/tests/trusted_flow_tempfile_lifecycle_v1229_3_test.sh	portscan	test	portscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

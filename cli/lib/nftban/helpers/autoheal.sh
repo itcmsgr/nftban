@@ -184,25 +184,24 @@ find "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin" -type f -exec chmod 755 {} \; 2>/d
 log_info "Fixing /var/lib/nftban file permissions..."
 if [ -d "${NFTBAN_DATA_DIR}" ]; then
     # Fix all files EXCEPT auditors directory (which has different ownership)
-    # v1.237: the permanent-ban tracking state (+ its atomic-write temps) stays root:nftban 0640
-    # (FHS spec file_permissions); the service account must not own it (cleanup authorization).
-    find "${NFTBAN_DATA_DIR}" -type f \
+    # v1.237 C2 (fhs-spec): state/ is root's and excluded from the nftban:nftban sweep (pruned);
+    # its declared entries are restored by the generated policy below (in place).
+    find "${NFTBAN_DATA_DIR}" -path "${NFTBAN_DATA_DIR}/state" -prune -o -type f \
         -not -path "*/reports/auditors/*" \
-        -not -path "${NFTBAN_DATA_DIR}/permanent_bans.json" \
-        -not -path "${NFTBAN_DATA_DIR}/.nftban-safe-*" \
         \( -not -user nftban -o -not -group nftban \) \
         -exec chown nftban:nftban {} \; 2>/dev/null || true
 
-    find "${NFTBAN_DATA_DIR}" -type f \
+    find "${NFTBAN_DATA_DIR}" -path "${NFTBAN_DATA_DIR}/state" -prune -o -type f \
         -not -path "*/reports/auditors/*" \
-        -not -path "${NFTBAN_DATA_DIR}/permanent_bans.json" \
-        -not -path "${NFTBAN_DATA_DIR}/.nftban-safe-*" \
         -not -perm 640 \
         -exec chmod 640 {} \; 2>/dev/null || true
 
-    if [ -f "${NFTBAN_DATA_DIR}/permanent_bans.json" ] && [ ! -L "${NFTBAN_DATA_DIR}/permanent_bans.json" ]; then
-        chown root:nftban "${NFTBAN_DATA_DIR}/permanent_bans.json" 2>/dev/null || true
-        chmod 0640 "${NFTBAN_DATA_DIR}/permanent_bans.json" 2>/dev/null || true
+    _ah_pol="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/setup/fhs-state-policy.sh"
+    if [ -r "$_ah_pol" ]; then
+        # shellcheck source=/dev/null
+        . "$_ah_pol" && nftban_fhs_enforce_exact_entries
+    else
+        log_warn "state policy not found: $_ah_pol"
     fi
 
     log_info "✅ /var/lib/nftban files fixed (nftban:nftban 0640)"

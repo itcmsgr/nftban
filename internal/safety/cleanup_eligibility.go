@@ -35,6 +35,9 @@ const (
 	// v1.237 owner condition 2026-11-14: trust is established positively, never by the bulk heuristic.
 	ExclLegacyUnverified = "legacy-age-unverified" // no AgeSourceBanTime: provenance/age not established
 	ExclRolloutRewrite   = "rollout-rewrite"       // documented re-persist (dns1 2026-10-17), explicit
+	// v1.237 state boundary (owner 2026-11-15): a pending marker written while state/ was service-account
+	// writable; kept as recorded state, never finished.
+	ExclPendingUnverified = "pending-unverified"
 )
 
 // RolloutRewriteReasonPrefix marks entries re-persisted by the v1.235.1 rollout harness (dns1
@@ -153,7 +156,9 @@ func EvaluateCleanup(reasons map[string][]string, state *PermanentBansState, now
 	for ip, tr := range state.Bans {
 		if len(reasons[ip]) == 0 {
 			d := CleanupDecision{IP: ip, Source: tr.CleanupPending, AddedAt: tr.AddedAt, Exclusion: ExclNoReasonFile}
-			if tr.CleanupPending != "" && !tr.Protected {
+			if tr.CleanupPending != "" && tr.CleanupPendingUnverified {
+				d.Exclusion = ExclPendingUnverified // pre-boundary marker: kept and reported, never acted on
+			} else if tr.CleanupPending != "" && !tr.Protected {
 				d.FinishPending = true // only a cleanup-marked entry is ever finished; others are reported
 			}
 			out = append(out, d)

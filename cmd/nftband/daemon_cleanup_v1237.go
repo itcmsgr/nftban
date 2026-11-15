@@ -4,7 +4,7 @@
 // meta:type="daemon"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:description="v1.237 permanent-ban cleanup repair (design V1237_CLEANUP_REPAIR_DESIGN_2026_11_14 §0): dry-run, execute and stats use the single EvaluateCleanup calculation; execute re-validates eligibility, protection and the remaining reasons under the shared reason-file lock set, removes only the eligible reason, deletes the kernel element only when no reason remains, and records an intent marker so an interrupted removal is finished by the next run. protect works for every durable ban."
-// meta:inventory.files="/etc/nftban/blacklist.d,/var/lib/nftban/permanent_bans.json"
+// meta:inventory.files="/etc/nftban/blacklist.d,/var/lib/nftban/state/permanent_bans.json"
 // meta:inventory.privileges="root"
 
 package main
@@ -224,6 +224,9 @@ func cleanupFinishPending(configDir, ip string, k cleanupKernel) string {
 	tr := st.Bans[ip]
 	if tr == nil || tr.CleanupPending == "" || tr.Protected {
 		return "skipped:not-pending"
+	}
+	if tr.CleanupPendingUnverified { // written before the root-owned state boundary: never acted on
+		return "skipped:" + safety.ExclPendingUnverified
 	}
 	reasons, err := persistence.ReasonsForIP(configDir, ip)
 	if err != nil {

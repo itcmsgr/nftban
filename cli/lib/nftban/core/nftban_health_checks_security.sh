@@ -342,7 +342,7 @@ nftban_health_check_memory_protection() {
     local mp_issues=()
 
     local protection_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/protection.json"
-    local permanent_bans_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/permanent_bans.json"
+    local permanent_bans_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state/permanent_bans.json"
     local socket_path="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock"
 
     # =========================================================================

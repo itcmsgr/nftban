@@ -1912,7 +1912,7 @@ _status_section_health() {
     # Memory Protection Status (only show if notable)
     # ==========================================================================
     local protection_file="/var/lib/nftban/state/protection.json"
-    local permanent_bans_file="/var/lib/nftban/permanent_bans.json"
+    local permanent_bans_file="/var/lib/nftban/state/permanent_bans.json"
 
     # Check memory pressure level from cgroup (v2)
     local pressure_file="/sys/fs/cgroup/system.slice/nftband.service/memory.pressure"
@@ -2710,7 +2710,7 @@ output_json() {
     fi
 
     # Check permanent bans
-    local json_perm_file="/var/lib/nftban/permanent_bans.json"
+    local json_perm_file="/var/lib/nftban/state/permanent_bans.json"
     if [[ -f "$json_perm_file" ]]; then
         json_perm_bans=$(jq -r '.bans | length // 0' "$json_perm_file" 2>/dev/null || echo "0")
         json_perm_protected=$(jq -r '[.bans[]] | map(select(.protected == true)) | length // 0' "$json_perm_file" 2>/dev/null || echo "0")
