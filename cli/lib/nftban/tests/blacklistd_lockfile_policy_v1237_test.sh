@@ -52,9 +52,9 @@ block=$(awk '
   /^    pattern: "\*\.conf\.lock"/ { inb=1; print buf; print; next }
   inb && /^    [a-z_]+:/ { print }
   inb && !/^    / { exit }' "$SPEC")
-field(){ printf '%s\n' "$block" | awk -v k="$1" '$1==k":" {gsub(/"/,"",$2); print $2; exit}'; }
+field(){ awk -v k="$1" '$1==k":" {gsub(/"/,"",$2); print $2; exit}' <<<"$block"; }
 [[ -n "$block" ]] && ok "spec has a *.conf.lock file_permissions entry" || no "spec has no *.conf.lock entry"
-s_path=$(printf '%s\n' "$block" | awk '$2=="path:" {print $3; exit}')
+s_path=$(awk '$2=="path:" {print $3; exit}' <<<"$block")
 s_mode=$(field mode); s_owner=$(field owner); s_group=$(field group); s_enf=$(field install_enforce)
 [[ "$s_path" == "/etc/nftban/blacklist.d" ]] && ok "path /etc/nftban/blacklist.d" || no "spec path" "got '$s_path'"
 [[ "$s_mode" == "0600" && "$s_owner" == "root" && "$s_group" == "root" ]] && ok "triple 0600 root:root" || no "spec triple" "got $s_mode $s_owner:$s_group"
@@ -69,14 +69,14 @@ n_0600=$(grep -cE 'OpenFile\(filepath\.Clean\(lockPath\), os\.O_RDWR\|os\.O_CREA
 echo "=== repair consumer: excluded from 0640, restored to the spec triple ==="
 fn=$(awk '/^perms_enforce_etc_files\(\) \{/ {f=1} f {print} f && /^\}/ {exit}' "$PERMS")
 [[ -n "$fn" ]] || { no "perms_enforce_etc_files not found"; fn=""; }
-loop_chown=$(printf '%s\n' "$fn" | grep -E 'find "\$PERMS_ETC/\$subdir" -type f .*-exec chown root:nftban' || true)
-loop_chmod=$(printf '%s\n' "$fn" | grep -E 'find "\$PERMS_ETC/\$subdir" -type f .*-exec chmod 0640' || true)
+loop_chown=$(grep -E 'find "\$PERMS_ETC/\$subdir" -type f .*-exec chown root:nftban' <<<"$fn" || true)
+loop_chmod=$(grep -E 'find "\$PERMS_ETC/\$subdir" -type f .*-exec chmod 0640' <<<"$fn" || true)
 grep -qF '! -name "*.conf.lock"' <<<"$loop_chown" && ok "subdir config chown excludes *.conf.lock" || no "subdir chown root:nftban still matches lockfiles"
 grep -qF '! -name "*.conf.lock"' <<<"$loop_chmod" && ok "subdir config chmod 0640 excludes *.conf.lock" || no "subdir chmod 0640 still matches lockfiles"
-printf '%s\n' "$fn" | grep -qE "find \"\\\$PERMS_ETC/blacklist\.d\" .*-name \"\*\.conf\.lock\" -exec chown ${s_owner}:${s_group} " && ok "lockfiles restored to ${s_owner}:${s_group}" || no "no chown ${s_owner}:${s_group} for lockfiles"
-printf '%s\n' "$fn" | grep -qE "find \"\\\$PERMS_ETC/blacklist\.d\" .*-name \"\*\.conf\.lock\" -exec chmod ${s_mode} " && ok "lockfiles restored to ${s_mode}" || no "no chmod ${s_mode} for lockfiles"
-printf '%s\n' "$fn" | grep -qE 'blacklist\.d.*\.conf\.lock.*(\bmv\b|\bcp\b|\brm\b|install )' && no "repair replaces/removes lockfiles (inode must be kept)" || ok "repair only chown/chmod (inode kept)"
-printf '%s\n' "$fn" | grep -qE 'find "\$PERMS_ETC/conf\.d" -type f -name "\*\.conf" -exec chmod 0640' && ok "conf.d/*.conf keep 0640 (config unchanged)" || no "conf.d config mode changed"
+grep -qE "find \"\\\$PERMS_ETC/blacklist\.d\" .*-name \"\*\.conf\.lock\" -exec chown ${s_owner}:${s_group} " <<<"$fn" && ok "lockfiles restored to ${s_owner}:${s_group}" || no "no chown ${s_owner}:${s_group} for lockfiles"
+grep -qE "find \"\\\$PERMS_ETC/blacklist\.d\" .*-name \"\*\.conf\.lock\" -exec chmod ${s_mode} " <<<"$fn" && ok "lockfiles restored to ${s_mode}" || no "no chmod ${s_mode} for lockfiles"
+grep -qE 'blacklist\.d.*\.conf\.lock.*(\bmv\b|\bcp\b|\brm\b|install )' <<<"$fn" && no "repair replaces/removes lockfiles (inode must be kept)" || ok "repair only chown/chmod (inode kept)"
+grep -qE 'find "\$PERMS_ETC/conf\.d" -type f -name "\*\.conf" -exec chmod 0640' <<<"$fn" && ok "conf.d/*.conf keep 0640 (config unchanged)" || no "conf.d config mode changed"
 
 echo "================================================================"
 echo "blacklistd_lockfile_policy_v1237_test: PASS=$PASS FAIL=$FAIL"
