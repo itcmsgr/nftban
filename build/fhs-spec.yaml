@@ -1450,6 +1450,26 @@ file_permissions:
     group: nftban
     recursive: true
 
+  # v1.237 (cleanup repair, owner 2026-11-15) — persistence sibling LOCKFILES:
+  # blacklist.d/<reason>.conf.lock (D-UXV-17). Created by internal/persistence (PersistBan,
+  # lockSibling, LockAllReasons) at 0600 root:root. Every legitimate lock user is root:
+  #   nftband (User=root) and nftban-core ban/escalation (writing blacklist.d needs root:
+  #   the directory is 0750 root:nftban, not group-writable, and the CAP_NET_ADMIN file
+  #   capability grants no DAC override). Readers never lock.
+  # MUST NOT be group-readable: flock(LOCK_EX) works on a read-only descriptor, so a
+  # group-readable lock lets any nftban-group process stall every reason-file writer.
+  # Writer-owned (install_enforce:false — the generator emits nothing). The permission-repair
+  # consumer (nftban_permissions.sh perms_enforce_etc_files) restores exactly this triple in
+  # place (chown/chmod, inode unchanged) and never applies the 0640 config mode to it;
+  # parity: cli/lib/nftban/tests/blacklistd_lockfile_policy_v1237_test.sh.
+  - path: /etc/nftban/blacklist.d
+    artifact_class: config
+    pattern: "*.conf.lock"
+    mode: "0600"
+    owner: root
+    group: root
+    install_enforce: false
+
   # /usr/lib/nftban - shell scripts executable
   - path: /usr/lib/nftban
     artifact_class: program
