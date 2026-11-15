@@ -298,7 +298,7 @@ func removeIPFromFile(filePath, ip string) (bool, error) {
 // removeIPFromFileLocked does the read-filter-rename of removeIPFromFile. The caller holds the
 // file's sibling lock.
 func removeIPFromFileLocked(filePath, ip string) (bool, error) {
-	f, err := os.OpenFile(filepath.Clean(filePath), os.O_RDONLY, 0640)
+	f, err := os.OpenFile(filepath.Clean(filePath), os.O_RDONLY, 0600) // read-only, no O_CREATE: mode unused
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil

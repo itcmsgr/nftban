@@ -596,7 +596,7 @@ func LoadPermanentBans() (*PermanentBansState, error) {
 
 // SavePermanentBans saves the permanent bans state to disk
 func SavePermanentBans(state *PermanentBansState) error {
-	if err := os.MkdirAll(filepath.Dir(permanentBansPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(permanentBansPath), 0750); err != nil { // only when missing; fhs-spec state dir is 0750
 		return err
 	}
 
