@@ -60,6 +60,9 @@ _repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 _unit_file="${_repo_root}/install/systemd/nftban-firewall-validate.service"
 _wrapper="${_repo_root}/cli/lib/nftban/helpers/firewall_validate_run.sh"
 _firewall_cli="${_repo_root}/cli/lib/nftban/cli/cmd_firewall.sh"
+# v1.237: the non-root routing moved unchanged from cmd_firewall.sh into the shared
+# nftban_validator_json_routed; D1/D2 check it there (D2 would pass vacuously on a file without it).
+_routing_src="${_repo_root}/cli/lib/nftban/lib/nftban_service_control.sh"
 _tmpfiles="${_repo_root}/install/systemd/tmpfiles.d/nftban.conf"
 
 echo "==============================================================================="
@@ -250,20 +253,21 @@ fi
 # ----------------------------------------------------------------------------
 echo "--- D: CLI read path ---"
 
-# D1: cmd_firewall.sh reads the last.json file.
-if grep -qE 'firewall-validate/last\.json' "$_firewall_cli"; then
-    _t_assert "D1: cmd_firewall.sh reads /run/nftban-firewall-validate/last.json" 0
+# D1: the shared routing reads the last.json file, and cmd_firewall.sh calls that routing.
+if grep -qE 'nftban-firewall-validate\}?/last\.json' "$_routing_src" \
+   && grep -qE '^\s+nftban_validator_json_routed\s*$' "$_firewall_cli"; then
+    _t_assert "D1: the routing (used by cmd_firewall.sh) reads /run/nftban-firewall-validate/last.json" 0
 else
-    _t_assert "D1: cmd_firewall.sh reads /run/nftban-firewall-validate/last.json" 1
+    _t_assert "D1: the routing (used by cmd_firewall.sh) reads /run/nftban-firewall-validate/last.json" 1
 fi
 
 # D2: journalctl is only a guarded last-resort: the journalctl read must be
 #     gated behind an empty-output check ([[ -z "$_output" ]]), i.e. it runs
 #     ONLY when the file produced nothing — never as the primary source.
-_jl_line=$(grep -n 'journalctl -u nftban-firewall-validate' "$_firewall_cli" | head -1 | cut -d: -f1)
+_jl_line=$(grep -n 'journalctl -u nftban-firewall-validate' "$_routing_src" | head -1 | cut -d: -f1)
 if [[ -n "$_jl_line" ]]; then
     _guard_lo=$((_jl_line - 4)); [[ "$_guard_lo" -lt 1 ]] && _guard_lo=1
-    if sed -n "${_guard_lo},${_jl_line}p" "$_firewall_cli" | grep -qE '\[\[ -z "\$_output" \]\]'; then
+    if sed -n "${_guard_lo},${_jl_line}p" "$_routing_src" | grep -qE '\[\[ -z "\$_output" \]\]'; then
         _t_assert "D2: journalctl is a guarded last-resort (gated on empty file output)" 0
     else
         _t_assert "D2: journalctl is a guarded last-resort (gated on empty file output)" 1 \
