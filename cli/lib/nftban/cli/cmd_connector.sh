@@ -736,7 +736,7 @@ EOF
 # Command: nftban connector help
 # =============================================================================
 _cmd_connector_help() {
-    cat <<'EOF'
+    cat <<EOF
 NFTBan Connector Management
 
 USAGE:
@@ -791,23 +791,23 @@ ADD OPTIONS:
 
 EXAMPLES:
     # Add Elasticsearch connector
-    nftban connector add es-prod --type elasticsearch \
+    nftban connector add es-prod --type elasticsearch \\
         --url https://es.example.com:9200 --index nftban-events
 
     # Add Kafka connector
-    nftban connector add kafka-logs --type kafka \
+    nftban connector add kafka-logs --type kafka \\
         --brokers kafka1:9092,kafka2:9092 --topic security-events
 
     # Add syslog connector
-    nftban connector add siem --type syslog \
+    nftban connector add siem --type syslog \\
         --host siem.example.com --port 514 --proto tcp
 
     # Add webhook connector
-    nftban connector add slack --type webhook \
+    nftban connector add slack --type webhook \\
         --webhook-url https://hooks.slack.com/services/XXX
 
     # Add file connector
-    nftban connector add backup --type file \
+    nftban connector add backup --type file \\
         --path ${NFTBAN_LOG_DIR}/events.json --format json
 
     # Test a connector

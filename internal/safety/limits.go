@@ -27,6 +27,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -43,8 +44,8 @@ type Limits struct {
 	MaxConnsPerIP      int // default: 10
 
 	// Request limits
-	RequestTimeoutSec  int   // default: 30
-	MaxRequestBodyMB   int   // default: 10
+	RequestTimeoutSec   int   // default: 30
+	MaxRequestBodyMB    int   // default: 10
 	MaxRequestBodyBytes int64 // computed from MB
 
 	// Rate limiting
@@ -392,12 +393,12 @@ const (
 
 // FilterState tracks CIDR filtering statistics from the last sync
 type FilterState struct {
-	Timestamp    string `json:"timestamp"`
-	Total        int    `json:"total"`         // Total input CIDRs
-	Filtered     int    `json:"filtered"`      // CIDRs removed by filtering
-	BogonCount   int    `json:"bogon_count"`   // Bogon/reserved ranges removed
-	OversizeCount int   `json:"oversize_count"` // Oversized CIDRs removed (< /9)
-	Kept         int    `json:"kept"`          // CIDRs that passed filtering
+	Timestamp     string `json:"timestamp"`
+	Total         int    `json:"total"`          // Total input CIDRs
+	Filtered      int    `json:"filtered"`       // CIDRs removed by filtering
+	BogonCount    int    `json:"bogon_count"`    // Bogon/reserved ranges removed
+	OversizeCount int    `json:"oversize_count"` // Oversized CIDRs removed (< /9)
+	Kept          int    `json:"kept"`           // CIDRs that passed filtering
 }
 
 // RecordFilterState writes CIDR filter statistics after sync
@@ -530,6 +531,23 @@ const (
 	PermanentBansFile = "/var/lib/nftban/state/permanent_bans.json"
 )
 
+// permanentBansPath is the tracking file used by Load/Save (tests redirect it).
+var permanentBansPath = PermanentBansFile
+
+// SetPermanentBansPathForTest redirects the tracking file and returns the restore function.
+// Test-only: production code never calls it.
+func SetPermanentBansPathForTest(p string) (restore func()) {
+	old := permanentBansPath
+	permanentBansPath = p
+	return func() { permanentBansPath = old }
+}
+
+// AgeSourceBanTime marks an entry whose added_at was recorded AT REAL BAN TIME by a v1.237+ writer
+// (cleanup repair, owner condition 2026-11-14: legacy records need established provenance and age to
+// qualify; bulk-stamp detection may only exclude, never establish trust). Entries without it are
+// legacy: their age and provenance are not established, so they are never eligible.
+const AgeSourceBanTime = "ban-time-v1237"
+
 // PermanentBan represents a permanent ban with tracking metadata
 type PermanentBan struct {
 	IP        string    `json:"ip"`
@@ -537,6 +555,11 @@ type PermanentBan struct {
 	Reason    string    `json:"reason,omitempty"`
 	Source    string    `json:"source,omitempty"`
 	Protected bool      `json:"protected"` // If true, NEVER evict this IP
+	// v1.237: see AgeSourceBanTime. Empty = legacy / unknown age (never eligible).
+	AgeSource string `json:"age_source,omitempty"`
+	// v1.237: set under the reason-file lock set just before a cleanup removes a durable reason, so
+	// an interrupted removal is finished by the next run (recovery, design §0.4).
+	CleanupPending string `json:"cleanup_pending,omitempty"` // the reason source being removed
 }
 
 // PermanentBansState holds all tracked permanent bans
@@ -547,7 +570,7 @@ type PermanentBansState struct {
 
 // LoadPermanentBans loads the permanent bans state from disk
 func LoadPermanentBans() (*PermanentBansState, error) {
-	data, err := os.ReadFile(PermanentBansFile)
+	data, err := os.ReadFile(permanentBansPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Return empty state
@@ -573,7 +596,7 @@ func LoadPermanentBans() (*PermanentBansState, error) {
 
 // SavePermanentBans saves the permanent bans state to disk
 func SavePermanentBans(state *PermanentBansState) error {
-	if err := os.MkdirAll(PermanentBansDir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(permanentBansPath), 0750); err != nil { // only when missing; fhs-spec state dir is 0750
 		return err
 	}
 
@@ -585,7 +608,7 @@ func SavePermanentBans(state *PermanentBansState) error {
 	}
 
 	// v1.171 §4.3c: atomic write via the in-package gold helper.
-	return SafeWriteFile(PermanentBansFile, data, 0644)
+	return SafeWriteFile(permanentBansPath, data, 0644)
 }
 
 // TrackPermanentBan adds or updates a permanent ban in tracking
@@ -597,11 +620,13 @@ func TrackPermanentBan(ip, reason, source string, protected bool) error {
 
 	// Check if already exists
 	if existing, ok := state.Bans[ip]; ok {
-		// Update reason/source but preserve original added_at and protected status
-		if reason != "" {
+		// v1.237 (cleanup repair §0.1): an existing entry keeps its stored reason, source, added_at and
+		// age_source; empty fields are filled, nothing is overwritten (a later ban or a re-persist must
+		// not rewrite provenance — the dns1 2026-10-17 rollout rewrite is the measured case).
+		if existing.Reason == "" {
 			existing.Reason = reason
 		}
-		if source != "" {
+		if existing.Source == "" {
 			existing.Source = source
 		}
 		// Only upgrade to protected, never downgrade
@@ -609,16 +634,50 @@ func TrackPermanentBan(ip, reason, source string, protected bool) error {
 			existing.Protected = true
 		}
 	} else {
-		// Add new
+		// Add new: this call is made AT REAL BAN TIME, so the age is established.
 		state.Bans[ip] = &PermanentBan{
 			IP:        ip,
 			AddedAt:   time.Now(),
 			Reason:    reason,
 			Source:    source,
 			Protected: protected,
+			AgeSource: AgeSourceBanTime,
 		}
 	}
 
+	return SavePermanentBans(state)
+}
+
+// TrackDurableUnknownAge records a durable ban that has no tracking entry WITHOUT inventing an age
+// (zero added_at, no age_source): used where the ban time is not known (boot carry of an existing
+// durable entry, protect of an untracked durable ban). An existing entry is left unchanged.
+func TrackDurableUnknownAge(ip, source string, protected bool) error {
+	state, err := LoadPermanentBans()
+	if err != nil {
+		return err
+	}
+	if existing, ok := state.Bans[ip]; ok {
+		if protected && !existing.Protected {
+			existing.Protected = true
+			return SavePermanentBans(state)
+		}
+		return nil
+	}
+	state.Bans[ip] = &PermanentBan{IP: ip, Source: source, Protected: protected}
+	return SavePermanentBans(state)
+}
+
+// SetCleanupPending records (source != "") or clears (source == "") the cleanup intent marker.
+func SetCleanupPending(ip, source string) error {
+	state, err := LoadPermanentBans()
+	if err != nil {
+		return err
+	}
+	b, ok := state.Bans[ip]
+	if !ok {
+		return fmt.Errorf("IP %s not found in permanent bans", ip)
+	}
+	b.CleanupPending = source
 	return SavePermanentBans(state)
 }
 
@@ -648,67 +707,7 @@ func RemovePermanentBan(ip string) error {
 	return SavePermanentBans(state)
 }
 
-// GetEvictableBans returns IPs that can be evicted (old, unprotected)
-// Returns at most maxCount IPs, oldest first
-func GetEvictableBans(maxCount int) ([]string, error) {
-	state, err := LoadPermanentBans()
-	if err != nil {
-		return nil, err
-	}
-
-	threshold := time.Now().AddDate(0, 0, -BanAgeThresholdDays)
-
-	// Collect evictable bans (old + unprotected)
-	type banAge struct {
-		ip    string
-		added time.Time
-	}
-	var candidates []banAge
-
-	for ip, ban := range state.Bans {
-		if ban.Protected {
-			continue // Never evict protected bans
-		}
-		if ban.AddedAt.Before(threshold) {
-			candidates = append(candidates, banAge{ip: ip, added: ban.AddedAt})
-		}
-	}
-
-	// Sort by age (oldest first)
-	for i := 0; i < len(candidates); i++ {
-		for j := i + 1; j < len(candidates); j++ {
-			if candidates[j].added.Before(candidates[i].added) {
-				candidates[i], candidates[j] = candidates[j], candidates[i]
-			}
-		}
-	}
-
-	// Return at most maxCount
-	result := make([]string, 0, maxCount)
-	for i := 0; i < len(candidates) && i < maxCount; i++ {
-		result = append(result, candidates[i].ip)
-	}
-
-	return result, nil
-}
-
-// GetPermanentBanStats returns stats about permanent bans
-func GetPermanentBanStats() (total, protected, evictable int, err error) {
-	state, err := LoadPermanentBans()
-	if err != nil {
-		return 0, 0, 0, err
-	}
-
-	threshold := time.Now().AddDate(0, 0, -BanAgeThresholdDays)
-
-	for _, ban := range state.Bans {
-		total++
-		if ban.Protected {
-			protected++
-		} else if ban.AddedAt.Before(threshold) {
-			evictable++
-		}
-	}
-
-	return total, protected, evictable, nil
-}
+// v1.237: GetEvictableBans / GetPermanentBanStats were removed. They selected from the tracking list
+// alone (age + protected), so manual bans were candidates and durable reasons were ignored
+// (BUG-CLEANUP-EVICTION-SELECTS-ONLY-BANS-RECORDED-AS-MANUAL). Selection, dry-run and stats now all
+// use EvaluateCleanup (cleanup_eligibility.go).

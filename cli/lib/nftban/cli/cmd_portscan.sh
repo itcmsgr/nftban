@@ -75,7 +75,7 @@ _nftban_portscan_help() {
     # Show standard banner
     nftban_banner
 
-    cat <<'HELP'
+    cat <<HELP
 
 USAGE:
     nftban portscan <command> [options]

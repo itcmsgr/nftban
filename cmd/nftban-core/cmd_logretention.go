@@ -410,7 +410,7 @@ func printStatusHuman(s retentionStatus) {
 		fmt.Println("\n  NOTE: DEGRADED_VISIBILITY — the active policy's recorded checks are consistent, but live filesystem facts could not be read (statfs failed), so live fit and detected profile are UNAVAILABLE and a clean ACTIVE_MATCH cannot be confirmed. Frozen values are NOT substituted for live ones.")
 	}
 	if s.InterruptedActivation {
-		fmt.Println("\n  WARNING: a prior policy generation was interrupted (activation journal present). The on-disk policy set may be split. Run `nftban-core logretention recover` (or wait for the next maintenance cycle) — status will not report a coherent state until then.")
+		fmt.Println("\n  WARNING: a prior policy generation was interrupted (activation journal present). The on-disk policy set may be split. Run `/usr/lib/nftban/bin/nftban-core logretention recover` (or wait for the next maintenance cycle) — status will not report a coherent state until then.")
 	}
 	if s.OverallState == "ACTIVE_DRIFT" {
 		fmt.Println("\n  NOTE: an activated policy file was edited by hand (content drift). Overrides belong in /etc/nftban/conf.d/logs.conf; the generated file is derived state.")

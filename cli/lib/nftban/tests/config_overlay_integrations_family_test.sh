@@ -194,6 +194,45 @@ n=$(grep -c '&& nftban_config_apply_final_operator_overlay' "$PIPELINE")
 grep -q '^nftban_config_apply_final_operator_overlay()' "$ROOT/cli/lib/nftban/lib/env.sh" \
   && ok "single overlay authority is defined in env.sh" || bad "overlay authority missing"
 
+echo "=== 9. v1.237 remaining reporting/integration consumers (CONFIG-SHELL-CENTRAL-OVERRIDE-OVERWRITTEN-BY-LATE-BASE) ==="
+# The consumers confirmed on v1.236.1 (evidence_cfg12_2026_11_10): base KEY="BASEVAL", central
+# nftban.conf.local KEY="USERVAL"; the value the consumer actually uses must be USERVAL. Same
+# observation as cfg12.sh: run the real consumer under env.sh, read the key afterwards.
+# cmd_geoip.sh test-download is NOT covered: it downloads, so this hermetic fixture cannot run it.
+L="$ROOT/cli/lib/nftban"
+_mk9(){ # $1=conf.d-relative base path  $2=key
+  rm -rf "${SB:?}/etc"; mkdir -p "$SB/etc/conf.d/$(dirname "$1")"
+  printf '# base\n' > "$SB/etc/nftban.conf"
+  printf '%s="BASEVAL"\n' "$2" > "$SB/etc/conf.d/$1"
+  printf '%s="USERVAL"\n' "$2" > "$SB/etc/nftban.conf.local"; }
+_run9(){ NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_LIB_DIR="$L" NFTBAN_CONFIG_LOADED='' timeout 30 bash -c \
+  "cd '$ROOT'; source '$L/lib/env.sh' >/dev/null 2>&1 || true; $1" 2>/dev/null | tail -1; }
+_key9(){ grep -m1 -oE '^[A-Z_][A-Z0-9_]*=' "$ROOT/etc/nftban/conf.d/$1" | tr -d =; }
+
+_mk9 metrics.conf NFTBAN_METRICS_ENABLED
+v=$(_run9 "source '$L/core/nftban_health.sh' >/dev/null 2>&1; printf '%s\n' \"\${NFTBAN_METRICS_ENABLED:-<unset>}\"")
+[[ "$v" == USERVAL ]] && ok "core/nftban_health.sh metrics.conf: central wins" || bad "core/nftban_health.sh metrics.conf: got $v"
+K=$(_key9 login_alert.conf); _mk9 login_alert.conf "$K"
+v=$(_run9 "source '$L/core/nftban_login_alert.sh' >/dev/null 2>&1; printf '%s\n' \"\${$K:-<unset>}\"")
+[[ "$v" == USERVAL ]] && ok "core/nftban_login_alert.sh $K: central wins" || bad "core/nftban_login_alert.sh $K: got $v"
+_mk9 geoban/main.conf NFTBAN_GEOBAN_COUNTRIES
+v=$(_run9 "source '$L/cli/cmd_zabbix.sh' >/dev/null 2>&1; _cmd_zabbix_discover countries 2>/dev/null | tr -d '\n'; echo")
+[[ "$v" == *USERVAL* && "$v" != *BASEVAL* ]] && ok "cmd_zabbix discover countries: lists the central value" || bad "cmd_zabbix discover countries: got $v"
+for p in cpanel directadmin plesk; do
+  K=$(_key9 "panels/$p/main.conf"); _mk9 "panels/$p/main.conf" "$K"
+  v=$(_run9 "source '$L/lib/nftban_panel_$p.sh' >/dev/null 2>&1; nftban_panel_${p}_report >/dev/null 2>&1; printf '%s\n' \"\${$K:-<unset>}\"")
+  [[ "$v" == USERVAL ]] && ok "nftban_panel_$p report $K: central wins" || bad "nftban_panel_$p report $K: got $v"
+done
+# Falsification: with the overlay invocation stripped (declared inversion), the same fixture
+# resolves BASE, so the checks above measure the repair, not the fixture.
+_mk9 metrics.conf NFTBAN_METRICS_ENABLED
+rm -rf "${SB:?}/pre9"; mkdir -p "$SB/pre9"; cp -a "$L/." "$SB/pre9/"
+grep -v 'nftban_config_apply_final_operator_overlay' "$L/core/nftban_health.sh" > "$SB/pre9/core/nftban_health.sh"
+v=$(NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_LIB_DIR="$SB/pre9" NFTBAN_CONFIG_LOADED='' timeout 30 bash -c \
+  "cd '$ROOT'; source '$SB/pre9/lib/env.sh' >/dev/null 2>&1 || true; source '$SB/pre9/core/nftban_health.sh' >/dev/null 2>&1; printf '%s\n' \"\${NFTBAN_METRICS_ENABLED:-<unset>}\"" 2>/dev/null | tail -1)
+[[ "$v" == BASEVAL ]] && ok "falsification: nftban_health.sh without the overlay resolves BASE (defect reproduces)" \
+                      || bad "falsification: pre-fix nftban_health.sh resolved $v — the control proves nothing"
+
 echo
 printf 'config-overlay-integrations-family: %s (passed=%d failed=%d)\n' "$([[ $F -eq 0 ]] && echo PASS || echo FAIL)" "$P" "$F"
 exit $(( F > 0 ? 1 : 0 ))

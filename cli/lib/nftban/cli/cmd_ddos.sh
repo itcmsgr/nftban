@@ -57,7 +57,7 @@ _nftban_ddos_help() {
     # Show standard banner
     nftban_banner
 
-    cat <<'HELP'
+    cat <<HELP
 
 USAGE:
     nftban ddos <command> [options]
@@ -88,7 +88,7 @@ PROTECTION TYPES:
 
     • SYN Flood Protection - Rate limits TCP SYN packets
     • Connection Limits - Caps concurrent connections per service port.
-      PER SOURCE IP (v1.233.0): each rule is keyed with `ip saddr` / `ip6 saddr`
+      PER SOURCE IP (v1.233.0): each rule is keyed with \`ip saddr\` / \`ip6 saddr\`
       into a named dynamic set, so every source gets its own allowance and one
       busy source can no longer consume another's. ESTABLISHED connections still
       count toward that source's own cap. Over the cap the packet is dropped

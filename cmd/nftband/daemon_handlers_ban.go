@@ -36,7 +36,6 @@ import (
 	"github.com/itcmsgr/nftban/internal/metrics"
 	"github.com/itcmsgr/nftban/internal/nftbackend"
 	"github.com/itcmsgr/nftban/internal/persistence"
-	"github.com/itcmsgr/nftban/internal/safety"
 	"github.com/itcmsgr/nftban/internal/whitelist"
 	"github.com/itcmsgr/nftban/pkg/ipc"
 )
@@ -142,6 +141,13 @@ func (d *Daemon) checkAndEscalate(ip, source, country string) {
 
 	// Persist to blacklist.d/30-persistent-offenders.conf via persistence package
 	_, _, err = persistence.PersistBan(d.configDir, ip, reason, "persistent")
+	if err == nil {
+		// v1.237 (BUG-PERMANENT-BANS-TRACKING-LIST-NOT-FED-BY-MODULE-PERMANENT-BANS): escalation is a real
+		// ban event, so it is tracked with its ban-time age (it used to persist without tracking).
+		if terr := trackAtBanTime(d.configDir, ip, reason, "persistent", false); terr != nil {
+			log.Printf("[ESCALATE] Warning: failed to track permanent ban for %s: %v", ip, terr)
+		}
+	}
 	if err != nil {
 		log.Printf("[ESCALATE] Failed to persist permanent ban for %s: %v", ip, err)
 	}
@@ -287,7 +293,8 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 
 	// Track permanent ban if requested (timeout=0 and permanent flag set)
 	if permanent && timeout == 0 {
-		if err := safety.TrackPermanentBan(ip, reason, source, protected); err != nil {
+		// v1.237: tracked at ban time under the shared reason-file lock set (cleanup repair).
+		if err := trackAtBanTime(d.configDir, ip, reason, source, protected); err != nil {
 			log.Printf("[BAN] Warning: failed to track permanent ban for %s: %v", ip, err)
 		}
 	}
@@ -385,7 +392,9 @@ func (d *Daemon) handleProtectBanRequest(params map[string]any) SocketResponse {
 		return SocketResponse{Success: false, Error: "missing ip parameter"}
 	}
 
-	if err := safety.SetBanProtected(ip, true); err != nil {
+	// v1.237: under the shared reason-file lock set; works for every durable ban (an untracked one is
+	// tracked with an unknown age, never an invented one).
+	if err := cleanupProtect(d.configDir, ip, true); err != nil {
 		return SocketResponse{
 			Success: false,
 			Error:   err.Error(),
@@ -408,7 +417,7 @@ func (d *Daemon) handleUnprotectBanRequest(params map[string]any) SocketResponse
 		return SocketResponse{Success: false, Error: "missing ip parameter"}
 	}
 
-	if err := safety.SetBanProtected(ip, false); err != nil {
+	if err := cleanupProtect(d.configDir, ip, false); err != nil {
 		return SocketResponse{
 			Success: false,
 			Error:   err.Error(),
@@ -431,21 +440,51 @@ func (d *Daemon) handleGetEvictableBansRequest(params map[string]any) SocketResp
 		count = int(c)
 	}
 
-	ips, err := safety.GetEvictableBans(count)
+	// v1.237: the dry-run is the SAME eligibility calculation execute uses (EvaluateCleanup), with every
+	// exclusion and its reason.
+	decs, st, err := cleanupEvaluate(d.configDir, time.Now())
 	if err != nil {
 		return SocketResponse{
 			Success: false,
 			Error:   err.Error(),
 		}
 	}
+	r := cleanupSummarize(decs, st, count)
+	d.setPermanentBanMetrics(r)
 
 	return SocketResponse{
 		Success: true,
 		Data: map[string]any{
-			"count": len(ips),
-			"ips":   ips,
+			"count":    len(r.Selected),
+			"ips":      r.Selected,
+			"eligible": r.Eligible,
+			"excluded": r.Excluded,
+			"items":    r.Items,
 		},
 	}
+}
+
+// setPermanentBanMetrics refreshes the permanent-ban gauges from a cleanup evaluation (every run).
+func (d *Daemon) setPermanentBanMetrics(r cleanupReport) {
+	metrics.SetPermanentBansTotal(r.Tracked)
+	metrics.SetPermanentBansProtected(r.Protected)
+	metrics.SetPermanentBansEvictable(r.Eligible)
+}
+
+// daemonCleanupKernel adapts the backend to cleanupKernel and records the unban metrics.
+type daemonCleanupKernel struct{ d *Daemon }
+
+func (k daemonCleanupKernel) Unban(ip string) error {
+	if _, err := k.d.backend.Unban(k.d.ctx, nftbackend.UnbanRequest{IP: ip}); err != nil {
+		return err
+	}
+	family := "ipv4"
+	if strings.Contains(ip, ":") {
+		family = "ipv6"
+	}
+	metrics.RecordUnbanWithIP("eviction", family, ip)
+	k.d.stats.RecordUnban()
+	return nil
 }
 
 // handleEvictOldBansRequest evicts old unprotected bans
@@ -455,86 +494,56 @@ func (d *Daemon) handleEvictOldBansRequest(params map[string]any) SocketResponse
 		count = int(c)
 	}
 
-	// Get evictable bans
-	ips, err := safety.GetEvictableBans(count)
+	// v1.237 cleanup repair: one eligibility calculation; per-IP re-validation, per-reason removal,
+	// kernel delete only when no reason remains, and the intent marker for recovery — all under the
+	// shared reason-file lock set (cleanupExecute / cleanupRemoveOne).
+	r, err := cleanupExecute(d.configDir, time.Now(), count, daemonCleanupKernel{d: d}, cleanupHooks{})
 	if err != nil {
 		return SocketResponse{
 			Success: false,
-			Error:   "failed to get evictable bans: " + err.Error(),
+			Error:   "cleanup evaluation failed: " + err.Error(),
 		}
 	}
-
-	if len(ips) == 0 {
-		return SocketResponse{
-			Success: true,
-			Data: map[string]any{
-				"evicted": 0,
-				"message": "no evictable bans found",
-			},
-		}
+	for _, it := range r.Items {
+		log.Printf("[EVICT] %s source=%s result=%s", it.IP, it.Source, it.Result)
 	}
-
-	// Unban each evictable IP
-	evicted := 0
-	var errors []string
-	for _, ip := range ips {
-		// Unban via backend
-		_, err := d.backend.Unban(d.ctx, nftbackend.UnbanRequest{IP: ip})
-		if err != nil {
-			errors = append(errors, fmt.Sprintf("%s: %v", ip, err))
-			continue
-		}
-
-		// Remove from permanent ban tracking
-		if err := safety.RemovePermanentBan(ip); err != nil {
-			log.Printf("[EVICT] Warning: failed to remove %s from tracking: %v", ip, err)
-		}
-
-		// Record metrics
-		family := "ipv4"
-		if strings.Contains(ip, ":") {
-			family = "ipv6"
-		}
-		metrics.RecordUnbanWithIP("eviction", family, ip)
-		d.stats.RecordUnban()
-		evicted++
-	}
-
-	data := map[string]any{
-		"evicted":   evicted,
-		"requested": len(ips),
-	}
-	if len(errors) > 0 {
-		data["errors"] = errors
+	if decs, st, e := cleanupEvaluate(d.configDir, time.Now()); e == nil {
+		d.setPermanentBanMetrics(cleanupSummarize(decs, st, 0)) // gauges follow the real result
 	}
 
 	return SocketResponse{
 		Success: true,
-		Data:    data,
+		Data: map[string]any{
+			"evicted":          r.Removed,
+			"requested":        len(r.Selected),
+			"finished_pending": r.Finished,
+			"failed":           r.Failed,
+			"excluded":         r.Excluded,
+			"items":            r.Items,
+		},
 	}
 }
 
 // handlePermanentBanStatsRequest returns statistics about permanent bans
 func (d *Daemon) handlePermanentBanStatsRequest() SocketResponse {
-	total, protected, evictable, err := safety.GetPermanentBanStats()
+	// v1.237: stats use the same eligibility calculation as dry-run and execute.
+	decs, st, err := cleanupEvaluate(d.configDir, time.Now())
 	if err != nil {
 		return SocketResponse{
 			Success: false,
 			Error:   err.Error(),
 		}
 	}
-
-	// BUG-008 FIX: Update Prometheus metrics for permanent ban tracking
-	metrics.SetPermanentBansTotal(total)
-	metrics.SetPermanentBansProtected(protected)
-	metrics.SetPermanentBansEvictable(evictable)
+	r := cleanupSummarize(decs, st, 0)
+	d.setPermanentBanMetrics(r)
 
 	return SocketResponse{
 		Success: true,
 		Data: map[string]any{
-			"total":     total,
-			"protected": protected,
-			"evictable": evictable,
+			"total":     r.Tracked,
+			"protected": r.Protected,
+			"evictable": r.Eligible,
+			"excluded":  r.Excluded,
 		},
 	}
 }
