@@ -46,95 +46,90 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Get Code Scanning Alerts
-        id: code-scanning
+      # v1.237 (CI-SECURITY-SUMMARY-REPORTS-CLEAN-WITH-ALERTS-AND-MALFORMED-COUNTS, GitHub #1323): the old
+      # collection counted severity GROUPS, not alerts (any number of High showed as 1), read only the
+      # first page, and turned an API failure into "0" (a 403 body plus "0" became a table cell).
+      # Malformed values then broke the totals and the status fell through to CLEAN. Now:
+      #   - every page is read (--paginate) and each alert is counted;
+      #   - a source that cannot be read is UNKNOWN, never 0, and its error is shown in the report;
+      #   - the overall status comes from known counts; an unreadable source can never yield CLEAN.
+      - name: Collect alerts
+        id: collect
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
-          # Get all open code scanning alerts
-          ALERTS=$(gh api repos/${{ github.repository }}/code-scanning/alerts \
-            --jq '[.[] | select(.state == "open")] | group_by(.rule.security_severity_level) |
-            {
-              critical: [.[] | select(.[0].rule.security_severity_level == "critical")] | length,
-              high: [.[] | select(.[0].rule.security_severity_level == "high")] | length,
-              medium: [.[] | select(.[0].rule.security_severity_level == "medium")] | length,
-              low: [.[] | select(.[0].rule.security_severity_level == "low")] | length,
-              total: [.[]] | add | length
-            }' 2>/dev/null || echo '{"critical":0,"high":0,"medium":0,"low":0,"total":0}')
-
-          echo "alerts=$ALERTS" >> $GITHUB_OUTPUT
-          echo "Code Scanning Alerts: $ALERTS"
-
-      - name: Get Dependabot Alerts
-        id: dependabot
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Get all open Dependabot alerts
-          ALERTS=$(gh api repos/${{ github.repository }}/dependabot/alerts \
-            --jq '[.[] | select(.state == "open")] | group_by(.security_vulnerability.severity) |
-            {
-              critical: [.[] | select(.[0].security_vulnerability.severity == "critical")] | length,
-              high: [.[] | select(.[0].security_vulnerability.severity == "high")] | length,
-              medium: [.[] | select(.[0].security_vulnerability.severity == "medium")] | length,
-              low: [.[] | select(.[0].security_vulnerability.severity == "low")] | length,
-              total: [.[]] | add | length
-            }' 2>/dev/null || echo '{"critical":0,"high":0,"medium":0,"low":0,"total":0}')
-
-          echo "alerts=$ALERTS" >> $GITHUB_OUTPUT
-          echo "Dependabot Alerts: $ALERTS"
-
-      - name: Get Secret Scanning Alerts
-        id: secrets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          COUNT=$(gh api repos/${{ github.repository }}/secret-scanning/alerts \
-            --jq '[.[] | select(.state == "open")] | length' 2>/dev/null || echo "0")
-          echo "count=$COUNT" >> $GITHUB_OUTPUT
-          echo "Secret Scanning Alerts: $COUNT"
+          set -u
+          # collect <key> <endpoint> <jq emitting one severity per open alert>
+          collect() {
+            local key=$1 ep=$2 expr=$3 out rc
+            out=$(gh api --paginate "repos/${REPO}/${ep}?state=open&per_page=100" --jq "$expr" 2>"err_${key}.txt"); rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "${key}_state=UNKNOWN" >> "$GITHUB_OUTPUT"
+              echo "${key}_error=$(head -c 300 "err_${key}.txt" | tr '\n\r|' '   ')" >> "$GITHUB_OUTPUT"
+              echo "${key}: UNKNOWN (api rc=$rc): $(head -c 300 "err_${key}.txt")"
+              return 0
+            fi
+            local s n
+            echo "${key}_state=OK" >> "$GITHUB_OUTPUT"
+            for s in critical high medium low; do
+              n=$(printf '%s\n' "$out" | grep -cx "$s" || true)
+              echo "${key}_${s}=$n" >> "$GITHUB_OUTPUT"
+            done
+            n=$(printf '%s\n' "$out" | grep -c . || true)
+            echo "${key}_total=$n" >> "$GITHUB_OUTPUT"
+            echo "${key}: OK total=$n"
+          }
+          collect cs code-scanning/alerts '.[] | (.rule.security_severity_level // "none")'
+          collect db dependabot/alerts    '.[] | (.security_vulnerability.severity // "none")'
+          collect ss secret-scanning/alerts '.[] | "secret"'
 
       - name: Generate Security Report
         id: report
+        env:
+          O_CS_STATE: ${{ steps.collect.outputs.cs_state }}
+          O_CS_ERR: ${{ steps.collect.outputs.cs_error }}
+          O_CS_C: ${{ steps.collect.outputs.cs_critical }}
+          O_CS_H: ${{ steps.collect.outputs.cs_high }}
+          O_CS_M: ${{ steps.collect.outputs.cs_medium }}
+          O_CS_L: ${{ steps.collect.outputs.cs_low }}
+          O_CS_T: ${{ steps.collect.outputs.cs_total }}
+          O_DB_STATE: ${{ steps.collect.outputs.db_state }}
+          O_DB_ERR: ${{ steps.collect.outputs.db_error }}
+          O_DB_C: ${{ steps.collect.outputs.db_critical }}
+          O_DB_H: ${{ steps.collect.outputs.db_high }}
+          O_DB_M: ${{ steps.collect.outputs.db_medium }}
+          O_DB_L: ${{ steps.collect.outputs.db_low }}
+          O_DB_T: ${{ steps.collect.outputs.db_total }}
+          O_SS_STATE: ${{ steps.collect.outputs.ss_state }}
+          O_SS_ERR: ${{ steps.collect.outputs.ss_error }}
+          O_SS_T: ${{ steps.collect.outputs.ss_total }}
         run: |
+          set -u
           DATE=$(date -u +"%Y-%m-%d %H:%M UTC")
+          # cell <state> <value>: UNKNOWN when the source could not be read
+          cell() { if [ "$1" = OK ]; then printf '%s' "${2:-0}"; else printf 'UNKNOWN'; fi; }
+          num()  { if [ "$1" = OK ]; then printf '%s' "${2:-0}"; else printf '0'; fi; }
 
-          # Parse JSON safely
-          CS_CRITICAL=$(echo '${{ steps.code-scanning.outputs.alerts }}' | jq -r '.critical // 0')
-          CS_HIGH=$(echo '${{ steps.code-scanning.outputs.alerts }}' | jq -r '.high // 0')
-          CS_MEDIUM=$(echo '${{ steps.code-scanning.outputs.alerts }}' | jq -r '.medium // 0')
-          CS_TOTAL=$(echo '${{ steps.code-scanning.outputs.alerts }}' | jq -r '.total // 0')
+          TOTAL_CRITICAL=$(( $(num "$O_CS_STATE" "$O_CS_C") + $(num "$O_DB_STATE" "$O_DB_C") ))
+          TOTAL_HIGH=$(( $(num "$O_CS_STATE" "$O_CS_H") + $(num "$O_DB_STATE" "$O_DB_H") ))
+          TOTAL_MEDIUM=$(( $(num "$O_CS_STATE" "$O_CS_M") + $(num "$O_DB_STATE" "$O_DB_M") ))
+          SECRETS=$(num "$O_SS_STATE" "$O_SS_T")
+          TOTAL_KNOWN=$(( $(num "$O_CS_STATE" "$O_CS_T") + $(num "$O_DB_STATE" "$O_DB_T") + SECRETS ))
+          UNREADABLE=""
+          [ "$O_CS_STATE" = OK ] || UNREADABLE="$UNREADABLE code-scanning"
+          [ "$O_DB_STATE" = OK ] || UNREADABLE="$UNREADABLE dependabot"
+          [ "$O_SS_STATE" = OK ] || UNREADABLE="$UNREADABLE secret-scanning"
 
-          DB_CRITICAL=$(echo '${{ steps.dependabot.outputs.alerts }}' | jq -r '.critical // 0')
-          DB_HIGH=$(echo '${{ steps.dependabot.outputs.alerts }}' | jq -r '.high // 0')
-          DB_MEDIUM=$(echo '${{ steps.dependabot.outputs.alerts }}' | jq -r '.medium // 0')
-          DB_TOTAL=$(echo '${{ steps.dependabot.outputs.alerts }}' | jq -r '.total // 0')
-
-          SECRETS=${{ steps.secrets.outputs.count }}
-
-          # Calculate totals
-          TOTAL_CRITICAL=$((CS_CRITICAL + DB_CRITICAL))
-          TOTAL_HIGH=$((CS_HIGH + DB_HIGH))
-          TOTAL_MEDIUM=$((CS_MEDIUM + DB_MEDIUM))
-          TOTAL_ALL=$((CS_TOTAL + DB_TOTAL + SECRETS))
-
-          # Determine status
-          if [ "$TOTAL_CRITICAL" -gt 0 ] || [ "$SECRETS" -gt 0 ]; then
-            STATUS="CRITICAL"
-            EMOJI="🔴"
-          elif [ "$TOTAL_HIGH" -gt 0 ]; then
-            STATUS="HIGH"
-            EMOJI="🟠"
-          elif [ "$TOTAL_MEDIUM" -gt 0 ]; then
-            STATUS="MEDIUM"
-            EMOJI="🟡"
-          elif [ "$TOTAL_ALL" -gt 0 ]; then
-            STATUS="LOW"
-            EMOJI="🔵"
-          else
-            STATUS="CLEAN"
-            EMOJI="🟢"
+          # Determine status from KNOWN counts; an unreadable source can never yield CLEAN.
+          if [ "$TOTAL_CRITICAL" -gt 0 ] || [ "$SECRETS" -gt 0 ]; then STATUS="CRITICAL"; EMOJI="🔴"
+          elif [ "$TOTAL_HIGH" -gt 0 ]; then STATUS="HIGH"; EMOJI="🟠"
+          elif [ "$TOTAL_MEDIUM" -gt 0 ]; then STATUS="MEDIUM"; EMOJI="🟡"
+          elif [ -n "$UNREADABLE" ]; then STATUS="UNKNOWN"; EMOJI="⚪"
+          elif [ "$TOTAL_KNOWN" -gt 0 ]; then STATUS="LOW"; EMOJI="🔵"
+          else STATUS="CLEAN"; EMOJI="🟢"
           fi
+          TOTAL_CELL="$TOTAL_KNOWN"; [ -n "$UNREADABLE" ] && TOTAL_CELL="${TOTAL_KNOWN}+UNKNOWN"
 
           # Create report
           cat > security-report.md << EOF
@@ -144,10 +139,24 @@ jobs:
 
           | Category | Critical | High | Medium | Low | Total |
           |----------|----------|------|--------|-----|-------|
-          | Code Scanning | $CS_CRITICAL | $CS_HIGH | $CS_MEDIUM | - | $CS_TOTAL |
-          | Dependabot | $DB_CRITICAL | $DB_HIGH | $DB_MEDIUM | - | $DB_TOTAL |
-          | Secret Scanning | - | - | - | - | $SECRETS |
-          | **Total** | **$TOTAL_CRITICAL** | **$TOTAL_HIGH** | **$TOTAL_MEDIUM** | - | **$TOTAL_ALL** |
+          | Code Scanning (security severity) | $(cell "$O_CS_STATE" "$O_CS_C") | $(cell "$O_CS_STATE" "$O_CS_H") | $(cell "$O_CS_STATE" "$O_CS_M") | $(cell "$O_CS_STATE" "$O_CS_L") | $(cell "$O_CS_STATE" "$O_CS_T") |
+          | Dependabot | $(cell "$O_DB_STATE" "$O_DB_C") | $(cell "$O_DB_STATE" "$O_DB_H") | $(cell "$O_DB_STATE" "$O_DB_M") | $(cell "$O_DB_STATE" "$O_DB_L") | $(cell "$O_DB_STATE" "$O_DB_T") |
+          | Secret Scanning | - | - | - | - | $(cell "$O_SS_STATE" "$O_SS_T") |
+          | **Total** | **$TOTAL_CRITICAL** | **$TOTAL_HIGH** | **$TOTAL_MEDIUM** | - | **$TOTAL_CELL** |
+
+          Code-scanning Total includes alerts without a security severity (code-quality findings).
+          EOF
+          if [ -n "$UNREADABLE" ]; then
+            {
+              echo
+              echo "## Access failures (reported as UNKNOWN, not 0)"
+              echo
+              [ "$O_CS_STATE" = OK ] || echo "- code-scanning: ${O_CS_ERR}"
+              [ "$O_DB_STATE" = OK ] || echo "- dependabot: ${O_DB_ERR}"
+              [ "$O_SS_STATE" = OK ] || echo "- secret-scanning: ${O_SS_ERR}"
+            } >> security-report.md
+          fi
+          cat >> security-report.md << EOF
 
           ## Quick Links
 
@@ -166,10 +175,11 @@ jobs:
           *Generated by Security Summary workflow*
           EOF
 
-          echo "status=$STATUS" >> $GITHUB_OUTPUT
-          echo "total_critical=$TOTAL_CRITICAL" >> $GITHUB_OUTPUT
-          echo "total_high=$TOTAL_HIGH" >> $GITHUB_OUTPUT
-          echo "secrets=$SECRETS" >> $GITHUB_OUTPUT
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          echo "total_critical=$TOTAL_CRITICAL" >> "$GITHUB_OUTPUT"
+          echo "total_high=$TOTAL_HIGH" >> "$GITHUB_OUTPUT"
+          echo "secrets=$SECRETS" >> "$GITHUB_OUTPUT"
+          echo "emoji=$EMOJI" >> "$GITHUB_OUTPUT"
 
           cat security-report.md
 
@@ -181,7 +191,7 @@ jobs:
           retention-days: 90
 
       - name: Create Issue for Critical/High Findings
-        if: steps.report.outputs.total_critical != '0' || steps.report.outputs.total_high != '0' || steps.report.outputs.secrets != '0'
+        if: steps.report.outputs.status == 'CRITICAL' || steps.report.outputs.status == 'HIGH'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -191,7 +201,7 @@ jobs:
           if [ "$EXISTING" -eq 0 ]; then
             # Create issue without labels (labels may not exist in repo)
             gh issue create \
-              --title "🔴 Security Alert: ${{ steps.report.outputs.status }} severity findings detected" \
+              --title "🔴 Security Alert: ${{ steps.report.outputs.status }} findings (${{ steps.report.outputs.total_critical }} critical, ${{ steps.report.outputs.total_high }} high)" \
               --body-file security-report.md
             echo "Created new security alert issue"
           else
