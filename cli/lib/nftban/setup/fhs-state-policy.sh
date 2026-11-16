@@ -37,16 +37,22 @@ _nftban_fhs_parent_root_closed() {
 # _nftban_fhs_exact TYPE OWNER:GROUP MODE PATH
 _nftban_fhs_exact() {
     local t="$1" og="$2" m="$3" p="$4"
-    [[ -L "$p" ]] && return 0
+    [[ -e "$p" || -L "$p" ]] || return 0
+    if ! _nftban_fhs_parent_root_closed "$p"; then
+        echo "fhs-state-policy: skipped $p (parent not root-owned or writable by group/other)" >&2
+        return 0
+    fi
+    # A declared entry is never a link. One planted while the parent was writable by the service
+    # account could redirect a later root write, so it is removed (the link only, never its target).
+    if [[ -L "$p" ]]; then
+        rm -f -- "$p" && echo "fhs-state-policy: removed symlink at declared entry $p" >&2
+        return 0
+    fi
     case "$t" in
         file) [[ -f "$p" ]] || return 0 ;;
         dir)  [[ -d "$p" ]] || return 0 ;;
         *)    return 0 ;;
     esac
-    if ! _nftban_fhs_parent_root_closed "$p"; then
-        echo "fhs-state-policy: skipped $p (parent not root-owned or writable by group/other)" >&2
-        return 0
-    fi
     chown -h "$og" -- "$p" 2>/dev/null || true
     [[ -L "$p" ]] || chmod "$m" -- "$p" 2>/dev/null || true
 }

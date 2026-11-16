@@ -87,7 +87,8 @@ grep -qE "^dir root:root 0700 $S/applied$" <<<"$pol_rows" && grep -qE "^dir root
     && ok "applied/ and commit-confirm/: directory only, root 0700" || no "root-only dirs"
 grep -qE '\.trust$' <<<"$pol_rows" && no "a trust marker is enforced (would re-own a planted file)" || ok "trust markers are never re-owned by the repair"
 grep -qE 'chown -R|chmod -R|find ' "$POL" && no "policy recurses" || ok "policy is never recursive"
-grep -qF 'chown -h' "$POL" && grep -qF '[[ -L "$p" ]] && return 0' "$POL" && ok "policy never follows a symlink" || no "policy symlink guard"
+grep -qF 'chown -h' "$POL" && grep -qF 'if [[ -L "$p" ]]; then' "$POL" && grep -qF 'rm -f -- "$p"' "$POL" \
+    && ok "policy never follows a symlink; a link at a declared entry is removed (link only)" || no "policy symlink guard"
 grep -qF '_nftban_fhs_parent_root_closed' "$POL" && ok "policy acts only under a root-owned, closed parent" || no "policy parent guard"
 grep -qE '^set -|shopt ' "$POL" && no "policy changes shell options when sourced" || ok "policy is definitions only (safe to source)"
 
