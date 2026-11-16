@@ -944,10 +944,12 @@ generate_state_policy() {
 # Parent of PATH is root-owned and not writable by group/other (else nothing is touched: the
 # directory policy must establish the boundary first, so no entry can be swapped mid-repair).
 _nftban_fhs_parent_root_closed() {
+    # Two stat calls, no `read` field split: callers run with IFS=$'\n\t' (NFTBan CLI strict mode).
     local d u m
     d=$(dirname -- "$1")
-    read -r u m < <(stat -c '%u %a' -- "$d" 2>/dev/null) || return 1
-    [[ "$u" == 0 ]] && (( (8#${m:-777} & 8#022) == 0 ))
+    u=$(stat -c '%u' -- "$d" 2>/dev/null) || return 1
+    m=$(stat -c '%a' -- "$d" 2>/dev/null) || return 1
+    [[ "$u" == 0 && "$m" =~ ^[0-7]+$ ]] && (( (8#$m & 8#022) == 0 ))
 }
 
 # _nftban_fhs_exact TYPE OWNER:GROUP MODE PATH

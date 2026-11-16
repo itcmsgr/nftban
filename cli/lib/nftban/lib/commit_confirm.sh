@@ -157,11 +157,13 @@ cc_record_applied_baseline() {
 # -----------------------------------------------------------------------------
 _cc_uid() { printf '%s' "${CC_TRUST_UID:-0}"; }
 _cc_owned_ok() {  # path: required owner (or root), no group/other write, not a symlink
+    # Two stat calls, no `read` field split: the CLI runs with IFS=$'\n\t' (strict mode).
     local p="$1" u m
     [[ -e "$p" && ! -L "$p" ]] || return 1
-    read -r u m < <(stat -c '%u %a' -- "$p" 2>/dev/null) || return 1
+    u=$(stat -c '%u' -- "$p" 2>/dev/null) || return 1
+    m=$(stat -c '%a' -- "$p" 2>/dev/null) || return 1
     [[ "$u" == "$(_cc_uid)" || "$u" == 0 ]] || return 1
-    (( (8#${m:-777} & 8#022) == 0 ))
+    [[ "$m" =~ ^[0-7]+$ ]] && (( (8#$m & 8#022) == 0 ))
 }
 _cc_chain_ok() {  # dir: it and every parent up to / (or CC_TRUST_TOP)
     local d="$1"

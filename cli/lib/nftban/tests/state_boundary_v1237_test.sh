@@ -91,6 +91,11 @@ grep -qF 'chown -h' "$POL" && grep -qF 'if [[ -L "$p" ]]; then' "$POL" && grep -
     && ok "policy never follows a symlink; a link at a declared entry is removed (link only)" || no "policy symlink guard"
 grep -qF '_nftban_fhs_parent_root_closed' "$POL" && ok "policy acts only under a root-owned, closed parent" || no "policy parent guard"
 grep -qE '^set -|shopt ' "$POL" && no "policy changes shell options when sourced" || ok "policy is definitions only (safe to source)"
+# the parent check must work under the CLI's strict IFS (v1.237 EL9 package finding: `read u m` split failed)
+pc=$(bash -c 'IFS=$'"'"'\n\t'"'"'; source "$1"; d=$(mktemp -d); chmod 0750 "$d"; : > "$d/f"; _nftban_fhs_parent_root_closed "$d/f"; echo "$? $(stat -c %u "$d")"; rm -rf "$d"' _ "$POL")
+if [[ "${pc#* }" == 0 ]]; then [[ "${pc%% *}" == 0 ]] && ok "policy parent check works under IFS=\\n\\t (root-owned dir)" || no "policy parent check fails under strict IFS" "$pc"
+else [[ "${pc%% *}" == 1 ]] && ok "policy parent check works under IFS=\\n\\t (non-root dir refused)" || no "policy parent check under strict IFS" "$pc"; fi
+grep -qE 'read -r [a-z]+ [a-z]+ < <\(stat' "$POL" "$CC" && no "a field-splitting read of stat output remains" || ok "no IFS-dependent stat parsing in policy or commit-confirm"
 
 echo "=== commit-confirm: rollback/confirm inputs are validated before root applies them ==="
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
@@ -105,7 +110,7 @@ cc_case(){  # name expected(0|1) mutation
     local name="$1" want="$2" mut="$3" rc
     mk_tree
     rc=$(NFTBAN_DATA_DIR="$T/data" NFTBAN_CONFIG_DIR="$T/etc" CC_TRUST_UID="$(id -u)" CC_TRUST_TOP="$T" bash -c '
-        set +e; source "$1" >/dev/null 2>&1
+        set +e; IFS=$'"'"'\n\t'"'"'; source "$1" >/dev/null 2>&1
         printf "%s" "$CC_TRUST_CONTENT" > "$CC_TRUST"; chmod 600 "$CC_TRUST"
         eval "$2"
         cc_inputs_trusted record work base; echo $?' _ "$CC" "$mut" 2>/dev/null | tail -1)
@@ -125,7 +130,7 @@ cc_case "record group-writable" 1 'chmod 0660 "$CC_RECORD"'
 est(){  # status expected_marker(yes|no) mutation
     mk_tree
     NFTBAN_DATA_DIR="$T/data" NFTBAN_CONFIG_DIR="$T/etc" CC_TRUST_UID="$(id -u)" CC_TRUST_TOP="$T" bash -c '
-        set +e; source "$1" >/dev/null 2>&1
+        set +e; IFS=$'"'"'\n\t'"'"'; source "$1" >/dev/null 2>&1
         printf "apply_id=t\nstatus=%s\n" "$2" > "$CC_RECORD"; eval "$3"
         _cc_establish_trust; _cc_trust_marker_ok && echo yes || echo no' _ "$CC" "$1" "$2" 2>/dev/null | tail -1
 }
