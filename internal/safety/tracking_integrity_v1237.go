@@ -14,16 +14,13 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/user"
 	"path/filepath"
-	"strconv"
 	"syscall"
 )
 
-// PermanentBansFileMode / PermanentBansGroup: fhs-spec file_permissions (state/permanent_bans.json).
+// PermanentBansFileMode: fhs-spec file_permissions (state/permanent_bans.json; group nftban from the setgid dir).
 const (
 	PermanentBansFileMode os.FileMode = 0640
-	PermanentBansGroup                = "nftban"
 	// PermanentBansTrustSuffix names the root-only trust marker next to the tracking file.
 	PermanentBansTrustSuffix = ".trust"
 	trustMarkerContent       = "nftban tracking trust boundary v1237\n"
@@ -194,21 +191,4 @@ func LoadPermanentBansForCleanup() (*PermanentBansState, error) {
 		return nil, fmt.Errorf("%w: records written before the root-owned state boundary are not sanitized yet (nftband establishes this at start)", ErrTrackingUntrusted)
 	}
 	return LoadPermanentBans()
-}
-
-// setTrackingOwnership puts the written tracking file at root:nftban (fhs-spec) when running as root.
-// In place: the inode does not change.
-func setTrackingOwnership(p string) {
-	if os.Geteuid() != 0 {
-		return
-	}
-	g, err := user.LookupGroup(PermanentBansGroup)
-	if err != nil {
-		return
-	}
-	gid, err := strconv.Atoi(g.Gid)
-	if err != nil {
-		return
-	}
-	_ = os.Lchown(p, 0, gid)
 }

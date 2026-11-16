@@ -242,3 +242,40 @@ func TestCleanup_DryRunMatchesExecute(t *testing.T) {
 		t.Fatalf("dry-run %v != execute %v", dry.Selected, r.Selected)
 	}
 }
+
+// v1.237 state boundary: when the daemon started before the boundary held (no valid trust marker), the
+// cleanup path itself establishes it under the lock set, sanitizing records written before it.
+func TestCleanup_EstablishesTrustWhenStartWasTooEarly(t *testing.T) {
+	f := newCleanupFixture(t)
+	ip := "198.51.100.90"
+	f.reason("login", ip)
+	f.track(ip, "login", nil) // carries ban-time provenance, as a forged pre-boundary record would
+	st, _ := safety.LoadPermanentBans()
+	if st.Bans[ip].AgeSource != safety.AgeSourceBanTime {
+		t.Fatal("fixture precondition")
+	}
+	marker := filepath.Join(f.dir, "state", "permanent_bans.json"+safety.PermanentBansTrustSuffix)
+	// A look-alike marker planted while state/ was writable: right content, wrong mode. It must never
+	// establish trust, whatever its owner becomes later.
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(marker, []byte("nftban tracking trust boundary v1237\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	decs, st, err := cleanupEvaluate(f.dir, f.now)
+	if err != nil {
+		t.Fatalf("cleanup must establish trust itself once the boundary holds: %v", err)
+	}
+	if fi, err := os.Stat(marker); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatal("the planted marker must be replaced by a root-only one")
+	}
+	if st.Bans[ip].AgeSource != "" {
+		t.Fatal("a record present before the marker must be sanitized (age_source cleared)")
+	}
+	for _, d := range decs {
+		if d.Eligible {
+			t.Fatalf("a pre-marker record became eligible: %+v", d)
+		}
+	}
+}

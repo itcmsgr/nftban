@@ -173,11 +173,23 @@ _cc_chain_ok() {  # dir: it and every parent up to / (or CC_TRUST_TOP)
         d=$(dirname -- "$d")
     done
 }
-_cc_tree_ok() {  # root-only dir: exactly 0700, owned, nothing below foreign-owned, writable by group/other, or a symlink
-    local d="$1" bad
+# RULE (v1.237, owner 2026-11-16): a rollback/confirm input is trusted only when the service account can
+# neither MODIFY nor REPLACE it through ANY part of its path:
+#   1. every directory from / down to the snapshot dir is root-owned with no group/other write
+#      (_cc_chain_ok on the state dir; the snapshot dir itself via _cc_owned_ok) -> no entry can be
+#      replaced or renamed by another account;
+#   2. the snapshot dir (applied/, commit-confirm/) grants group and other NO access at all (0700; the
+#      setgid bit inherited from state/ is allowed) -> no other account can even traverse to an entry, so
+#      an entry's own mode bits (e.g. a copied 0664 /etc/nftban/suricata/config/profile.conf) cannot be
+#      used to modify it; a snapshot dir with ANY group/other access is refused outright, never relaxed;
+#   3. every entry below is owned by root (content written by root, not left by another account) and
+#      none is a symbolic link (nothing redirects a root read or write).
+_cc_tree_ok() {
+    local d="$1" m bad
     [[ -d "$d" ]] && _cc_owned_ok "$d" || return 1
-    [[ "$(stat -c %a -- "$d" 2>/dev/null)" == 700 ]] || return 1
-    bad=$(find "$d" -mindepth 1 \( -type l -o ! -uid "$(_cc_uid)" -o -perm /022 \) -print -quit 2>/dev/null) || return 1
+    m=$(stat -c %a -- "$d" 2>/dev/null) || return 1
+    [[ "$m" =~ ^[0-7]+$ ]] && (( (8#$m & 8#0077) == 0 )) || return 1
+    bad=$(find "$d" -mindepth 1 \( -type l -o ! -uid "$(_cc_uid)" \) -print -quit 2>/dev/null) || return 1
     [[ -z "$bad" ]]
 }
 _cc_trust_marker_ok() {

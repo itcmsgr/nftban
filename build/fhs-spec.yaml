@@ -951,7 +951,7 @@ directories:
     - path: /var/lib/nftban/state
       artifact_class: state
       retention_mode: unclassified
-      mode: "0750"
+      mode: "2750"
       owner: root
       group: nftban
       description: "Critical runtime state files: written by root, read by the nftban group"
@@ -973,6 +973,9 @@ directories:
         Re-owning does not make content written before this correction trusted: the cleanup
         tracking state and the commit-confirm inputs carry root-only trust markers (below) and
         their consumers refuse or sanitize anything older.
+        setgid (2750, same mechanism as /run/nftban-firewall-validate): every entry a root writer
+        creates here belongs to group nftban AT CREATION, without CAP_CHOWN or any added daemon
+        privilege, so the nftban-group readers (health, status) can read it before any repair runs.
 
     - path: /var/lib/nftban/suricata
       artifact_class: state

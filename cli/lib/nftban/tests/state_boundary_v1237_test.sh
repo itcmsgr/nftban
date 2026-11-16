@@ -53,11 +53,11 @@ S=/var/lib/nftban/state
 
 echo "=== C1: state/ directory owner ==="
 dblock=$(awk '/^    - path: \/var\/lib\/nftban\/state$/ {f=1; next} f && /^    - path:/ {exit} f {print}' "$SPEC")
-grep -qE '^      owner: root$' <<<"$dblock" && grep -qE '^      group: nftban$' <<<"$dblock" && grep -qE '^      mode: "0750"$' <<<"$dblock" \
-    && ok "spec: state/ 0750 root:nftban" || no "spec state/ owner"
+grep -qE '^      owner: root$' <<<"$dblock" && grep -qE '^      group: nftban$' <<<"$dblock" && grep -qE '^      mode: "2750"$' <<<"$dblock" \
+    && ok "spec: state/ 2750 root:nftban (setgid: new entries get group nftban at creation)" || no "spec state/ owner/mode"
 grep -qF 'AUTHORITY-MODEL CORRECTION' <<<"$dblock" && ok "spec records the authority-model correction" || no "correction note missing"
-grep -qE "^z $S 0750 root nftban" "$TMPF" && ok "tmpfiles z re-owns state/ (generated)" || no "tmpfiles state/ line"
-grep -qE '\{StateDir, 0750, "root:nftban"\}' "$PATHS" && ok "installer RequiredDirs state/ root:nftban" || no "RequiredDirs state/"
+grep -qE "^z $S 2750 root nftban" "$TMPF" && ok "tmpfiles z re-owns state/ (generated)" || no "tmpfiles state/ line"
+grep -qE '\{StateDir, 02750, "root:nftban"\}' "$PATHS" && ok "installer RequiredDirs state/ root:nftban" || no "RequiredDirs state/"
 
 echo "=== C2: broad rule excludes state/; exact entries via ONE generated policy ==="
 sweep=$(awk '/^  - path: \/var\/lib\/nftban$/ {f=1; next} f && /^  - path:/ {exit} f {print}' "$SPEC")
@@ -122,7 +122,12 @@ cc_case "marker group-readable" 1 'chmod 640 "$CC_TRUST"'
 cc_case "marker wrong content" 1 'echo forged > "$CC_TRUST"; chmod 600 "$CC_TRUST"'
 cc_case "state dir group-writable" 1 'chmod 0770 "$CC_STATE_DIR"'
 cc_case "baseline dir 0750" 1 'chmod 0750 "$CC_BASE"'
-cc_case "baseline file group-writable" 1 'chmod 0660 "$CC_BASE/manifest"'
+cc_case "legitimate baseline: copied 0664 entry inside the closed 0700 snapshot dir (unreachable)" 0 'chmod 0664 "$CC_BASE/manifest"'
+cc_case "snapshot dir carries the setgid bit inherited from state/ (2700)" 0 'chmod 2700 "$CC_BASE"'
+cc_case "snapshot dir traversable by group (0710): an 0664 entry becomes modifiable" 1 'chmod 0710 "$CC_BASE"; chmod 0664 "$CC_BASE/manifest"'
+cc_case "snapshot dir traversable by other (0701)" 1 'chmod 0701 "$CC_WORK"'
+if [[ $EUID -eq 0 ]]; then cc_case "baseline entry owned by another account" 1 'chown nobody "$CC_BASE/manifest"'
+                         cc_case "work entry owned by another account" 1 'chown nobody "$CC_WORK/kernel-before.nft"'; fi
 cc_case "symlink in work dir" 1 'ln -s /etc/passwd "$CC_WORK/changeset"'
 cc_case "work dir replaced by a symlink" 1 'rm -rf "$CC_WORK"; mkdir -p "$CC_STATE_DIR/x"; chmod 0700 "$CC_STATE_DIR/x"; ln -s "$CC_STATE_DIR/x" "$CC_WORK"'
 cc_case "record group-writable" 1 'chmod 0660 "$CC_RECORD"'

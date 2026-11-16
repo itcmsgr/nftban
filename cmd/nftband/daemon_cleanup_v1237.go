@@ -52,6 +52,15 @@ type cleanupReport struct {
 }
 
 func cleanupEvaluate(configDir string, now time.Time) ([]safety.CleanupDecision, *safety.PermanentBansState, error) {
+	// v1.237 state boundary: establish trust here as well as at daemon start. At start the boundary may
+	// not hold yet (package scriptlets restart the daemon before the permission repair re-owns the file);
+	// this retries once it does. Idempotent: a no-op once the marker is valid. Under the shared lock set.
+	if err := persistence.WithAllReasonLocks(configDir, func() error {
+		_, terr := safety.EstablishTrackingTrust()
+		return terr
+	}); err != nil {
+		return nil, nil, err
+	}
 	reasons, err := persistence.ReasonsForAll(configDir)
 	if err != nil {
 		return nil, nil, err

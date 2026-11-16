@@ -614,11 +614,8 @@ func SavePermanentBans(state *PermanentBansState) error {
 
 	// v1.171 §4.3c: atomic write via the in-package gold helper.
 	// v1.237: root:nftban 0640 (fhs-spec file_permissions, state/permanent_bans.json).
-	if err := SafeWriteFile(permanentBansPath, data, PermanentBansFileMode); err != nil {
-		return err
-	}
-	setTrackingOwnership(permanentBansPath)
-	return nil
+	// Group nftban comes from the setgid state directory (fhs-spec 2750), not from a chown here.
+	return SafeWriteFile(permanentBansPath, data, PermanentBansFileMode)
 }
 
 // TrackPermanentBan adds or updates a permanent ban in tracking
