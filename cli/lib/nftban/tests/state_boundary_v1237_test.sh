@@ -145,6 +145,8 @@ est(){  # status expected_marker(yes|no) mutation
 grep -qE 'cc_inputs_trusted base' "$CC" && grep -qE 'cc_inputs_trusted record work base' "$CC" && ok "apply_begin, confirm and rollback validate before applying" || no "a consumer does not validate"
 grep -qF '_cc_establish_trust || true; return 0' "$CC" && ok "a fresh applied baseline establishes trust" || no "baseline does not establish trust"
 grep -qF '(umask 077; : >> "$CC_LOCK")' "$CC" && ok "commit-confirm.lock created root-only" || no "lock creation mode"
+grep -qF 'tx=$(mktemp -p "$CC_STATE_DIR" .rollback-tx.XXXXXX)' "$CC" && ok "rollback transaction file in the root-owned state dir (not /tmp: nftband_t)" || no "rollback transaction still in /tmp"
+grep -qE 'tx=\$\(mktemp\) \|\| \{ cc_unlock; return 1; \}' "$CC" && no "a rollback that cannot start still returns silently" || ok "a rollback that cannot start records the D10 hold + alarm"
 
 echo "================================================================"
 echo "state_boundary_v1237_test: PASS=$PASS FAIL=$FAIL"

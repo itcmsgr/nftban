@@ -220,7 +220,9 @@ _cc_establish_trust() {
     local tmp
     rm -f -- "$CC_TRUST" 2>/dev/null
     tmp=$(umask 077; mktemp "${CC_TRUST}.XXXXXX") || return 1
-    printf '%s' "$CC_TRUST_CONTENT" > "$tmp" && chmod 600 "$tmp" && mv -f -- "$tmp" "$CC_TRUST" || { rm -f -- "$tmp"; return 1; }
+    # root:root as declared (fhs-spec): the setgid state dir would give it group nftban otherwise.
+    printf '%s' "$CC_TRUST_CONTENT" > "$tmp" && chmod 600 "$tmp" && chown root:root "$tmp" 2>/dev/null; \
+        mv -f -- "$tmp" "$CC_TRUST" || { rm -f -- "$tmp"; return 1; }
 }
 
 # The shared lock (fd 9). Every apply / confirm / rollback / boot decision holds it.
@@ -493,7 +495,23 @@ cc_rollback() {
     # 2. Kernel (not at boot: the old projection is what loaded): ONE transaction,
     #    NFTBan tables only; foreign tables are never part of it.
     if [[ "$mode" != "--boot" ]]; then
-        tx=$(mktemp) || { cc_unlock; return 1; }
+        # v1.237: the transaction file lives in the root-owned state dir, not /tmp. The automatic
+        # rollback runs as a transient unit whose ExecStart (/usr/sbin/nftban, nftband_exec_t)
+        # transitions to nftband_t, which may not create files in /tmp on EL Enforcing (measured on
+        # AlmaLinux 9.8: "mktemp: ... /tmp/tmp.XXXXXXXXXX: Permission denied", no AVC logged). That
+        # failure used to return silently with the apply still pending and the candidate active.
+        if ! tx=$(mktemp -p "$CC_STATE_DIR" .rollback-tx.XXXXXX); then
+            cc_set status rollback-failed
+            cc_set error "rollback transaction file could not be created in $CC_STATE_DIR"
+            cc_set at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            cc_set kernel "unchanged (rollback could not start)"
+            : > "$CC_FAILED_MARK"
+            cc_unlock
+            local tmsg="NFTBan commit-confirm ROLLBACK FAILED for apply $rec_id: transaction file could not be created; the candidate is still active. NFTBan writers are held."
+            logger -t nftban -p auth.crit "$tmsg" 2>/dev/null || true
+            echo "❌ $tmsg" >&2
+            return 1
+        fi
         { printf 'add table ip nftban\ndelete table ip nftban\nadd table ip6 nftban\ndelete table ip6 nftban\n'
           cat "$CC_WORK/kernel-before.nft"; } > "$tx"
         if ! err=$(nftban_nft_write -f "$tx" 2>&1); then
