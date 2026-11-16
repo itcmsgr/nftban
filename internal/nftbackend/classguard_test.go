@@ -20,14 +20,13 @@ import "testing"
 func TestExemptAddRejectionClassGuard(t *testing.T) {
 	b := &Backend{} // exempt == nil → membership exemption unavailable (fail-open)
 
-	// pick an actual enforcement set name
-	var enfSet string
-	for s := range enforcementSets {
-		enfSet = s
-		break
-	}
-	if enfSet == "" {
-		t.Fatal("no enforcement set registered")
+	// An actual single-address enforcement set, chosen deterministically. Ranging over the map and
+	// taking the first key picked a random set; when it was campaign_prefix_ipv4 (whole-prefix
+	// admission, which refuses a single public address by design) the public-address assertion
+	// failed: measured 21 of 500 runs (v1.237, main 3d15ea74 CI).
+	const enfSet = "blacklist_manual_ipv4"
+	if !enforcementSets[enfSet] {
+		t.Fatalf("%s is not registered as an enforcement set", enfSet)
 	}
 
 	// absolute + non-public classes: rejected on the enforcement set despite nil exempt.
