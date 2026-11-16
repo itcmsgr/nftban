@@ -284,10 +284,22 @@ perms_enforce_var_files() {
     # Secure all files (excluding auditors which has special perms)
     if [[ -d "$PERMS_VAR" ]]; then
         # Fix ownership: nftban:nftban (feeds, banned, whitelist, etc.)
-        perms_run find "$PERMS_VAR" -path "$PERMS_VAR/reports/auditors" -prune -o -type f \( -not -user nftban -o -not -group nftban \) -exec chown nftban:nftban {} \;
+        # v1.237 C2 (fhs-spec): state/ is root's and excluded from this sweep (pruned, never descended);
+        # its declared entries are restored below by the generated policy.
+        perms_run find "$PERMS_VAR" \( -path "$PERMS_VAR/reports/auditors" -o -path "$PERMS_VAR/state" \) -prune -o -type f \( -not -user nftban -o -not -group nftban \) -exec chown nftban:nftban {} \;
 
         # Files 640 (only owner read/write, group read)
-        perms_run find "$PERMS_VAR" -path "$PERMS_VAR/reports/auditors" -prune -o -type f -not -perm 0640 -exec chmod 0640 {} \;
+        perms_run find "$PERMS_VAR" \( -path "$PERMS_VAR/reports/auditors" -o -path "$PERMS_VAR/state" \) -prune -o -type f -not -perm 0640 -exec chmod 0640 {} \;
+
+        # v1.237: the exact state entries (fhs-spec file_permissions exact: true), restored IN PLACE by
+        # the ONE generated policy that fhs-permissions.sh and autoheal also use.
+        local _pol="${PERMS_LIB}/setup/fhs-state-policy.sh"
+        if [[ -r "$_pol" ]]; then
+            # shellcheck source=/dev/null
+            source "$_pol" && perms_run nftban_fhs_enforce_exact_entries
+        else
+            perms_warn "state policy not found: $_pol"
+        fi
 
         # Files in auditors directory need group write with nftban-auditor group
         if [[ -d "$PERMS_VAR/reports/auditors" ]]; then

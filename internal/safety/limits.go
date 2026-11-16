@@ -539,7 +539,9 @@ var permanentBansPath = PermanentBansFile
 func SetPermanentBansPathForTest(p string) (restore func()) {
 	old := permanentBansPath
 	permanentBansPath = p
-	return func() { permanentBansPath = old }
+	// v1.237: tests run unprivileged inside a temp dir: owner = the test uid, parent walk ends there.
+	restoreIntegrity := SetTrackingIntegrityForTest(os.Getuid(), filepath.Dir(p))
+	return func() { restoreIntegrity(); permanentBansPath = old }
 }
 
 // AgeSourceBanTime marks an entry whose added_at was recorded AT REAL BAN TIME by a v1.237+ writer
@@ -560,6 +562,9 @@ type PermanentBan struct {
 	// v1.237: set under the reason-file lock set just before a cleanup removes a durable reason, so
 	// an interrupted removal is finished by the next run (recovery, design §0.4).
 	CleanupPending string `json:"cleanup_pending,omitempty"` // the reason source being removed
+	// v1.237 (state boundary, owner 2026-11-15): a pending marker that existed before the root-owned
+	// state boundary was established is kept (recorded state) but flagged: reported, never finished.
+	CleanupPendingUnverified bool `json:"cleanup_pending_unverified,omitempty"`
 }
 
 // PermanentBansState holds all tracked permanent bans
@@ -608,7 +613,9 @@ func SavePermanentBans(state *PermanentBansState) error {
 	}
 
 	// v1.171 §4.3c: atomic write via the in-package gold helper.
-	return SafeWriteFile(permanentBansPath, data, 0644)
+	// v1.237: root:nftban 0640 (fhs-spec file_permissions, state/permanent_bans.json).
+	// Group nftban comes from the setgid state directory (fhs-spec 2750), not from a chown here.
+	return SafeWriteFile(permanentBansPath, data, PermanentBansFileMode)
 }
 
 // TrackPermanentBan adds or updates a permanent ban in tracking
@@ -678,6 +685,7 @@ func SetCleanupPending(ip, source string) error {
 		return fmt.Errorf("IP %s not found in permanent bans", ip)
 	}
 	b.CleanupPending = source
+	b.CleanupPendingUnverified = false // written now, by root, under the boundary
 	return SavePermanentBans(state)
 }
 

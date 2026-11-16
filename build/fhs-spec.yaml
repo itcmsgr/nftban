@@ -951,12 +951,31 @@ directories:
     - path: /var/lib/nftban/state
       artifact_class: state
       retention_mode: unclassified
-      mode: "0750"
-      owner: nftban
+      mode: "2750"
+      owner: root
       group: nftban
-      description: "Critical runtime state files"
+      description: "Critical runtime state files: written by root, read by the nftban group"
       created_by: tmpfiles
       tmpfiles_reconcile: "z"
+      note: |
+        v1.237 AUTHORITY-MODEL CORRECTION (owner 2026-11-15, C1). This directory was declared
+        nftban:nftban, but every writer of its identified entries is root (installer, nftband,
+        nftban-core, maintenance, firewall rebuild / commit-confirm) and root relies on them for
+        integrity: commit-confirm rollback inputs (applied/, commit-confirm/, the record, the
+        rollback-failed gate), installer.lock and commit-confirm.lock, install_state, authority,
+        feed_authority, immutable-owned and the cleanup tracking state. That contradicted this
+        spec's own rule (v1.235 /run/nftban-firewall-validate, v1.236 /run/nftban-writers): a
+        file root relies on for integrity does not live in a directory the service account owns
+        (the owner can unlink, rename and replace any entry, whatever the entry's own mode). The
+        nftban service account is read-only over IPC (daemon_ipc_authz.go) and needs no write
+        access here; the nftban group keeps read access (0750 root:nftban). tmpfiles z re-owns the
+        directory at install, upgrade and boot. File entries: file_permissions (exact: true).
+        Re-owning does not make content written before this correction trusted: the cleanup
+        tracking state and the commit-confirm inputs carry root-only trust markers (below) and
+        their consumers refuse or sanitize anything older.
+        setgid (2750, same mechanism as /run/nftban-firewall-validate): every entry a root writer
+        creates here belongs to group nftban AT CREATION, without CAP_CHOWN or any added daemon
+        privilege, so the nftban-group readers (health, status) can read it before any repair runs.
 
     - path: /var/lib/nftban/suricata
       artifact_class: state
@@ -1512,7 +1531,13 @@ file_permissions:
     owner: nftban
     group: nftban
     recursive: true
-    exclude: "/var/lib/nftban/reports/auditors"
+    # exclude: a path (string) or a list; each entry excludes the path itself and everything below
+    # it (generator: -not -path E -not -path "E/*").
+    exclude:
+      - "/var/lib/nftban/reports/auditors"
+      # v1.237 C2 (owner 2026-11-15): state/ is root's (directories: /var/lib/nftban/state note);
+      # its entries are declared one by one below (exact: true) and never swept to nftban:nftban.
+      - "/var/lib/nftban/state"
 
   # /var/lib/nftban/reports/auditors - auditor access
   - path: /var/lib/nftban/reports/auditors
@@ -1569,6 +1594,174 @@ file_permissions:
     mode: "0600"
     owner: root
     group: root
+    exact: true
+    type: file
+
+  # v1.237 C2 (owner 2026-11-15): the identified root-written state entries, one by one. exact: true =
+  # the pattern is one exact name; the generated policy (cli/lib/nftban/setup/fhs-state-policy.sh,
+  # function nftban_fhs_enforce_exact_entries) restores owner and mode IN PLACE (chown -h / chmod; the
+  # inode, an active lock and a held flock are kept), only for a regular file (type: file) or a
+  # directory (type: dir, never recursive), never through a symlink, and only when the parent is
+  # root-owned and closed to group/other writes. It is consumed by fhs-permissions.sh (install),
+  # nftban_permissions.sh perms_enforce_var_files and helpers/autoheal.sh (maintenance).
+  - path: /var/lib/nftban/state
+    artifact_class: state
+    pattern: "installer.lock"
+    mode: "0600"
+    owner: root
+    group: root
+    exact: true
+    type: file
+    note: "install/upgrade mutual exclusion (internal/installer/lock, flock LOCK_EX|LOCK_NB). Root only: a lock another account can open can be held by it (flock works on a read-only fd)."
+  - path: /var/lib/nftban/state
+    artifact_class: state
+    pattern: "commit-confirm.lock"
+    mode: "0600"
+    owner: root
+    group: root
+    exact: true
+    type: file
+    note: "commit-confirm apply/confirm/rollback serialization (commit_confirm.sh cc_lock). Root only, same reason."
+  - path: /var/lib/nftban/state
+    artifact_class: state
+    pattern: "commit-confirm.state"
+    mode: "0640"
+    owner: root
+    group: nftban
+    exact: true
+    type: file
+    note: "commit-confirm record (root writes; status reads through the group)."
+  - path: /var/lib/nftban/state
+    artifact_class: state
+    pattern: "commit-confirm.rollback-failed"
+    mode: "0640"
+    owner: root
+    group: nftban
+    exact: true
+    type: file
+    note: "D10 hold marker (systemd ConditionPathExists gates the NFTBan units)."
+  - path: /var/lib/nftban/state
+    artifact_class: state
+    pattern: "applied"
+    mode: "0700"
+    owner: root
+    group: root
+    exact: true
+    type: dir
+    note: "applied baseline (rollback source). Root-only boundary: the directory only, never its contents."
+  - path: /var/lib/nftban/state
+    artifact_class: state
+    pattern: "commit-confirm"
+    mode: "0700"
+    owner: root
+    group: root
+    exact: true
+    type: dir
+    note: "apply work dir (kernel-before.nft, change set). Root-only boundary: the directory only, never its contents."
+  - path: /var/lib/nftban/state
+    artifact_class: state
+    pattern: "install_state"
+    mode: "0640"
+    owner: root
+    group: nftban
+    exact: true
+    type: file
+    note: "installer state (root writes; status/update/health read)."
+  - path: /var/lib/nftban/state
+    artifact_class: state
+    pattern: "authority"
+    mode: "0640"
+    owner: root
+    group: nftban
+    exact: true
+    type: file
+    note: "firewall authority decision (installer writes; nftband/nftban-core/status read)."
+  - path: /var/lib/nftban/state
+    artifact_class: state
+    pattern: "feed_authority"
+    mode: "0640"
+    owner: root
+    group: nftban
+    exact: true
+    type: file
+    note: "enforced-feeds decision (nftband/nftban-core write; validator reads through SupplementaryGroups=nftban)."
+  - path: /var/lib/nftban/state
+    artifact_class: state
+    pattern: "immutable-owned"
+    mode: "0640"
+    owner: root
+    group: nftban
+    exact: true
+    type: file
+    note: "immutable-flag ownership record (installer/scriptlets; entries are proven per inode+ctime)."
+  - path: /var/lib/nftban/state
+    artifact_class: state
+    pattern: "permanent_bans.json"
+    mode: "0640"
+    owner: root
+    group: nftban
+    exact: true
+    type: file
+    note: "cleanup tracking state (nftband/nftban-core write; status/health read)."
+  - path: /var/lib/nftban/state
+    artifact_class: state
+    pattern: "ssh_port_active.state"
+    mode: "0640"
+    owner: root
+    group: nftban
+    exact: true
+    type: file
+    note: "active SSH port(s) (maintenance/installer write; ruleset render and health read)."
+  - path: /var/lib/nftban/state
+    artifact_class: state
+    pattern: "ip_change_alert.state"
+    mode: "0640"
+    owner: root
+    group: nftban
+    exact: true
+    type: file
+    note: "IP-change alert state (maintenance)."
+  - path: /var/lib/nftban/state
+    artifact_class: state
+    pattern: "firewall_transition_health.json"
+    mode: "0640"
+    owner: root
+    group: nftban
+    exact: true
+    type: file
+    note: "firewall transition health (root firewall paths write; health reads)."
+  - path: /var/lib/nftban/state
+    artifact_class: state
+    pattern: "ruleset_fingerprint.json"
+    mode: "0640"
+    owner: root
+    group: nftban
+    exact: true
+    type: file
+    note: "ruleset fingerprint baseline (nftband/nftban-core write)."
+
+  # Root-only TRUST MARKERS (v1.237). Declared, never enforced: the permission repair must not re-own
+  # them, so a file the service account planted while state/ was writable never becomes a marker.
+  # Written by their consumer only after the boundary holds (internal/safety EstablishTrackingTrust;
+  # commit_confirm.sh _cc_establish_trust after a fresh applied baseline).
+  - path: /var/lib/nftban/state
+    artifact_class: state
+    pattern: "permanent_bans.json.trust"
+    mode: "0600"
+    owner: root
+    group: root
+    exact: true
+    type: file
+    install_enforce: false
+
+  - path: /var/lib/nftban/state
+    artifact_class: state
+    pattern: "commit-confirm.trust"
+    mode: "0600"
+    owner: root
+    group: root
+    exact: true
+    type: file
     install_enforce: false
 
   # /var/log/nftban/suricata - suricata writes

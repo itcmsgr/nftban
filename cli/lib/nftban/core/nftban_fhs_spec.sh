@@ -144,7 +144,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/portscan/log-cursors"]="0750|nftban|nftban|PortScan read cursors (v1.229.x): per-source position state so a cycle consumes only records it has not already processed. File sources store inode:offset via the canonical incremental reader; the journald source stores its last COMMITTED journal cursor, written only after a batch has been processed."
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/recorder"]="0750|nftban|nftban|Flight recorder events and snapshots"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/staging"]="0750|nftban|nftban|Feed staging area (temporary download/validation)"
-    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/state"]="0750|nftban|nftban|Critical runtime state files"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/state"]="2750|root|nftban|Critical runtime state files: written by root, read by the nftban group"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/suricata"]="0750|nftban|nftban|Suricata integration state"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/suricata/cache"]="0750|nftban|nftban|Suricata SID-statistics cache (sid-stats.json snapshot)"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/alerts"]="0750|nftban|nftban|Service-failure alert bookkeeping (throttle timestamps + diagnostic reports)"
