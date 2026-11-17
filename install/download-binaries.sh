@@ -209,12 +209,20 @@ get_latest_version() {
     echo "$latest"
 }
 
+# v1.237 (Scorecard 1103, owner 2026-11-14): the verifier that checks NFTBan's downloads is itself pinned
+# and verified. Before this, the Go path installed @latest and the prebuilt path downloaded v2.6.0 with no
+# checksum. Version and sha256 values come from upstream SHA256SUM.md for v2.7.1. They were cross-checked
+# on 2026-11-14 against an independent download (`slsa-verifier version` = 2.7.1).
+SLSA_VERIFIER_VERSION="v2.7.1"
+SLSA_VERIFIER_SHA256_AMD64="946dbec729094195e88ef78e1734324a27869f03e2c6bd2f61cbc06bd5350339"
+SLSA_VERIFIER_SHA256_ARM64="5d3b2349ede7bfec19e7a21569f18b9f7410145ad12e9584b175370669e14061"
+
 install_slsa_verifier() {
-    log "Installing SLSA verifier..."
+    log "Installing SLSA verifier ${SLSA_VERIFIER_VERSION}..."
 
     # Check if Go is available
     if command -v go &>/dev/null; then
-        go install github.com/slsa-framework/slsa-verifier/v2/cli/slsa-verifier@latest
+        go install "github.com/slsa-framework/slsa-verifier/v2/cli/slsa-verifier@${SLSA_VERIFIER_VERSION}"
         local gopath
         gopath=$(go env GOPATH)
         export PATH="$PATH:${gopath}/bin"
@@ -222,15 +230,25 @@ install_slsa_verifier() {
     fi
 
     # Download pre-built binary
-    local arch
+    local arch expected actual
     arch=$(detect_arch)
-    local verifier_version="v2.6.0"
-    local verifier_url="https://github.com/slsa-framework/slsa-verifier/releases/download/${verifier_version}/slsa-verifier-linux-${arch}"
+    case "$arch" in
+        amd64) expected="$SLSA_VERIFIER_SHA256_AMD64" ;;
+        arm64) expected="$SLSA_VERIFIER_SHA256_ARM64" ;;
+        *)     warn "No pinned slsa-verifier checksum for architecture: $arch"; return 1 ;;
+    esac
+    local verifier_url="https://github.com/slsa-framework/slsa-verifier/releases/download/${SLSA_VERIFIER_VERSION}/slsa-verifier-linux-${arch}"
 
-    log "Downloading slsa-verifier ${verifier_version}..."
+    log "Downloading slsa-verifier ${SLSA_VERIFIER_VERSION}..."
     # v1.19.20 FIX: Check curl exit code and log error on failure
     if ! curl -fsSL -o "$DOWNLOAD_DIR/slsa-verifier" "$verifier_url"; then
         warn "Failed to download slsa-verifier from: $verifier_url"
+        return 1
+    fi
+    actual=$(sha256sum "$DOWNLOAD_DIR/slsa-verifier" | awk '{print $1}')
+    if [[ "$actual" != "$expected" ]]; then
+        rm -f "$DOWNLOAD_DIR/slsa-verifier"
+        warn "slsa-verifier checksum mismatch (expected $expected, got $actual) - refusing to use it"
         return 1
     fi
     chmod +x "$DOWNLOAD_DIR/slsa-verifier"
