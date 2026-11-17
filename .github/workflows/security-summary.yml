@@ -63,7 +63,10 @@ jobs:
           # collect <key> <endpoint> <jq emitting one severity per open alert>
           collect() {
             local key=$1 ep=$2 expr=$3 out rc
-            out=$(gh api --paginate "repos/${REPO}/${ep}?state=open&per_page=100" --jq "$expr" 2>"err_${key}.txt"); rc=$?
+            # The step shell is `bash -e`: a failing command substitution in a plain assignment ends the
+            # script before rc is read (run 43953249814: dependabot 403 aborted the step, no UNKNOWN).
+            rc=0
+            out=$(gh api --paginate "repos/${REPO}/${ep}?state=open&per_page=100" --jq "$expr" 2>"err_${key}.txt") || rc=$?
             if [ "$rc" -ne 0 ]; then
               echo "${key}_state=UNKNOWN" >> "$GITHUB_OUTPUT"
               echo "${key}_error=$(head -c 300 "err_${key}.txt" | tr '\n\r|' '   ')" >> "$GITHUB_OUTPUT"

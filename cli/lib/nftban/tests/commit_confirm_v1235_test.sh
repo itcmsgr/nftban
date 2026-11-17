@@ -15,7 +15,7 @@
 # meta:depends="bash,awk,grep,sed,tar,sha256sum,flock,join,mktemp"
 # meta:inventory.files=""
 # meta:inventory.binaries="bash,awk,grep,sed,tar,sha256sum,flock,join,mktemp"
-# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_DATA_DIR,NFTBAN_LIB_DIR"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_DATA_DIR,NFTBAN_LIB_DIR,CC_TRUST_UID,CC_TRUST_TOP"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
@@ -58,6 +58,12 @@ for t in flock join tar sha256sum; do
 done
 
 SB=$(mktemp -d); trap 'rm -rf "$SB"' EXIT
+# v1.237 trust boundary: the engine applies rollback/confirm inputs only when their directory chain is
+# owned by the trusted uid and closed to group/other writes. The sandbox is that boundary: mktemp -d is
+# 0700, umask 022 keeps every directory below it closed to group/other writes, and the engine's documented
+# test seams make the sandbox the top of the walk (CC_TRUST_TOP) owned by this uid (CC_TRUST_UID).
+# The production checks are unchanged (same pattern as state_boundary_v1237_test.sh).
+umask 022
 STUB="$SB/bin"; mkdir -p "$STUB"
 cat > "$STUB/nft" <<'EOF'
 #!/usr/bin/env bash
@@ -98,12 +104,15 @@ fresh(){
     echo 'baseline-ruleset' > "$SB/loaded.nft"
     # Metadata the rollback must restore faithfully (owner 2026-10-07).
     chmod 0640 "$SB/etc/conf.d/a.conf"; chmod 0600 "$SB/etc/ports.d/00-ssh.conf"
-    if [[ $(id -u) -eq 0 ]]; then chown 65534:65534 "$SB/etc/conf.d/a.conf"; fi
+    # v1.237: a baseline entry not owned by the trusted uid is refused (rule 3), so the fixture keeps the
+    # owner and varies the GROUP, as on a real host (/etc/nftban files are root:nftban).
+    if [[ $(id -u) -eq 0 ]]; then chown 0:65534 "$SB/etc/conf.d/a.conf"; fi
 }
 cc(){  # snippet with the REAL engine loaded
     local rc=0
     env -i PATH="$STUB:/usr/bin:/bin" SBX="$SB" HOME="$SB" \
         NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_RUN_DIR="$SB/run" NFTBAN_WRITERS_DIR="$SB/run" NFTBAN_LIB_DIR="$LIBDIR" \
+        CC_TRUST_UID="$(id -u)" CC_TRUST_TOP="$SB" \
         bash -c 'set -Eeuo pipefail; source "$1"; shift
             # The publication authority (cmd_firewall.sh _firewall_publish_conf) is loaded wherever
             # the engine runs in the product; here it is a recording stand-in (audit K1, D31).
@@ -281,7 +290,7 @@ if [[ "$m_a" == 640 && "$m_p" == 600 ]]; then ok "D14m restored files keep their
 else ko "D14m restored modes (a.conf=$m_a ports=$m_p, expected 640/600)"; fi
 if [[ $(id -u) -eq 0 ]]; then
     o_a=$(stat -c %u:%g "$SB/etc/conf.d/a.conf" 2>/dev/null)
-    [[ "$o_a" == 65534:65534 ]] && ok "D14o restored file keeps its original owner/group (65534:65534)" || ko "D14o restored ownership ($o_a, expected 65534:65534)"
+    [[ "$o_a" == 0:65534 ]] && ok "D14o restored file keeps its original owner/group (0:65534)" || ko "D14o restored ownership ($o_a, expected 0:65534)"
 else
     echo "  [NOT_EXECUTED] D14o ownership preservation (needs root; run the suite as root on a lab host)"
 fi
@@ -333,6 +342,7 @@ cc "cc_rollback $ID --auto" >/dev/null 2>&1 || true
 : > "$SB/calls.log"; cp -p "$REC" "$SB/rec.before"; rc=0
 env -i PATH="$STUB:/usr/bin:/bin" SBX="$SB" HOME="$SB" \
     NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_RUN_DIR="$SB/run" NFTBAN_WRITERS_DIR="$SB/run" NFTBAN_LIB_DIR="$LIBDIR" \
+    CC_TRUST_UID="$(id -u)" CC_TRUST_TOP="$SB" \
     bash -c 'source "$1/cli/cmd_firewall.sh" >/dev/null 2>&1; nftban_cmd_firewall rollback --boot' _ "$LIBDIR" > "$SB/cc.out" 2>&1 || rc=$?
 if grep -qxF 'ExecStart=/usr/sbin/nftban firewall rollback --boot' "$UNIT" \
    && [[ -e "$SB/data/state/commit-confirm.rollback-failed" && "$(get status)" == "rollback-failed" ]] \
@@ -387,6 +397,7 @@ fwbase(){  # loaded_file
     local rc=0
     env -i PATH="$STUB:/usr/bin:/bin" SBX="$SB" HOME="$SB" \
         NFTBAN_CONFIG_DIR="$SB/etc" NFTBAN_DATA_DIR="$SB/data" NFTBAN_RUN_DIR="$SB/run" NFTBAN_WRITERS_DIR="$SB/run" NFTBAN_LIB_DIR="$LIBDIR" \
+        CC_TRUST_UID="$(id -u)" CC_TRUST_TOP="$SB" \
         bash -c 'source "$1/cli/cmd_firewall.sh" >/dev/null 2>&1; _firewall_rebuild_record_baseline "$2"' _ "$LIBDIR" "$1" > "$SB/fw.out" 2>&1 || rc=$?
     return "$rc"
 }
