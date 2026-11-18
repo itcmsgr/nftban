@@ -45,14 +45,53 @@ import (
 // filePermAuthority is one fhs-spec.yaml `file_permissions` entry that carries
 // `logrotate_create: true` — i.e. governs a logrotate `create` directive.
 type filePermAuthority struct {
-	Path            string `yaml:"path"`
-	Pattern         string `yaml:"pattern"`
-	Mode            string `yaml:"mode"`
-	Owner           string `yaml:"owner"`
-	Group           string `yaml:"group"`
-	Recursive       bool   `yaml:"recursive,omitempty"`
-	Exclude         string `yaml:"exclude,omitempty"`
-	LogrotateCreate bool   `yaml:"logrotate_create,omitempty"`
+	Path            string      `yaml:"path"`
+	Pattern         string      `yaml:"pattern"`
+	Mode            string      `yaml:"mode"`
+	Owner           string      `yaml:"owner"`
+	Group           string      `yaml:"group"`
+	Recursive       bool        `yaml:"recursive,omitempty"`
+	Exclude         excludeList `yaml:"exclude,omitempty"`
+	LogrotateCreate bool        `yaml:"logrotate_create,omitempty"`
+}
+
+// excludeList is fhs-spec.yaml `exclude`: a single path (string) or a list of
+// paths. Both forms are supported by the spec and by the permission generator
+// (each entry excludes the path itself and everything below it); v1.237 C2
+// introduced the list form on /var/lib/nftban.
+type excludeList []string
+
+func (e *excludeList) UnmarshalYAML(n *yaml.Node) error {
+	switch n.Kind {
+	case yaml.ScalarNode:
+		var s string
+		if err := n.Decode(&s); err != nil {
+			return err
+		}
+		if s != "" {
+			*e = excludeList{s}
+		}
+		return nil
+	case yaml.SequenceNode:
+		var l []string
+		if err := n.Decode(&l); err != nil {
+			return err
+		}
+		*e = excludeList(l)
+		return nil
+	default:
+		return fmt.Errorf("fhs-spec.yaml exclude: line %d: want a path or a list of paths", n.Line)
+	}
+}
+
+// excludes reports whether path is an excluded path or lies below one.
+func (e excludeList) excludes(path string) bool {
+	for _, x := range e {
+		if x != "" && (path == x || strings.HasPrefix(path, x+"/")) {
+			return true
+		}
+	}
+	return false
 }
 
 type fhsSpec struct {
@@ -162,7 +201,7 @@ func matchAuthority(stanzaPath string, auths []filePermAuthority) *filePermAutho
 			continue
 		}
 		// Honor exclude: a stanza under the excluded subtree does NOT match this entry.
-		if a.Exclude != "" && (strings.HasPrefix(stanzaPath, a.Exclude+"/") || stanzaPath == a.Exclude) {
+		if a.Exclude.excludes(stanzaPath) {
 			continue
 		}
 		if len(a.Path) > bestLen {
@@ -252,6 +291,37 @@ func TestLogrotateCreateNftbanLogsOnly(t *testing.T) {
 	for _, a := range auths {
 		if a.Path != logRoot && !strings.HasPrefix(a.Path, logRoot+"/") {
 			t.Errorf("OUT-OF-SCOPE: logrotate_create:true entry %q is outside %s — v1.139 PR-B intentionally scopes this flag to log roots only", a.Path, logRoot)
+		}
+	}
+}
+
+// TestExcludeListAcceptsBothSpecForms pins the two supported `exclude` forms
+// (single path, list of paths) and their subtree semantics (v1.237).
+func TestExcludeListAcceptsBothSpecForms(t *testing.T) {
+	for _, tc := range []struct {
+		name, doc string
+		want      []string
+	}{
+		{"scalar", "exclude: /var/lib/x/a\n", []string{"/var/lib/x/a"}},
+		{"list", "exclude:\n  - /var/lib/x/a\n  - /var/lib/x/b\n", []string{"/var/lib/x/a", "/var/lib/x/b"}},
+		{"absent", "mode: \"0640\"\n", nil},
+	} {
+		var a filePermAuthority
+		if err := yaml.Unmarshal([]byte(tc.doc), &a); err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if fmt.Sprint([]string(a.Exclude)) != fmt.Sprint(tc.want) {
+			t.Fatalf("%s: exclude=%v want %v", tc.name, a.Exclude, tc.want)
+		}
+	}
+	var a filePermAuthority
+	if err := yaml.Unmarshal([]byte("exclude: {k: v}\n"), &a); err == nil {
+		t.Fatal("a mapping must be rejected")
+	}
+	l := excludeList{"/var/lib/x/a", "/var/lib/x/b"}
+	for p, want := range map[string]bool{"/var/lib/x/a": true, "/var/lib/x/b/c": true, "/var/lib/x/ab": false, "/var/lib/x": false} {
+		if got := l.excludes(p); got != want {
+			t.Fatalf("excludes(%q)=%v want %v", p, got, want)
 		}
 	}
 }

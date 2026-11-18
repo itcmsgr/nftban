@@ -536,13 +536,21 @@ check_recursive_permissions() {
         # Shell surface — executable command surface only. A comment-only line
         # (optionally indented) is skipped — '#' for shell and '//' for Go, since this
         # surface check also reads .go files.
-        # BOUNDARY: a recursive verb inside a quoted string on an executable line is
-        # NOT discriminated; that needs real shell parsing, and a regex approximation
-        # would risk false negatives on genuine commands.
-        local _l _b
+        # Data vs execution (v1.237): a match that exists ONLY inside single-quoted
+        # strings is data (e.g. a test's grep pattern asserting a policy does NOT
+        # recurse) — single quotes never execute their contents — UNLESS the line hands
+        # a string to an executor (eval, sh/bash -c, su, sudo, runuser, ssh, xargs,
+        # systemd-run, exec), in which case it still fails. Double-quoted strings are
+        # never discounted: "$(chown -R …)" executes. Everything else fails as before.
+        local _l _b _unq
         while IFS=: read -r _l _b; do
             [ -n "$_l" ] || continue
             case "$(printf '%s' "$_b" | sed 's/^[[:space:]]*//')" in '#'*|'//'*) continue ;; esac
+            _unq=$(printf '%s' "$_b" | sed -E "s/'[^']*'/''/g")
+            if ! printf '%s' "$_unq" | grep -qE '(chown|chmod)\s+(-R|--recursive)' \
+               && ! printf '%s' "$_b" | grep -qE '(^|[;&|({[:space:]])(eval|sh|bash|zsh|su|sudo|runuser|ssh|xargs|systemd-run|exec)([[:space:]]|$)'; then
+                continue
+            fi
             log_error "Found a recursive chown/chmod in: ${file#"$PROJECT_ROOT"/}:$_l"
             errors=$((errors + 1))
         done < <(grep -n -E '(chown|chmod)\s+(-R|--recursive)' "$file" 2>/dev/null || true)

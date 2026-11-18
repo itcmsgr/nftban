@@ -81,6 +81,17 @@ func (d *Daemon) Run() error {
 		return fmt.Errorf("failed to create directories: %w", err)
 	}
 
+	// v1.237 (state boundary, owner 2026-11-15): once state/ is root-owned, the tracking records written
+	// while it was service-account writable are sanitized ONCE (age_source cleared, pending markers kept
+	// as unverified) and the root-only trust marker is written. Under the shared reason-file lock set,
+	// before any module can ban. Non-fatal: until it succeeds, cleanup refuses (fail closed).
+	if err := persistence.WithAllReasonLocks(d.configDir, func() error {
+		_, terr := safety.EstablishTrackingTrust()
+		return terr
+	}); err != nil {
+		log.Printf("[TRACKING] trust boundary not established, cleanup will refuse: %v", err)
+	}
+
 	// v1.34.0: Pre-create nft lock file for early operations (LIVE-BUG-1 fix)
 	if _, err := os.OpenFile(nftlock.LockPath, os.O_CREATE|os.O_RDWR, 0640); err != nil { // #nosec G302
 		log.Printf("Warning: could not pre-create nft lock file: %v", err)

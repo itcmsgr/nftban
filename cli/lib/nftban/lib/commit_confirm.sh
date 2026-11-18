@@ -27,6 +27,11 @@ CC_STATE_DIR="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state"
 CC_RECORD="${CC_STATE_DIR}/commit-confirm.state"
 CC_FAILED_MARK="${CC_STATE_DIR}/commit-confirm.rollback-failed"
 CC_LOCK="${CC_STATE_DIR}/commit-confirm.lock"
+# v1.237 (state boundary, owner 2026-11-15): root-only trust marker. Written only when a fresh applied
+# baseline is recorded AFTER state/ became root-owned (fhs-spec C1+C2); never re-owned by the permission
+# repair, so a file planted while state/ was service-account writable can never become it.
+CC_TRUST="${CC_STATE_DIR}/commit-confirm.trust"
+CC_TRUST_CONTENT="nftban commit-confirm trust boundary v1237"
 CC_BASE="${CC_STATE_DIR}/applied"
 CC_WORK="${CC_STATE_DIR}/commit-confirm"
 CC_CONFIG="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
@@ -138,13 +143,92 @@ cc_record_applied_baseline() {
     # so a rollback restores the metadata as well as the content.
     rm -rf "${CC_BASE}.old"
     [[ -d "$CC_BASE" ]] && mv -f "$CC_BASE" "${CC_BASE}.old"
-    if mv -f "$new" "$CC_BASE"; then rm -rf "${CC_BASE}.old"; return 0; fi
+    if mv -f "$new" "$CC_BASE"; then rm -rf "${CC_BASE}.old"; _cc_establish_trust || true; return 0; fi
     [[ -d "${CC_BASE}.old" ]] && mv -f "${CC_BASE}.old" "$CC_BASE"
     return 1
 }
 
+# -----------------------------------------------------------------------------
+# v1.237 state boundary: rollback/confirm inputs are applied by root only when they are under the
+# root-owned boundary. Re-owning a file does not make content written while state/ was writable by
+# the service account trusted: inputs recorded before the boundary are refused (D10 hold + alarm),
+# and a plain 'nftban firewall rebuild' records a new, trusted baseline.
+# Tests may set CC_TRUST_UID (required owner uid) and CC_TRUST_TOP (top of the parent walk).
+# -----------------------------------------------------------------------------
+_cc_uid() { printf '%s' "${CC_TRUST_UID:-0}"; }
+_cc_owned_ok() {  # path: required owner (or root), no group/other write, not a symlink
+    # Two stat calls, no `read` field split: the CLI runs with IFS=$'\n\t' (strict mode).
+    local p="$1" u m
+    [[ -e "$p" && ! -L "$p" ]] || return 1
+    u=$(stat -c '%u' -- "$p" 2>/dev/null) || return 1
+    m=$(stat -c '%a' -- "$p" 2>/dev/null) || return 1
+    [[ "$u" == "$(_cc_uid)" || "$u" == 0 ]] || return 1
+    [[ "$m" =~ ^[0-7]+$ ]] && (( (8#$m & 8#022) == 0 ))
+}
+_cc_chain_ok() {  # dir: it and every parent up to / (or CC_TRUST_TOP)
+    local d="$1"
+    while :; do
+        _cc_owned_ok "$d" || return 1
+        [[ "$d" == / || "$d" == "${CC_TRUST_TOP:-/}" ]] && return 0
+        d=$(dirname -- "$d")
+    done
+}
+# RULE (v1.237, owner 2026-11-16): a rollback/confirm input is trusted only when the service account can
+# neither MODIFY nor REPLACE it through ANY part of its path:
+#   1. every directory from / down to the snapshot dir is root-owned with no group/other write
+#      (_cc_chain_ok on the state dir; the snapshot dir itself via _cc_owned_ok) -> no entry can be
+#      replaced or renamed by another account;
+#   2. the snapshot dir (applied/, commit-confirm/) grants group and other NO access at all (0700; the
+#      setgid bit inherited from state/ is allowed) -> no other account can even traverse to an entry, so
+#      an entry's own mode bits (e.g. a copied 0664 /etc/nftban/suricata/config/profile.conf) cannot be
+#      used to modify it; a snapshot dir with ANY group/other access is refused outright, never relaxed;
+#   3. every entry below is owned by root (content written by root, not left by another account) and
+#      none is a symbolic link (nothing redirects a root read or write).
+_cc_tree_ok() {
+    local d="$1" m bad
+    [[ -d "$d" ]] && _cc_owned_ok "$d" || return 1
+    m=$(stat -c %a -- "$d" 2>/dev/null) || return 1
+    [[ "$m" =~ ^[0-7]+$ ]] && (( (8#$m & 8#0077) == 0 )) || return 1
+    bad=$(find "$d" -mindepth 1 \( -type l -o ! -uid "$(_cc_uid)" \) -print -quit 2>/dev/null) || return 1
+    [[ -z "$bad" ]]
+}
+_cc_trust_marker_ok() {
+    [[ -f "$CC_TRUST" ]] && _cc_owned_ok "$CC_TRUST" \
+        && [[ "$(stat -c %a -- "$CC_TRUST" 2>/dev/null)" == 600 ]] \
+        && [[ "$(cat -- "$CC_TRUST" 2>/dev/null)" == "$CC_TRUST_CONTENT" ]]
+}
+# cc_inputs_trusted [base] [work] [record]: 0 when root may apply them; else sets CC_UNTRUSTED_WHY.
+cc_inputs_trusted() {
+    CC_UNTRUSTED_WHY=""
+    _cc_chain_ok "$CC_STATE_DIR" || { CC_UNTRUSTED_WHY="$CC_STATE_DIR or a parent directory is not root-owned and closed to group/other writes"; return 1; }
+    _cc_trust_marker_ok || { CC_UNTRUSTED_WHY="no valid trust marker: the recorded inputs predate the root-owned state boundary (v1.237)"; return 1; }
+    local w
+    for w in "$@"; do
+        case "$w" in
+            base)   _cc_tree_ok "$CC_BASE" || { CC_UNTRUSTED_WHY="applied baseline $CC_BASE failed ownership validation"; return 1; } ;;
+            work)   _cc_tree_ok "$CC_WORK" || { CC_UNTRUSTED_WHY="apply work dir $CC_WORK failed ownership validation"; return 1; } ;;
+            record) { [[ -f "$CC_RECORD" ]] && _cc_owned_ok "$CC_RECORD"; } || { CC_UNTRUSTED_WHY="record $CC_RECORD failed ownership validation"; return 1; } ;;
+        esac
+    done
+    return 0
+}
+# Written after a fresh baseline is recorded, when the boundary holds and no apply is pending.
+_cc_establish_trust() {
+    _cc_chain_ok "$CC_STATE_DIR" || return 0
+    [[ "$(cc_status)" == "pending" ]] && return 0
+    _cc_trust_marker_ok && return 0
+    local tmp
+    rm -f -- "$CC_TRUST" 2>/dev/null
+    tmp=$(umask 077; mktemp "${CC_TRUST}.XXXXXX") || return 1
+    # root:root as declared (fhs-spec): the setgid state dir would give it group nftban otherwise.
+    printf '%s' "$CC_TRUST_CONTENT" > "$tmp" && chmod 600 "$tmp" && chown root:root "$tmp" 2>/dev/null; \
+        mv -f -- "$tmp" "$CC_TRUST" || { rm -f -- "$tmp"; return 1; }
+}
+
 # The shared lock (fd 9). Every apply / confirm / rollback / boot decision holds it.
-cc_lock()   { mkdir -p "$CC_STATE_DIR" && exec 9>"$CC_LOCK" && flock -w 60 9; }
+# v1.237: created root-only (fhs-spec state/commit-confirm.lock 0600 root:root): a lock any other
+# account can open can be held by it (flock works on a read-only descriptor).
+cc_lock()   { mkdir -p "$CC_STATE_DIR" && { [[ -e "$CC_LOCK" ]] || (umask 077; : >> "$CC_LOCK"); } && exec 9>"$CC_LOCK" && flock -w 60 9; }
 # NB: no redirection on the exec: `exec 9>&- 2>/dev/null` would permanently send the
 # whole shell's stderr to /dev/null and hide every later refusal or alarm.
 cc_unlock() { flock -u 9 2>/dev/null || true; exec 9>&-; return 0; }
@@ -180,6 +264,11 @@ cc_apply_begin() {
     if [[ ! -f "$CC_BASE/manifest" || ! -d "$CC_BASE/config" ]]; then
         echo "REFUSED: no applied baseline (the configuration that produced the running rules is not recorded)." >&2
         echo "  It is recorded by every successful plain 'nftban firewall rebuild', 'nftban enable' and the installer." >&2
+        cc_unlock; return 1
+    fi
+    if ! cc_inputs_trusted base; then
+        echo "REFUSED: the applied baseline is not trusted: ${CC_UNTRUSTED_WHY}." >&2
+        echo "  Record a new baseline with a plain 'nftban firewall rebuild', then retry." >&2
         cc_unlock; return 1
     fi
     id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
@@ -317,6 +406,10 @@ cc_confirm() {
     if (( now >= ${dl:-0} )); then
         echo "REFUSED: the confirm deadline of apply $id has passed; the automatic rollback is due." >&2; cc_unlock; return 1
     fi
+    if ! cc_inputs_trusted record work base; then
+        echo "CONFIRM REFUSED: ${CC_UNTRUSTED_WHY}. Apply $id is STILL PENDING; its rollback inputs are validated the same way." >&2
+        cc_unlock; return 1
+    fi
     # Proof of the administrator's confirm FOR THIS APPLY ID, recorded before the commit
     # point. A boot projection equal to the candidate is not proof on its own: the
     # candidate projection can be byte-identical to the baseline's.
@@ -375,6 +468,21 @@ cc_rollback() {
     if [[ "$st" == "rollback-failed" && "$mode" == "--boot" ]]; then
         cc_unlock; return 0
     fi
+    # v1.237 state boundary: nothing recorded is applied by root unless it is under the root-owned
+    # boundary. Untrusted inputs -> D10 hold + alarm, kernel and files unchanged.
+    if ! cc_inputs_trusted record work base; then
+        cc_set status rollback-failed
+        cc_set error "rollback inputs not trusted: ${CC_UNTRUSTED_WHY}"
+        cc_set at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        cc_set kernel "unchanged (rollback inputs refused)"
+        : > "$CC_FAILED_MARK"
+        cc_unlock
+        local umsg="NFTBan commit-confirm rollback of apply $rec_id REFUSED: inputs not trusted (${CC_UNTRUSTED_WHY}); kernel and configuration unchanged. NFTBan writers are held."
+        logger -t nftban -p auth.crit "$umsg" 2>/dev/null || true
+        echo "❌ $umsg" >&2
+        echo "   Recover from the console: 'nftban disable all --flush-rules', or boot once with nftban=disabled; then 'nftban firewall rollback --abandon'." >&2
+        return 1
+    fi
     # A crash after confirm's commit point: complete the confirm, never roll back. Both
     # are required: the recorded confirm for THIS apply ID and the candidate projection.
     if [[ "$st" == "pending" && "$(cc_get confirm_requested)" == "$rec_id" ]] && cc_projection_is_candidate; then
@@ -387,7 +495,23 @@ cc_rollback() {
     # 2. Kernel (not at boot: the old projection is what loaded): ONE transaction,
     #    NFTBan tables only; foreign tables are never part of it.
     if [[ "$mode" != "--boot" ]]; then
-        tx=$(mktemp) || { cc_unlock; return 1; }
+        # v1.237: the transaction file lives in the root-owned state dir, not /tmp. The automatic
+        # rollback runs as a transient unit whose ExecStart (/usr/sbin/nftban, nftband_exec_t)
+        # transitions to nftband_t, which may not create files in /tmp on EL Enforcing (measured on
+        # AlmaLinux 9.8: "mktemp: ... /tmp/tmp.XXXXXXXXXX: Permission denied", no AVC logged). That
+        # failure used to return silently with the apply still pending and the candidate active.
+        if ! tx=$(mktemp -p "$CC_STATE_DIR" .rollback-tx.XXXXXX); then
+            cc_set status rollback-failed
+            cc_set error "rollback transaction file could not be created in $CC_STATE_DIR"
+            cc_set at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            cc_set kernel "unchanged (rollback could not start)"
+            : > "$CC_FAILED_MARK"
+            cc_unlock
+            local tmsg="NFTBan commit-confirm ROLLBACK FAILED for apply $rec_id: transaction file could not be created; the candidate is still active. NFTBan writers are held."
+            logger -t nftban -p auth.crit "$tmsg" 2>/dev/null || true
+            echo "❌ $tmsg" >&2
+            return 1
+        fi
         { printf 'add table ip nftban\ndelete table ip nftban\nadd table ip6 nftban\ndelete table ip6 nftban\n'
           cat "$CC_WORK/kernel-before.nft"; } > "$tx"
         if ! err=$(nftban_nft_write -f "$tx" 2>&1); then

@@ -11,6 +11,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.237.0] - 2026-11-16 — Stability release: state ownership, cleanup repair, commit-confirm recovery
+
+A stability release. v1.236.2's known issues still apply, except where an item below fixes them.
+
+### Security
+
+- **Root-relied state no longer lives in a directory the nftban service account owns.**
+  - **Before:**
+    - `/var/lib/nftban/state` was `nftban:nftban`.
+    - The permission repair re-owned every file under `/var/lib/nftban` to the service account.
+    - That account could replace or edit inputs that root later applies: commit-confirm rollback content, both locks, install, firewall and feed authority, and the cleanup tracking state.
+  - **As of v1.237.0:**
+    - The directory is `2750 root:nftban` (setgid, so new entries get group `nftban`).
+    - Each root-written entry is declared with its owner and mode, and is restored in place by one generated policy.
+    - Both locks are `0600 root:root`; the service account can no longer open or hold them.
+    - The nftban group keeps read access.
+- **Content written before this change is not trusted because it is now root-owned.**
+  - Cleanup tracking records present at upgrade keep their age, reason, source and protection, but lose ban-time provenance, so they are never selected for removal. Pending removal markers from that time are reported, not acted on.
+  - Commit-confirm refuses a baseline or apply window recorded before the change. A plain `nftban firewall rebuild` (also run by the installer) records a new baseline.
+  - A link planted at a declared state entry is removed (the link, not its target).
+- **CI:** the release workflow's create-pull-request action is pinned to a commit. `download-binaries.sh` pins and verifies the `slsa-verifier` it uses. The security summary counts alerts, and reports `UNKNOWN` when an API returns 403 instead of reporting clean.
+
+### Fixed
+
+- **Commit-confirm automatic rollback did not run on EL Enforcing.**
+  - The timer-started rollback ran in the daemon's SELinux domain, which may not create files in `/tmp`, and it stopped silently with the change still pending.
+  - The rollback transaction is now written in the root-owned state directory. A rollback that cannot start records the failed-rollback hold and raises the alarm.
+- **`nftban cleanup`** — one eligibility calculation for dry-run, execute and stats:
+  - Only bans tracked with their ban-time age qualify; manual, protected and legacy records never do.
+  - Removal takes the shared lock of every reason file, re-checks under it, and removes only the selected reason. The kernel element is removed only when no reason remains.
+  - An interrupted removal is finished by the next run.
+  - Persistence lockfiles stay `0600 root:root`.
+  - The CLI refuses conflicting modes, needs `--yes` off a terminal, and reports the removed count.
+- **Validator:**
+  - No `PROTECTED` verdict after a failed boot load until the bans are restored.
+  - Exit codes 1 (DEGRADED) and 2 (DOWN) are successful validation runs, so the unit is no longer left failed.
+  - The unit reads with group access and keeps `/run` read-only.
+  - The installer re-verifies a validate unit left failed by an older release.
+- **Reconcile no longer deletes a ban's recorded intent when its kernel element is missing**, for example after a failed boot load. The ban is restored instead of being lost from the source index.
+- **Stats:** timed bans in the manual and interval sets count as temporary.
+- **Status:** a non-root operator's status goes through the validate unit.
+- **Config:** a central override wins at the remaining reporting consumers.
+- **CLI:**
+  - help prints resolved paths;
+  - guidance names commands that are on PATH;
+  - `timers` "Last run" reads `LastTriggerUSec`;
+  - `module status` skips the test suite;
+  - `metrics evidence-json` prints only the JSON.
+- **Installer and packaging:**
+  - timer-liveness detail names every inactive timer;
+  - the v1.145 upgrade lines are gone;
+  - an exporter stop is not a unit failure.
+
+### Upgrade and operator notes
+
+- **`nftban cleanup` removes durable bans permanently. Review before executing.**
+  - Run `nftban cleanup --dry-run` first. It shows each selected reason and why every other ban is excluded.
+  - Bans tracked before the upgrade to v1.237.0 are never selected (`legacy-age-unverified`), whatever their age. Only bans recorded after the upgrade, with their ban-time age, can qualify, and only once they are older than the threshold.
+  - Manual and protected bans are never selected.
+  - `--execute` without a terminal, or with `--json`, needs `--yes`.
+- **Commit-confirm after the upgrade.**
+  - A baseline recorded by an older version is not trusted. The installer records a new baseline during the upgrade.
+  - If `nftban firewall rebuild --confirm` reports that the applied baseline is not trusted, run a plain `nftban firewall rebuild` once, then retry.
+  - A failed-rollback hold still blocks rebuilds and maintenance until it is resolved (`nftban firewall rollback <id>` or `--abandon`).
+- **`/var/lib/nftban/state` is now `2750 root:nftban`.**
+  - Members of the `nftban` group keep read access.
+  - Nothing outside NFTBan should write there. A local script that wrote into that directory as the `nftban` user will now be refused.
+
+### Tests
+
+- Test-only changes; no product behaviour change:
+  - community privacy port matcher;
+  - BotGuard TempDir race;
+  - deterministic class-guard enforcement set.
+
+### Known issues
+
+- **Suricata alert input** (`/var/log/nftban/suricata/eve-alerts.json`) is still not provisioned or rotated by the package, and LoginMon does not keep continuity across a copytruncate rotation.
+  - On hosts with the Suricata integration enabled, existing bans stay enforced, but lost or stalled alert input can stop new Suricata-driven bans.
+  - A manual copytruncate rotation is not a verified mitigation.
+  - Planned for v1.239.
+
 ## [v1.236.2] - 2026-11-11 — SELinux label fix for the runtime directories on EL9
 
 A fix release for v1.236.1. Its known issues and those of v1.236.0 still apply.

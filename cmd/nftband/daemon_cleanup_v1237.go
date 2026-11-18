@@ -52,11 +52,20 @@ type cleanupReport struct {
 }
 
 func cleanupEvaluate(configDir string, now time.Time) ([]safety.CleanupDecision, *safety.PermanentBansState, error) {
+	// v1.237 state boundary: establish trust here as well as at daemon start. At start the boundary may
+	// not hold yet (package scriptlets restart the daemon before the permission repair re-owns the file);
+	// this retries once it does. Idempotent: a no-op once the marker is valid. Under the shared lock set.
+	if err := persistence.WithAllReasonLocks(configDir, func() error {
+		_, terr := safety.EstablishTrackingTrust()
+		return terr
+	}); err != nil {
+		return nil, nil, err
+	}
 	reasons, err := persistence.ReasonsForAll(configDir)
 	if err != nil {
 		return nil, nil, err
 	}
-	st, err := safety.LoadPermanentBans()
+	st, err := safety.LoadPermanentBansForCleanup()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -157,7 +166,7 @@ func cleanupRemoveOne(configDir, ip, source string, now time.Time, k cleanupKern
 	if err != nil {
 		return "failed:" + err.Error(), false
 	}
-	st, err := safety.LoadPermanentBans()
+	st, err := safety.LoadPermanentBansForCleanup()
 	if err != nil {
 		return "failed:" + err.Error(), false
 	}
@@ -217,13 +226,16 @@ func cleanupFinishPending(configDir, ip string, k cleanupKernel) string {
 		return "failed:" + err.Error()
 	}
 	defer unlock()
-	st, err := safety.LoadPermanentBans()
+	st, err := safety.LoadPermanentBansForCleanup()
 	if err != nil {
 		return "failed:" + err.Error()
 	}
 	tr := st.Bans[ip]
 	if tr == nil || tr.CleanupPending == "" || tr.Protected {
 		return "skipped:not-pending"
+	}
+	if tr.CleanupPendingUnverified { // written before the root-owned state boundary: never acted on
+		return "skipped:" + safety.ExclPendingUnverified
 	}
 	reasons, err := persistence.ReasonsForIP(configDir, ip)
 	if err != nil {

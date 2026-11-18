@@ -398,7 +398,9 @@ func TestRemoveIPFromFile_WithComment(t *testing.T) {
 }
 
 func TestRemoveIPFromFile_NonexistentFile(t *testing.T) {
-	removed, err := removeIPFromFile("/tmp/nonexistent-file-12345", "1.2.3.4")
+	// v1.237: removeIPFromFile takes the sibling lock (<file>.lock), so the path lives in the test's own
+	// temp dir (a fixed /tmp path leaked a root-owned lockfile that broke unprivileged reruns).
+	removed, err := removeIPFromFile(filepath.Join(t.TempDir(), "nonexistent-file-12345"), "1.2.3.4")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

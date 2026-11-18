@@ -61,6 +61,7 @@ RPM_FILES_OUT="${PROJECT_ROOT}/install/packaging/rpm/nftban-files.inc"
 JSON_OUT="${PROJECT_ROOT}/cli/lib/nftban/data/fhs_directories.json"
 SHELL_OUT="${PROJECT_ROOT}/cli/lib/nftban/core/nftban_fhs_spec.sh"
 PERMS_OUT="${PROJECT_ROOT}/cli/lib/nftban/setup/fhs-permissions.sh"
+STATE_POLICY_OUT="${PROJECT_ROOT}/cli/lib/nftban/setup/fhs-state-policy.sh"
 
 # Read project version from /VERSION
 NFTBAN_GEN_VERSION="$(cat "${PROJECT_ROOT}/VERSION" 2>/dev/null | tr -d '[:space:]')"
@@ -716,6 +717,7 @@ check_mode() {
     local orig_json="$JSON_OUT"
     local orig_shell="$SHELL_OUT"
     local orig_perms="$PERMS_OUT"
+    local orig_policy="$STATE_POLICY_OUT"
 
     # Redirect to temp
     TMPFILES_OUT="${temp_dir}/tmpfiles.conf"
@@ -726,6 +728,7 @@ check_mode() {
     JSON_OUT="${temp_dir}/fhs_directories.json"
     SHELL_OUT="${temp_dir}/nftban_fhs_spec.sh"
     PERMS_OUT="${temp_dir}/fhs-permissions.sh"
+    STATE_POLICY_OUT="${temp_dir}/fhs-state-policy.sh"
 
     # Generate
     generate_tmpfiles
@@ -736,6 +739,7 @@ check_mode() {
     generate_json
     generate_shell_helper
     generate_file_permissions
+    generate_state_policy
 
     # Compare
     for pair in \
@@ -746,7 +750,8 @@ check_mode() {
         "${temp_dir}/nftban-files.inc:${orig_rpm}" \
         "${temp_dir}/fhs_directories.json:${orig_json}" \
         "${temp_dir}/nftban_fhs_spec.sh:${orig_shell}" \
-        "${temp_dir}/fhs-permissions.sh:${orig_perms}"; do
+        "${temp_dir}/fhs-permissions.sh:${orig_perms}" \
+        "${temp_dir}/fhs-state-policy.sh:${orig_policy}"; do
 
         IFS=':' read -r generated committed <<< "$pair"
 
@@ -850,14 +855,15 @@ PERMS_HEADER
     # install_enforce:false emits no chown/chmod. Absent field = enforced, as before.
     # jq expression (if/then/else, \( ) interpolation): mikefarah yq v4 rejects it, so the
     # spec is converted to JSON and the expression runs in jq, under either yq variant.
-    if ! spec_json | jq -r '.file_permissions[] | select(.install_enforce != false) |
+    # v1.237: exclude may be a string or a list; each entry excludes the path and everything below it.
+    if ! spec_json | jq -r '.file_permissions[] | select(.install_enforce != false and .exact != true) |
         "    # \(.path) - \(.pattern // "*")\n" +
         (if .recursive == true then
             "    find \"\(.path)\" -type f -name \"\(.pattern // "*")\"" +
-            (if .exclude then " -not -path \"\(.exclude)/*\"" else "" end) +
+            (if .exclude then ([.exclude] | flatten | map(" -not -path \"\(.)\" -not -path \"\(.)/*\"") | join("")) else "" end) +
             " -exec chown \(.owner):\(.group) {} \\; 2>/dev/null || true\n" +
             "    find \"\(.path)\" -type f -name \"\(.pattern // "*")\"" +
-            (if .exclude then " -not -path \"\(.exclude)/*\"" else "" end) +
+            (if .exclude then ([.exclude] | flatten | map(" -not -path \"\(.)\" -not -path \"\(.)/*\"") | join("")) else "" end) +
             " -exec chmod \(.mode) {} \\; 2>/dev/null || true"
         else
             "    chown \(.owner):\(.group) \"\(.path)\"/\(.pattern // "*") 2>/dev/null || true\n" +
@@ -878,6 +884,15 @@ PERMS_HEADER
 
     cat >> "$out" << 'PERMS_FOOTER'
 
+    # v1.237: the exact state entries come from ONE generated policy, the same one the repair
+    # consumers (perms_enforce_var_files, autoheal) use.
+    local _nftban_pol
+    _nftban_pol="$(dirname "${BASH_SOURCE[0]}")/fhs-state-policy.sh"
+    if [[ -r "$_nftban_pol" ]]; then
+        # shellcheck source=/dev/null
+        source "$_nftban_pol" && nftban_fhs_enforce_exact_entries
+    fi
+
     return 0
 }
 
@@ -888,6 +903,95 @@ PERMS_FOOTER
     chmod 755 "$out"
     mv -f "$out" "$PERMS_OUT"
     print_status "Generated $PERMS_OUT"
+}
+
+generate_state_policy() {
+    print_info "Generating fhs-state-policy.sh..."
+    mkdir -p "$(dirname "$STATE_POLICY_OUT")"
+    local out="${STATE_POLICY_OUT}.tmp.$$"
+    {
+        echo "#!/usr/bin/env bash"
+        echo "# ============================================================================="
+        echo "# NFTBan - FHS exact-entry policy (GENERATED)"
+        echo "# ============================================================================="
+# REUSE-IgnoreStart
+        echo "# SPDX-License-Identifier: MPL-2.0"
+        echo "# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>"
+# REUSE-IgnoreEnd
+    } > "$out"
+    cat >> "$out" << 'POLICY_HEADER'
+#
+# meta:name="fhs-state-policy"
+# meta:type="setup"
+# meta:header="FHS exact-entry policy"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
+#
+# meta:description="Restores owner and mode of the exact file_permissions entries (exact: true) IN PLACE: chown -h / chmod, inode and held locks kept; regular files or directories only (directories never recursive), never through a symlink, only when the parent is root-owned and closed to group/other writes. Sourced (function definitions only, no shell options changed) by fhs-permissions.sh, nftban_permissions.sh perms_enforce_var_files and helpers/autoheal.sh. GENERATED"
+# meta:inventory.files="/var/lib/nftban/state"
+# meta:inventory.binaries="chown,chmod,stat"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+#
+# WARNING: This file is GENERATED from build/fhs-spec.yaml - DO NOT EDIT
+# Run: build/generate-fhs-outputs.sh
+# =============================================================================
+
+# Parent of PATH is root-owned and not writable by group/other (else nothing is touched: the
+# directory policy must establish the boundary first, so no entry can be swapped mid-repair).
+_nftban_fhs_parent_root_closed() {
+    # Two stat calls, no `read` field split: callers run with IFS=$'\n\t' (NFTBan CLI strict mode).
+    local d u m
+    d=$(dirname -- "$1")
+    u=$(stat -c '%u' -- "$d" 2>/dev/null) || return 1
+    m=$(stat -c '%a' -- "$d" 2>/dev/null) || return 1
+    [[ "$u" == 0 && "$m" =~ ^[0-7]+$ ]] && (( (8#$m & 8#022) == 0 ))
+}
+
+# _nftban_fhs_exact TYPE OWNER:GROUP MODE PATH
+_nftban_fhs_exact() {
+    local t="$1" og="$2" m="$3" p="$4"
+    [[ -e "$p" || -L "$p" ]] || return 0
+    if ! _nftban_fhs_parent_root_closed "$p"; then
+        echo "fhs-state-policy: skipped $p (parent not root-owned or writable by group/other)" >&2
+        return 0
+    fi
+    # A declared entry is never a link. One planted while the parent was writable by the service
+    # account could redirect a later root write, so it is removed (the link only, never its target).
+    if [[ -L "$p" ]]; then
+        rm -f -- "$p" && echo "fhs-state-policy: removed symlink at declared entry $p" >&2
+        return 0
+    fi
+    case "$t" in
+        file) [[ -f "$p" ]] || return 0 ;;
+        dir)  [[ -d "$p" ]] || return 0 ;;
+        *)    return 0 ;;
+    esac
+    chown -h "$og" -- "$p" 2>/dev/null || true
+    [[ -L "$p" ]] || chmod "$m" -- "$p" 2>/dev/null || true
+}
+
+nftban_fhs_enforce_exact_entries() {
+    # directories first, then files
+POLICY_HEADER
+    if ! spec_json | jq -r '[.file_permissions[] | select(.exact == true and .install_enforce != false)]
+        | sort_by(if .type == "dir" then 0 else 1 end) | .[]
+        | "    _nftban_fhs_exact \(.type) \(.owner):\(.group) \(.mode) \"\(.path)/\(.pattern)\""' >> "$out"; then
+        rm -f "$out"
+        print_error "fhs-state-policy.sh NOT generated (spec conversion or jq failed); the committed file is unchanged"
+        exit 1
+    fi
+    cat >> "$out" << 'POLICY_FOOTER'
+    return 0
+}
+POLICY_FOOTER
+    chmod 644 "$out"
+    mv -f "$out" "$STATE_POLICY_OUT"
+    print_status "Generated $STATE_POLICY_OUT"
 }
 
 # =============================================================================
@@ -917,6 +1021,7 @@ main() {
     generate_json
     generate_shell_helper
     generate_file_permissions
+    generate_state_policy
 
     echo ""
     echo "=========================================="
@@ -932,6 +1037,7 @@ main() {
     echo "  - $JSON_OUT"
     echo "  - $SHELL_OUT"
     echo "  - $PERMS_OUT"
+    echo "  - $STATE_POLICY_OUT"
     echo ""
     echo "Next steps:"
     echo "  1. Review generated files"
