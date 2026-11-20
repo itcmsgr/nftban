@@ -856,7 +856,7 @@ PERMS_HEADER
     # jq expression (if/then/else, \( ) interpolation): mikefarah yq v4 rejects it, so the
     # spec is converted to JSON and the expression runs in jq, under either yq variant.
     # v1.237: exclude may be a string or a list; each entry excludes the path and everything below it.
-    if ! spec_json | jq -r '.file_permissions[] | select(.install_enforce != false and .exact != true) |
+    if ! spec_json | jq -r '.file_permissions[] | select(.install_enforce != false and .exact != true and .glob != true) |
         "    # \(.path) - \(.pattern // "*")\n" +
         (if .recursive == true then
             "    find \"\(.path)\" -type f -name \"\(.pattern // "*")\"" +
@@ -928,8 +928,8 @@ generate_state_policy() {
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
-# meta:description="Restores owner and mode of the exact file_permissions entries (exact: true) IN PLACE: chown -h / chmod, inode and held locks kept; regular files or directories only (directories never recursive), never through a symlink, only when the parent is root-owned and closed to group/other writes. Sourced (function definitions only, no shell options changed) by fhs-permissions.sh, nftban_permissions.sh perms_enforce_var_files and helpers/autoheal.sh. GENERATED"
-# meta:inventory.files="/var/lib/nftban/state"
+# meta:description="Restores owner and mode of the exact (exact: true) and glob (glob: true, v1.238) file_permissions entries IN PLACE: chown -h / chmod, inode and held locks kept; regular files or directories only (directories never recursive), never through a symlink, only when the parent is root-owned and closed to group/other writes. Sourced (function definitions only, no shell options changed) by fhs-permissions.sh, nftban_permissions.sh perms_enforce_var_files and helpers/autoheal.sh. GENERATED"
+# meta:inventory.files="/var/lib/nftban/state,/var/lib/nftban/feeds"
 # meta:inventory.binaries="chown,chmod,stat"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
@@ -983,6 +983,17 @@ POLICY_HEADER
         | "    _nftban_fhs_exact \(.type) \(.owner):\(.group) \(.mode) \"\(.path)/\(.pattern)\""' >> "$out"; then
         rm -f "$out"
         print_error "fhs-state-policy.sh NOT generated (spec conversion or jq failed); the committed file is unchanged"
+        exit 1
+    fi
+    # v1.238: glob entries (glob: true): each match of PATTERN directly in PATH, same in-place helper.
+    # The pattern is emitted unquoted (it must expand), so it is restricted to a plain filename glob.
+    if ! spec_json | jq -r '[.file_permissions[] | select(.glob == true and .install_enforce != false)]
+        | if any(.[]; (.pattern | test("^[A-Za-z0-9._*-]+$") | not) or .type != "file" or .recursive == true or .exact == true)
+          then error("glob entry: pattern must be a plain filename glob, type file, not recursive, not exact") else . end
+        | .[]
+        | "    for _nftban_fhs_p in \"\(.path)\"/\(.pattern); do _nftban_fhs_exact file \(.owner):\(.group) \(.mode) \"$_nftban_fhs_p\"; done"' >> "$out"; then
+        rm -f "$out"
+        print_error "fhs-state-policy.sh NOT generated (glob entry invalid, or spec conversion/jq failed); the committed file is unchanged"
         exit 1
     fi
     cat >> "$out" << 'POLICY_FOOTER'

@@ -858,7 +858,19 @@ nftban_cmd_feeds() {
             fi
             # Use Go binary for feeds update (dynamic, central architecture)
             if [[ -x "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" ]]; then
-                "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" feeds update
+                # v1.238 (BUG-FEEDS-UPDATE-SINGLE-FEED-REFRESHES-ALL): a named feed is passed on, so only
+                # that feed is refreshed; no name = every enabled feed (timer path, unchanged).
+                local _feed_arg="" _a
+                for _a in "$@"; do
+                    [[ "$_a" == -* ]] && continue
+                    _feed_arg="$_a"
+                    break
+                done
+                if [[ -n "$_feed_arg" ]]; then
+                    "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" feeds update "$_feed_arg"
+                else
+                    "${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}" feeds update
+                fi
             else
                 # Fallback to bash implementation
                 nftban_feeds_update_json "$json_mode" "$@"

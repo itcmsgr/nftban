@@ -63,8 +63,8 @@ nftban_install_set_file_permissions() {
     chown root:nftban "/usr/sbin"/nftban* 2>/dev/null || true
     chmod 0750 "/usr/sbin"/nftban* 2>/dev/null || true
     # /var/lib/nftban - *
-    find "/var/lib/nftban" -type f -name "*" -not -path "/var/lib/nftban/reports/auditors" -not -path "/var/lib/nftban/reports/auditors/*" -not -path "/var/lib/nftban/state" -not -path "/var/lib/nftban/state/*" -exec chown nftban:nftban {} \; 2>/dev/null || true
-    find "/var/lib/nftban" -type f -name "*" -not -path "/var/lib/nftban/reports/auditors" -not -path "/var/lib/nftban/reports/auditors/*" -not -path "/var/lib/nftban/state" -not -path "/var/lib/nftban/state/*" -exec chmod 0640 {} \; 2>/dev/null || true
+    find "/var/lib/nftban" -type f -name "*" -not -path "/var/lib/nftban/reports/auditors" -not -path "/var/lib/nftban/reports/auditors/*" -not -path "/var/lib/nftban/state" -not -path "/var/lib/nftban/state/*" -not -path "/var/lib/nftban/feeds" -not -path "/var/lib/nftban/feeds/*" -exec chown nftban:nftban {} \; 2>/dev/null || true
+    find "/var/lib/nftban" -type f -name "*" -not -path "/var/lib/nftban/reports/auditors" -not -path "/var/lib/nftban/reports/auditors/*" -not -path "/var/lib/nftban/state" -not -path "/var/lib/nftban/state/*" -not -path "/var/lib/nftban/feeds" -not -path "/var/lib/nftban/feeds/*" -exec chmod 0640 {} \; 2>/dev/null || true
     # /var/lib/nftban/reports/auditors - *
     find "/var/lib/nftban/reports/auditors" -type f -name "*" -exec chown root:nftban-auditor {} \; 2>/dev/null || true
     find "/var/lib/nftban/reports/auditors" -type f -name "*" -exec chmod 0660 {} \; 2>/dev/null || true

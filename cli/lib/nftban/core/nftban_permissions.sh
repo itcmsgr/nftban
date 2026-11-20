@@ -286,10 +286,11 @@ perms_enforce_var_files() {
         # Fix ownership: nftban:nftban (feeds, banned, whitelist, etc.)
         # v1.237 C2 (fhs-spec): state/ is root's and excluded from this sweep (pruned, never descended);
         # its declared entries are restored below by the generated policy.
-        perms_run find "$PERMS_VAR" \( -path "$PERMS_VAR/reports/auditors" -o -path "$PERMS_VAR/state" \) -prune -o -type f \( -not -user nftban -o -not -group nftban \) -exec chown nftban:nftban {} \;
+        # v1.238: feeds/ likewise (enforced feed snapshots are root:nftban 0640, fhs-spec feeds/*.txt).
+        perms_run find "$PERMS_VAR" \( -path "$PERMS_VAR/reports/auditors" -o -path "$PERMS_VAR/state" \) -prune -o -path "$PERMS_VAR/feeds" -prune -o -type f \( -not -user nftban -o -not -group nftban \) -exec chown nftban:nftban {} \;
 
         # Files 640 (only owner read/write, group read)
-        perms_run find "$PERMS_VAR" \( -path "$PERMS_VAR/reports/auditors" -o -path "$PERMS_VAR/state" \) -prune -o -type f -not -perm 0640 -exec chmod 0640 {} \;
+        perms_run find "$PERMS_VAR" \( -path "$PERMS_VAR/reports/auditors" -o -path "$PERMS_VAR/state" \) -prune -o -path "$PERMS_VAR/feeds" -prune -o -type f -not -perm 0640 -exec chmod 0640 {} \;
 
         # v1.237: the exact state entries (fhs-spec file_permissions exact: true), restored IN PLACE by
         # the ONE generated policy that fhs-permissions.sh and autoheal also use.

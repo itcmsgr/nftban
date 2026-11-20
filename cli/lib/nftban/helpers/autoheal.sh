@@ -186,12 +186,13 @@ if [ -d "${NFTBAN_DATA_DIR}" ]; then
     # Fix all files EXCEPT auditors directory (which has different ownership)
     # v1.237 C2 (fhs-spec): state/ is root's and excluded from the nftban:nftban sweep (pruned);
     # its declared entries are restored by the generated policy below (in place).
-    find "${NFTBAN_DATA_DIR}" -path "${NFTBAN_DATA_DIR}/state" -prune -o -type f \
+    # v1.238: feeds/ likewise (enforced feed snapshots are root:nftban 0640, fhs-spec feeds/*.txt).
+    find "${NFTBAN_DATA_DIR}" -path "${NFTBAN_DATA_DIR}/state" -prune -o -path "${NFTBAN_DATA_DIR}/feeds" -prune -o -type f \
         -not -path "*/reports/auditors/*" \
         \( -not -user nftban -o -not -group nftban \) \
         -exec chown nftban:nftban {} \; 2>/dev/null || true
 
-    find "${NFTBAN_DATA_DIR}" -path "${NFTBAN_DATA_DIR}/state" -prune -o -type f \
+    find "${NFTBAN_DATA_DIR}" -path "${NFTBAN_DATA_DIR}/state" -prune -o -path "${NFTBAN_DATA_DIR}/feeds" -prune -o -type f \
         -not -path "*/reports/auditors/*" \
         -not -perm 640 \
         -exec chmod 640 {} \; 2>/dev/null || true

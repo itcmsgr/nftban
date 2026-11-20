@@ -12,8 +12,8 @@
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
-# meta:description="Restores owner and mode of the exact file_permissions entries (exact: true) IN PLACE: chown -h / chmod, inode and held locks kept; regular files or directories only (directories never recursive), never through a symlink, only when the parent is root-owned and closed to group/other writes. Sourced (function definitions only, no shell options changed) by fhs-permissions.sh, nftban_permissions.sh perms_enforce_var_files and helpers/autoheal.sh. GENERATED"
-# meta:inventory.files="/var/lib/nftban/state"
+# meta:description="Restores owner and mode of the exact (exact: true) and glob (glob: true, v1.238) file_permissions entries IN PLACE: chown -h / chmod, inode and held locks kept; regular files or directories only (directories never recursive), never through a symlink, only when the parent is root-owned and closed to group/other writes. Sourced (function definitions only, no shell options changed) by fhs-permissions.sh, nftban_permissions.sh perms_enforce_var_files and helpers/autoheal.sh. GENERATED"
+# meta:inventory.files="/var/lib/nftban/state,/var/lib/nftban/feeds"
 # meta:inventory.binaries="chown,chmod,stat"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
@@ -77,5 +77,6 @@ nftban_fhs_enforce_exact_entries() {
     _nftban_fhs_exact file root:nftban 0640 "/var/lib/nftban/state/ip_change_alert.state"
     _nftban_fhs_exact file root:nftban 0640 "/var/lib/nftban/state/firewall_transition_health.json"
     _nftban_fhs_exact file root:nftban 0640 "/var/lib/nftban/state/ruleset_fingerprint.json"
+    for _nftban_fhs_p in "/var/lib/nftban/feeds"/*.txt; do _nftban_fhs_exact file root:nftban 0640 "$_nftban_fhs_p"; done
     return 0
 }
