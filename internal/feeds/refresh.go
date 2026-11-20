@@ -35,16 +35,43 @@ const SyncRecordName = "full-sync.status"
 
 // RefreshRecord is the downloader's record for one feed.
 type RefreshRecord struct {
-	Feed                string    `json:"feed"`
-	LastSuccessAt       time.Time `json:"last_success_at,omitempty"`
-	LastSuccessEntries  int       `json:"last_success_entries,omitempty"`
-	ProviderGeneratedAt string    `json:"provider_generated_at,omitempty"` // provider's own time, as sent
-	LastAttemptAt       time.Time `json:"last_attempt_at,omitempty"`
-	LastAttemptOK       bool      `json:"last_attempt_ok"`
-	LastAttemptReason   string    `json:"last_attempt_reason,omitempty"`
-	ConsecutiveFailures int       `json:"consecutive_failures,omitempty"`
-	FailingSince        time.Time `json:"failing_since,omitempty"`
-	NotBefore           time.Time `json:"not_before,omitempty"` // provider back-off (429)
+	Feed                string         `json:"feed"`
+	LastSuccessAt       time.Time      `json:"last_success_at,omitempty"`
+	LastSuccessEntries  int            `json:"last_success_entries,omitempty"`
+	ProviderGeneratedAt string         `json:"provider_generated_at,omitempty"` // provider's own time, as sent
+	LastAttemptAt       time.Time      `json:"last_attempt_at,omitempty"`
+	LastAttemptOK       bool           `json:"last_attempt_ok"`
+	LastAttemptReason   string         `json:"last_attempt_reason,omitempty"`
+	ConsecutiveFailures int            `json:"consecutive_failures,omitempty"`
+	FailingSince        time.Time      `json:"failing_since,omitempty"`
+	NotBefore           time.Time      `json:"not_before,omitempty"` // provider back-off (429)
+	Provider            *ProviderStats `json:"provider,omitempty"`   // provider feeds only
+}
+
+// ProviderStats is what a provider feed's last successful download reported (requested values
+// kept apart from the effective result), plus the latest quota the provider stated. Quota fields
+// are meaningful only when QuotaKnown (unknown is never shown as 0).
+type ProviderStats struct {
+	RequestedConfidence int       `json:"requested_confidence_minimum,omitempty"`
+	RequestedLimit      int       `json:"requested_limit,omitempty"`
+	Received            int       `json:"received"`
+	Accepted            int       `json:"accepted"`
+	Rejected            int       `json:"rejected"`
+	MinScore            int       `json:"min_score"` // -1: no entry carried a score
+	MaxScore            int       `json:"max_score"`
+	QuotaKnown          bool      `json:"quota_known"`
+	QuotaLimit          int       `json:"quota_limit,omitempty"`
+	QuotaRemaining      int       `json:"quota_remaining,omitempty"`
+	QuotaResetAt        time.Time `json:"quota_reset_at,omitempty"`
+	QuotaSeenAt         time.Time `json:"quota_seen_at,omitempty"`
+}
+
+// SetQuota records a provider quota statement (only when the provider sent one).
+func (p *ProviderStats) SetQuota(rl RateLimitInfo, now time.Time) {
+	if !rl.Known {
+		return
+	}
+	p.QuotaKnown, p.QuotaLimit, p.QuotaRemaining, p.QuotaResetAt, p.QuotaSeenAt = true, rl.Limit, rl.Remaining, rl.ResetAt, now.UTC()
 }
 
 // SyncRecord is the daemon's record of the last full sync.
@@ -190,7 +217,7 @@ const (
 
 // RecordSuccess records a validated snapshot replacement (call it after the rename). It returns
 // the transition (recovery or none).
-func RecordSuccess(feedsDir, feed string, entries int, providerGeneratedAt string, now time.Time) (string, error) {
+func RecordSuccess(feedsDir, feed string, entries int, providerGeneratedAt string, prov *ProviderStats, now time.Time) (string, error) {
 	prev, _, err := ReadRefresh(feedsDir, feed)
 	if err != nil {
 		prev = RefreshRecord{} // a corrupt record is replaced by a correct one
@@ -206,6 +233,7 @@ func RecordSuccess(feedsDir, feed string, entries int, providerGeneratedAt strin
 		ProviderGeneratedAt: providerGeneratedAt,
 		LastAttemptAt:       now.UTC(),
 		LastAttemptOK:       true,
+		Provider:            prov,
 	}
 	return tr, writeJSON(feedsDir, recordName(feed), r)
 }
@@ -213,7 +241,7 @@ func RecordSuccess(feedsDir, feed string, entries int, providerGeneratedAt strin
 // RecordFailure records a failed request. The success time, entries and provider time are kept
 // from the previous record: a failure never makes an old snapshot look fresh. notBefore is the
 // provider's back-off (zero when none). reason must be key-free (provider errors are sanitized).
-func RecordFailure(feedsDir, feed, reason string, notBefore, now time.Time) (string, error) {
+func RecordFailure(feedsDir, feed, reason string, notBefore time.Time, rl RateLimitInfo, now time.Time) (string, error) {
 	prev, _, err := ReadRefresh(feedsDir, feed)
 	if err != nil {
 		prev = RefreshRecord{}
@@ -234,6 +262,14 @@ func RecordFailure(feedsDir, feed, reason string, notBefore, now time.Time) (str
 	r.NotBefore = time.Time{}
 	if !notBefore.IsZero() {
 		r.NotBefore = notBefore.UTC()
+	}
+	if rl.Known {
+		p := ProviderStats{MinScore: -1, MaxScore: -1}
+		if prev.Provider != nil {
+			p = *prev.Provider // the last success's figures stay; only the quota is new
+		}
+		p.SetQuota(rl, now)
+		r.Provider = &p
 	}
 	return tr, writeJSON(feedsDir, recordName(feed), r)
 }

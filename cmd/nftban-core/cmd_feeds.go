@@ -144,6 +144,14 @@ func cmdFeeds(action string, cfg *nftbanconf.Config) error {
 		return cmdFeedsEffective(cfg)
 	case "status":
 		return cmdFeedsStatus(feedsConfig, cfg)
+	case "abuseipdb-key":
+		sub := ""
+		if len(os.Args) >= 4 {
+			sub = os.Args[3]
+		}
+		return cmdFeedsAbuseIPDBKey(cfg, sub)
+	case "abuseipdb-test":
+		return cmdFeedsAbuseIPDBTest(cfg)
 	case "resolve":
 		// v1.236 (design §7): records the operator's master decision. Called by
 		// `nftban feeds enable|disable` without a feed name, after the switch is set.
@@ -164,7 +172,7 @@ func cmdFeeds(action string, cfg *nftbanconf.Config) error {
 		}
 		return cmdFeedsUpdate(feedsDir, feedsConfig, feedName, cfg)
 	default:
-		return fmt.Errorf("unknown feeds action: %s\nUsage: nftban-core feeds [list|load|stats|status [--json] [--all]|update [FEED_NAME]|enable|disable|sync|effective] [FEED_NAME]", action)
+		return fmt.Errorf("unknown feeds action: %s\nUsage: nftban-core feeds [list|load|stats|status [--json] [--all] [--feed NAME]|update [FEED_NAME]|enable|disable|sync|effective|abuseipdb-key <set|status|remove>|abuseipdb-test [--json]] [FEED_NAME]", action)
 	}
 }
 
@@ -898,17 +906,18 @@ func refreshOne(feed FeedConfig, feedsDir, configDir string, now time.Time) refr
 	}
 	if err != nil {
 		var notBefore time.Time
+		var rl feeds.RateLimitInfo
 		var pe *feeds.ProviderError
 		if errors.As(err, &pe) {
-			notBefore = pe.NotBefore
+			notBefore, rl = pe.NotBefore, pe.RateLimit
 		}
 		fmt.Printf("  ❌ Error: %v\n", err)
 		fmt.Println("     Snapshot not replaced; its last successful refresh time is unchanged.")
-		tr, werr := feeds.RecordFailure(feedsDir, feed.Name, err.Error(), notBefore, time.Now())
+		tr, werr := feeds.RecordFailure(feedsDir, feed.Name, err.Error(), notBefore, rl, time.Now())
 		reportRecord(feed.Name, tr, err.Error(), werr)
 		return refreshResult{outcome: refreshFailed}
 	}
-	tr, werr := feeds.RecordSuccess(feedsDir, feed.Name, len(res.entries), res.generatedAt, time.Now())
+	tr, werr := feeds.RecordSuccess(feedsDir, feed.Name, len(res.entries), res.generatedAt, res.prov, time.Now())
 	reportRecord(feed.Name, tr, "", werr)
 	fmt.Printf("  ✅ Downloaded: %d IPs/CIDRs\n", len(res.entries))
 	if res.detail != "" {
@@ -1077,8 +1086,9 @@ func applyFeedExtras(fc *FeedConfig, extra map[string]string) error {
 // fetchResult is one successful download (before the snapshot is replaced).
 type fetchResult struct {
 	entries     []string
-	generatedAt string // provider's own time (abuseipdb meta.generatedAt), "" when none
-	detail      string // one line for the operator
+	generatedAt string               // provider's own time (abuseipdb meta.generatedAt), "" when none
+	detail      string               // one line for the operator
+	prov        *feeds.ProviderStats // provider feeds only
 }
 
 // fetchAbuseIPDB fetches the AbuseIPDB blacklist with the key from the root-only key file. Errors
@@ -1112,7 +1122,10 @@ func fetchAbuseIPDB(feed FeedConfig, configDir string) (*fetchResult, error) {
 	if res.RateLimit.Known {
 		d += fmt.Sprintf("; quota %d/%d left", res.RateLimit.Remaining, res.RateLimit.Limit)
 	}
-	return &fetchResult{entries: res.Entries, generatedAt: res.GeneratedAt, detail: d}, nil
+	prov := &feeds.ProviderStats{RequestedConfidence: p.ConfidenceMinimum, RequestedLimit: p.Limit,
+		Received: res.Received, Accepted: res.Accepted, Rejected: res.Rejected, MinScore: res.MinScore, MaxScore: res.MaxScore}
+	prov.SetQuota(res.RateLimit, time.Now())
+	return &fetchResult{entries: res.Entries, generatedAt: res.GeneratedAt, detail: d, prov: prov}, nil
 }
 
 // fetchPlain downloads a plain IP/CIDR list. Nothing is written here: the caller replaces the

@@ -72,15 +72,24 @@ func ReadCredentialFile(path string) (string, error) {
 		return "", fmt.Errorf("%w: %s: larger than %d bytes", ErrCredentialInvalid, path, credentialMaxBytes)
 	}
 	key := strings.TrimSpace(string(b))
+	if err := validateKeyToken(key); err != nil {
+		return "", fmt.Errorf("%w: %s: %s", ErrCredentialInvalid, path, err.Error())
+	}
+	return key, nil
+}
+
+// validateKeyToken: one token of 16-256 characters from [A-Za-z0-9._-]. The message never
+// contains the key.
+func validateKeyToken(key string) error {
 	if len(key) < 16 || len(key) > 256 {
-		return "", fmt.Errorf("%w: %s: expected one token of 16-256 characters", ErrCredentialInvalid, path)
+		return errors.New("expected one token of 16-256 characters")
 	}
 	for _, r := range key {
 		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '_' || r == '-') {
-			return "", fmt.Errorf("%w: %s: unexpected character (one token, letters/digits/._- only)", ErrCredentialInvalid, path)
+			return errors.New("unexpected character (one token, letters/digits/._- only)")
 		}
 	}
-	return key, nil
+	return nil
 }
 
 // CredentialStatus reports presence and safety without reading the content: "absent", "ok", or
@@ -90,6 +99,9 @@ func CredentialStatus(path string) string {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "absent"
+		}
+		if os.IsPermission(err) {
+			return "unknown (checking it needs root)"
 		}
 		return "unsafe: cannot stat"
 	}

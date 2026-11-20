@@ -177,10 +177,10 @@ func TestFeedsStatusExpiryFailureAndSyncAreSeparate(t *testing.T) {
 		}
 		setMtime(t, p, now.Add(-age))
 	}
-	if _, err := feeds.RecordSuccess(fd, "abuseipdb", 9000, "2026-11-17T03:00:00+00:00", now.Add(-80*time.Hour)); err != nil {
+	if _, err := feeds.RecordSuccess(fd, "abuseipdb", 9000, "2026-11-17T03:00:00+00:00", nil, now.Add(-80*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := feeds.RecordFailure(fd, "abuseipdb", "abuseipdb: rate_limited (HTTP 429)", now.Add(5*time.Hour), now.Add(-time.Hour)); err != nil {
+	if _, err := feeds.RecordFailure(fd, "abuseipdb", "abuseipdb: rate_limited (HTTP 429)", now.Add(5*time.Hour), feeds.RateLimitInfo{}, now.Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := feeds.WriteSync(fd, feeds.SyncRecord{At: now.Add(-2 * time.Hour), OK: true, Effect: "applied", Enforced: []string{"abuseipdb", "spamhaus_drop"}}); err != nil {

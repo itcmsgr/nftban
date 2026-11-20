@@ -24,16 +24,16 @@ func recordSandbox(t *testing.T) string {
 func TestRefreshFailureNeverAdvancesSuccess(t *testing.T) {
 	dir := recordSandbox(t)
 	t0 := time.Date(2026, 11, 20, 8, 0, 0, 0, time.UTC)
-	if tr, err := RecordSuccess(dir, "ABUSEIPDB", 9000, "2026-11-20T07:59:00+00:00", t0); err != nil || tr != TransitionNone {
+	if tr, err := RecordSuccess(dir, "ABUSEIPDB", 9000, "2026-11-20T07:59:00+00:00", &ProviderStats{Received: 9000, Accepted: 9000, MinScore: 100, MaxScore: 100}, t0); err != nil || tr != TransitionNone {
 		t.Fatalf("first success: tr=%q err=%v", tr, err)
 	}
 	t1 := t0.Add(12 * time.Hour)
 	nb := t0.Add(24 * time.Hour)
-	tr, err := RecordFailure(dir, "abuseipdb", "abuseipdb: rate_limited (HTTP 429)", nb, t1)
+	tr, err := RecordFailure(dir, "abuseipdb", "abuseipdb: rate_limited (HTTP 429)", nb, RateLimitInfo{Known: true, Limit: 5, Remaining: 0}, t1)
 	if err != nil || tr != TransitionFailure {
 		t.Fatalf("first failure: tr=%q err=%v", tr, err)
 	}
-	tr, _ = RecordFailure(dir, "abuseipdb", "abuseipdb: transport", time.Time{}, t1.Add(time.Hour))
+	tr, _ = RecordFailure(dir, "abuseipdb", "abuseipdb: transport", time.Time{}, RateLimitInfo{}, t1.Add(time.Hour))
 	if tr != TransitionNone {
 		t.Fatalf("a repeated failure is not a new transition: %q", tr)
 	}
@@ -44,10 +44,13 @@ func TestRefreshFailureNeverAdvancesSuccess(t *testing.T) {
 	if !r.LastSuccessAt.Equal(t0) || r.LastSuccessEntries != 9000 || r.ProviderGeneratedAt == "" {
 		t.Fatalf("a failure must keep the success time, entries and provider time: %+v", r)
 	}
+	if r.Provider == nil || r.Provider.Received != 9000 || !r.Provider.QuotaKnown || r.Provider.QuotaRemaining != 0 || r.Provider.QuotaLimit != 5 {
+		t.Fatalf("a failure keeps the last success's provider figures and records the stated quota: %+v", r.Provider)
+	}
 	if r.LastAttemptOK || r.ConsecutiveFailures != 2 || !r.FailingSince.Equal(t1) || !strings.Contains(r.LastAttemptReason, "transport") {
 		t.Fatalf("failure not recorded: %+v", r)
 	}
-	tr, _ = RecordSuccess(dir, "abuseipdb", 9100, "", t1.Add(20*time.Hour))
+	tr, _ = RecordSuccess(dir, "abuseipdb", 9100, "", nil, t1.Add(20*time.Hour))
 	if tr != TransitionRecovery {
 		t.Fatalf("success after failures is a recovery: %q", tr)
 	}
@@ -123,7 +126,7 @@ func TestWriteFeedDirFileStaysInDir(t *testing.T) {
 	if _, _, err := ReadRefresh(dir, "corrupt"); err == nil {
 		t.Fatal("a corrupt record is an error, never an empty record")
 	}
-	if tr, err := RecordFailure(dir, "corrupt", "x", time.Time{}, time.Now()); err != nil || tr != TransitionFailure {
+	if tr, err := RecordFailure(dir, "corrupt", "x", time.Time{}, RateLimitInfo{}, time.Now()); err != nil || tr != TransitionFailure {
 		t.Fatalf("a corrupt record is replaced by the next outcome: %q %v", tr, err)
 	}
 }

@@ -347,6 +347,25 @@ nftban_feeds_enable() {
         echo "📥 Downloading feed..."
     fi
 
+    # v1.238 part B2: a provider feed (FEED_<NAME>_FORMAT) is downloaded only by nftban-core: the one
+    # downloader that reads the key, records the outcome and ends with the daemon full sync. Its exit
+    # status is the update's (a failed or deferred download is reported, the feed stays enabled).
+    local feed_format
+    feed_format=$(nftban_feeds_get_property "$feed_name" "FORMAT")
+    if [[ -n "$feed_format" ]]; then
+        local core="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core}"
+        if [[ ! -x "$core" ]]; then
+            echo "❌ Feed $feed_name (format $feed_format) needs nftban-core to download; it is enabled but not downloaded" >&2
+            return 1
+        fi
+        if [[ "$quiet" == "true" ]]; then
+            "$core" feeds update "$feed_name" >/dev/null 2>&1
+        else
+            "$core" feeds update "$feed_name"
+        fi
+        return $?
+    fi
+
     # Download in foreground with live feedback
     # Pass "true" for no_sync since we'll queue the sync after download
     if nftban_feeds_update_single "$feed_name" "true"; then

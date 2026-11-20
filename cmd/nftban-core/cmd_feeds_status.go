@@ -70,6 +70,9 @@ type feedStatusView struct {
 	Enforcement         string       `json:"enforcement"`
 	EnforcementText     string       `json:"enforcement_text"`
 	RecordError         string       `json:"record_error,omitempty"`
+	// provider feeds only
+	Credential string               `json:"credential,omitempty"` // absent / ok / unsafe: <reason>; never the key
+	Provider   *feeds.ProviderStats `json:"provider,omitempty"`
 }
 
 type syncView struct {
@@ -160,7 +163,8 @@ func buildFeedsStatus(configDir, dataDir string, master bool, configs []FeedConf
 		// replacement); a snapshot from before v1.238 has only its mtime.
 		succ := rec.LastSuccessAt
 		v.LastSuccessSource = "record"
-		if succ.IsZero() && !mtime.IsZero() {
+		// a snapshot replaced after the record (no record yet, or the shell fallback writer)
+		if !mtime.IsZero() && mtime.After(succ.Add(time.Minute)) {
 			succ, v.LastSuccessSource = mtime, "snapshot_mtime"
 		}
 		if succ.IsZero() {
@@ -171,7 +175,11 @@ func buildFeedsStatus(configDir, dataDir string, master bool, configs []FeedConf
 			age := int64(now.Sub(succ).Seconds())
 			v.LastSuccessAgeSec = &age
 		}
+		if fc.Format == FeedFormatAbuseIPDB {
+			v.Credential = feeds.CredentialStatus(filepath.Join(configDir, abuseIPDBKeyName))
+		}
 		if hasRec {
+			v.Provider = rec.Provider
 			if rec.LastSuccessEntries > 0 {
 				n := rec.LastSuccessEntries
 				v.Entries = &n
@@ -268,6 +276,18 @@ func cmdFeedsStatus(feedsConfig string, cfg *nftbanconf.Config) error {
 	if err != nil {
 		return err
 	}
+	if only := flagValue("--feed"); only != "" {
+		kept := rep.Feeds[:0]
+		for _, v := range rep.Feeds {
+			if strings.EqualFold(v.Feed, only) {
+				kept = append(kept, v)
+			}
+		}
+		if len(kept) == 0 {
+			return fmt.Errorf("unknown feed: %s (list: nftban feeds list)", only)
+		}
+		rep.Feeds = kept
+	}
 	if hasFlag("--json") {
 		data, err := json.Marshal(rep)
 		if err != nil {
@@ -276,8 +296,18 @@ func cmdFeedsStatus(feedsConfig string, cfg *nftbanconf.Config) error {
 		fmt.Println(string(data))
 		return nil
 	}
-	printFeedsStatus(rep, hasFlag("--all"))
+	printFeedsStatus(rep, hasFlag("--all") || flagValue("--feed") != "")
 	return nil
+}
+
+// flagValue returns the argument after flag ("" when absent).
+func flagValue(flag string) string {
+	for i, a := range os.Args {
+		if a == flag && i+1 < len(os.Args) {
+			return os.Args[i+1]
+		}
+	}
+	return ""
 }
 
 func fmtTime(t *time.Time, now time.Time) string {
@@ -308,7 +338,7 @@ func printFeedsStatus(rep feedsStatusReport, all bool) {
 		fmt.Println(head)
 		fmt.Printf("  Last successful refresh: %s\n", fmtTime(v.LastSuccessAt, now))
 		if v.LastSuccessSource == "snapshot_mtime" {
-			fmt.Println("                           (from the snapshot time: no refresh record yet)")
+			fmt.Println("                           (from the snapshot time: refreshed without a refresh record)")
 		}
 		if v.ProviderGeneratedAt != "" {
 			fmt.Printf("  Provider generated at:   %s (provider time)\n", v.ProviderGeneratedAt)
@@ -319,6 +349,28 @@ func printFeedsStatus(rep feedsStatusReport, all bool) {
 				res = fmt.Sprintf("FAILED (%d in a row)", v.ConsecutiveFailures)
 			}
 			fmt.Printf("  Last attempt:            %s, %s\n", fmtTime(v.LastAttempt.At, now), res)
+		}
+		if v.Credential != "" {
+			fmt.Printf("  API key:                 %s\n", v.Credential)
+		}
+		if p := v.Provider; p != nil {
+			if p.Received > 0 || p.Accepted > 0 {
+				score := "unknown"
+				if p.MinScore >= 0 {
+					score = fmt.Sprintf("%d-%d", p.MinScore, p.MaxScore)
+				}
+				fmt.Printf("  Last download:           requested confidence >= %d, limit %d; received %d, accepted %d, rejected %d; score %s\n",
+					p.RequestedConfidence, p.RequestedLimit, p.Received, p.Accepted, p.Rejected, score)
+			}
+			quota := "unknown (the provider did not state it)"
+			if p.QuotaKnown {
+				quota = fmt.Sprintf("%d of %d left", p.QuotaRemaining, p.QuotaLimit)
+				if !p.QuotaResetAt.IsZero() {
+					quota += ", resets " + p.QuotaResetAt.UTC().Format("2006-01-02 15:04 UTC")
+				}
+				quota += " (as of " + p.QuotaSeenAt.UTC().Format("2006-01-02 15:04 UTC") + ")"
+			}
+			fmt.Printf("  Download quota:          %s\n", quota)
 		}
 		fmt.Printf("  Snapshot:                %s\n", v.StateText)
 		if v.ExpiresAt != nil && v.State != feedStateExpired {
