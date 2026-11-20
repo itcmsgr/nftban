@@ -105,8 +105,8 @@ rc=0; run bogus >/dev/null || rc=$?; [[ $rc -ne 0 ]] && ok "unknown command refu
 
 echo "=== provider feeds never use the shell curl path; help ==="
 blk=$(awk '/^nftban_feeds_update_single\(\) \{/ {f=1} f {print} f && /^\}/ {exit}' "$FEEDS_SH")
-lf=$(grep -n 'nftban_feeds_get_property "$feed_name" "FORMAT"' <<<"$blk" | head -1 | cut -d: -f1 || true)
-lc=$(grep -n 'if ! curl ' <<<"$blk" | head -1 | cut -d: -f1 || true)
+lf=$(grep -m1 -n 'nftban_feeds_get_property "$feed_name" "FORMAT"' <<<"$blk" || true); lf="${lf%%:*}"
+lc=$(grep -m1 -n 'if ! curl ' <<<"$blk" || true); lc="${lc%%:*}"
 [[ -n "$lf" && -n "$lc" && $lf -lt $lc ]] && ok "shell fallback refuses a provider feed before any curl" || no "fallback FORMAT guard" "format=$lf curl=$lc"
 en=$(awk '/^nftban_feeds_enable\(\) \{/ {f=1} f {print} f && /^\}/ {exit}' "$FEEDS_SH")
 grep -qF '"$core" feeds update "$feed_name"' <<<"$en" && ok "enabling a provider feed downloads through nftban-core" || no "enable provider path"
