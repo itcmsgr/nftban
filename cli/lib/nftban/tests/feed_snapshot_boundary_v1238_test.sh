@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-11-20"
-# meta:description="v1.238 prerequisites (owner 2026-11-20). SEC-FEED-STAGING-SNAPSHOTS-OWNED-BY-NFTBAN-ACCOUNT: enforced feed snapshots /var/lib/nftban/feeds/*.txt are root:nftban 0640 in the canonical FHS spec (glob entry; the broad nftban:nftban file rule excludes feeds/); the ONE generated policy restores them in place (never through a symlink, only under a root-owned closed parent); both repair sweeps prune feeds/; both writers create root:nftban. BUG-FEEDS-UPDATE-SINGLE-FEED-REFRESHES-ALL: the CLI passes a named feed to nftban-core feeds update. Static parity runs unprivileged; the policy's in-place repair runs as root (planted nftban-owned snapshot re-owned, planted link removed, target untouched)."
+# meta:description="v1.238 prerequisites (owner 2026-11-20). SEC-FEED-STAGING-SNAPSHOTS-OWNED-BY-NFTBAN-ACCOUNT: enforced feed snapshots /var/lib/nftban/feeds/*.txt are root:nftban 0640 in the canonical FHS spec (glob entry; the broad nftban:nftban file rule excludes feeds/); the ONE generated policy restores them in place (never through a symlink, only under a root-owned closed parent); both repair sweeps prune feeds/; both writers create root:nftban. BUG-FEEDS-UPDATE-SINGLE-FEED-REFRESHES-ALL: the CLI passes a named feed to nftban-core feeds update, and the bash fallback refuses an unknown or disabled named feed with a non-zero exit (one contract; behavioural, stubbed). Static parity runs unprivileged; the policy's in-place repair runs as root (planted nftban-owned snapshot re-owned, planted link removed, target untouched)."
 # meta:input="None (repo source read-only; temp dirs)"
 # meta:output="Pass/fail assertions; exit 0 on all-pass, 1 on any failure"
 # meta:depends="bash,grep,awk,stat,find"
@@ -87,6 +87,30 @@ blk=$(awk '/^        update\)$/ {f=1} f {print} f && /^            ;;$/ {exit}' 
 grep -qF 'feeds update "$_feed_arg"' <<<"$blk" && ok "CLI passes a named feed to nftban-core feeds update" || no "CLI drops the feed name"
 grep -qF 'feedName = os.Args[3]' "$GO_FEEDS" && grep -qF 'selectFeedsForUpdate(feedConfigs, feedName)' "$GO_FEEDS" \
     && ok "nftban-core feeds update [FEED] selects only the named feed" || no "Go update ignores the feed name"
+
+echo "=== bash fallback: one contract for 'feeds update <FEED>' (unknown/disabled refused, non-zero) ==="
+fb=$(awk '/^_nftban_feeds_update_target\(\) \{/ {f=1} /^nftban_feeds_update_json\(\) \{/ {f=1} f {print} f && /^\}/ {f=0}' "$CMD_FEEDS")
+run_fb(){  # json_mode feed -> "rc|updated-with|stderr"
+    bash -c '
+        IFS=$'"'"'\n\t'"'"'
+        nftban_feeds_get_property(){ case "$1_$2" in
+            SPAMHAUS_DROP_URL|BLOCKLIST_DE_URL) echo "https://example.invalid/x" ;;
+            SPAMHAUS_DROP_ENABLED) echo true ;; BLOCKLIST_DE_ENABLED) echo false ;; esac; }
+        nftban_feeds_update_single(){ echo "UPDATED:$1" >> "$UPD"; return 0; }
+        nftban_feeds_update_all(){ echo "UPDATED:ALL" >> "$UPD"; }
+        json_output(){ echo "JSON ok=$1 msg=${3:-}"; }
+        eval "$1"; nftban_feeds_update_json "$2" "$3"' _ "$fb" "$1" "$2" 2>&1
+}
+UPD=$(mktemp); export UPD
+rc=0; out=$(run_fb false NO_SUCH_FEED) || rc=$?
+[[ $rc -ne 0 && "$out" == *"unknown feed: NO_SUCH_FEED"* && ! -s "$UPD" ]] && ok "fallback: unknown feed refused (rc $rc), nothing updated" || no "fallback unknown feed" "rc=$rc out=$out"
+rc=0; out=$(run_fb false blocklist_de) || rc=$?
+[[ $rc -ne 0 && "$out" == *"BLOCKLIST_DE is disabled"* && "$out" != *"successfully"* && ! -s "$UPD" ]] && ok "fallback: disabled feed refused (rc $rc), never reported updated" || no "fallback disabled feed" "rc=$rc out=$out"
+rc=0; out=$(run_fb false spamhaus_drop) || rc=$?
+[[ $rc -eq 0 && "$(cat "$UPD")" == "UPDATED:SPAMHAUS_DROP" ]] && ok "fallback: enabled feed (any case) updated as its canonical name only" || no "fallback enabled feed" "rc=$rc upd=$(cat "$UPD")"
+: > "$UPD"; rc=0; out=$(run_fb true blocklist_de) || rc=$?
+[[ $rc -ne 0 && "$out" == *"JSON ok=false"*"disabled"* && ! -s "$UPD" ]] && ok "fallback --json: disabled feed refused (rc $rc)" || no "fallback json disabled" "rc=$rc out=$out"
+rm -f "$UPD"
 
 echo "=== policy in place (root only: needs a root-owned parent) ==="
 if [[ $EUID -eq 0 ]]; then

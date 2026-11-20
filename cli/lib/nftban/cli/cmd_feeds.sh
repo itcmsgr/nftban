@@ -1145,6 +1145,27 @@ nftban_feeds_disable_json() {
 }
 
 # JSON-aware wrapper for feeds update
+# v1.238 (BUG-FEEDS-UPDATE-SINGLE-FEED-REFRESHES-ALL, owner 2026-11-20: one contract for
+# `nftban feeds update <FEED>`): the bash fallback (reached only when nftban-core is not executable)
+# refuses an unknown or disabled feed with a non-zero exit, like `nftban-core feeds update <FEED>`,
+# instead of nftban_feeds_update_single skipping it and returning 0. It reads ENABLED/URL through the
+# same lookup the updater uses, so it refuses exactly when the updater would skip. Names are matched
+# case-insensitively (feed variables are upper case). Prints the canonical name on success.
+_nftban_feeds_update_target() {
+    local name="${1^^}" url enabled
+    url=$(nftban_feeds_get_property "$name" "URL")
+    if [[ -z "$url" ]]; then
+        echo "unknown feed: $1 (list: nftban feeds list)" >&2
+        return 1
+    fi
+    enabled=$(nftban_feeds_get_property "$name" "ENABLED")
+    if [[ "$enabled" != "true" ]]; then
+        echo "feed $name is disabled; enable it first: nftban feeds enable $name" >&2
+        return 1
+    fi
+    printf '%s' "$name"
+}
+
 nftban_feeds_update_json() {
     local json_mode="${1:-false}"
     shift || true
@@ -1152,7 +1173,12 @@ nftban_feeds_update_json() {
     if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
         if [[ $# -ge 1 ]] && [[ "$1" != "--json" ]]; then
             # Update specific feed
-            local feed="$1"
+            local feed _why
+            if ! feed=$(_nftban_feeds_update_target "$1" 2>&1); then
+                _why="$feed"
+                json_output "false" '{}' "$_why"
+                return 1
+            fi
             if nftban_feeds_update_single "$feed" 2>/dev/null; then
                 local feed_lower="${feed,,}"  # Convert to lowercase
                 local feed_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds/${feed_lower}.txt"
@@ -1188,8 +1214,10 @@ nftban_feeds_update_json() {
     else
         # Human-readable mode
         if [[ $# -ge 1 ]] && [[ "$1" != "--json" ]]; then
-            echo "⏳ Updating feed: $1"
-            if nftban_feeds_update_single "$1"; then
+            local _feed
+            _feed=$(_nftban_feeds_update_target "$1") || return 1
+            echo "⏳ Updating feed: $_feed"
+            if nftban_feeds_update_single "$_feed"; then
                 echo "✓ Feed updated successfully"
             else
                 echo "✗ Feed update failed (check ${NFTBAN_LOG_DIR:-/var/log/nftban}/feeds.log)"
