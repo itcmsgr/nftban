@@ -37,9 +37,14 @@ const (
 // feeds.conf -> feeds.conf.local -> nftban.conf.local (last wins), like EnabledStatus.
 func feedProperty(configDir, suffix string) map[string]string {
 	out := make(map[string]string)
-	base := filepath.Join(configDir, "conf.d", "feeds.conf")
-	for _, cf := range []string{base, base + ".local", filepath.Join(configDir, "nftban.conf.local")} {
-		content, err := os.ReadFile(cf) // #nosec G304 -- fixed config paths
+	root, err := os.OpenRoot(configDir)
+	if err != nil {
+		return out
+	}
+	defer func() { _ = root.Close() }()
+	base := filepath.Join("conf.d", "feeds.conf")
+	for _, cf := range []string{base, base + ".local", "nftban.conf.local"} {
+		content, err := root.ReadFile(cf)
 		if err != nil {
 			continue
 		}
