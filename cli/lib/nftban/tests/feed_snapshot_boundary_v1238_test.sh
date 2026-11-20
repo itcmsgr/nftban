@@ -69,7 +69,8 @@ grep -qF "\"$F\"/*.txt" "$PERMS_SH" && no "install sweep also emits the glob ent
 gl=$(grep -E '^    for _nftban_fhs_p in ' "$POL" || true)
 [[ "$gl" == "    for _nftban_fhs_p in \"$F\"/*.txt; do _nftban_fhs_exact file root:nftban 0640 \"\$_nftban_fhs_p\"; done" ]] \
     && ok "generated policy restores feeds/*.txt root:nftban 0640 with the exact-entry helper" || no "policy glob line" "$gl"
-awk '/^nftban_fhs_enforce_exact_entries\(\) \{/ {f=1} f {print} f && /^\}/ {exit}' "$POL" | grep -qF 'for _nftban_fhs_p in' \
+polfn=$(awk '/^nftban_fhs_enforce_exact_entries\(\) \{/ {f=1} f {print} f && /^\}/ {exit}' "$POL")
+grep -qF 'for _nftban_fhs_p in' <<<"$polfn" \
     && ok "glob line is inside nftban_fhs_enforce_exact_entries (every consumer runs it)" || no "glob line outside the policy function"
 
 echo "=== repair consumers prune feeds/; writers create root:nftban ==="
@@ -78,8 +79,11 @@ fn=$(awk '/^perms_enforce_var_files\(\) \{/ {f=1} f {print} f && /^\}/ {exit}' "
 [[ $(grep -cF -- '-prune -o -path "${NFTBAN_DATA_DIR}/feeds" -prune -o -type f' "$HEAL" || true) -eq 2 ]] && ok "autoheal prunes feeds/ in both sweeps" || no "autoheal does not prune feeds/"
 grep -qF 'chown root:nftban "${staging_file}.tmp"' "$FEEDS_SH" && ok "bash writer: staging file root:nftban" || no "bash writer owner"
 grep -qE 'chown nftban:nftban "\$\{staging_file\}' "$FEEDS_SH" && no "bash writer still chowns nftban:nftban" || ok "bash writer no longer hands the snapshot to the service account"
-grep -qF 'os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o640' "$GO_FEEDS" && grep -qF 'out.Chown(uid, gid)' "$GO_FEEDS" \
-    && ok "Go writer: exclusive create, owner set through the descriptor before rename" || no "Go writer creation"
+wf=$(awk '/^func writeFeedFile\(/ {f=1} f {print} f && /^\}/ {exit}' "$GO_FEEDS")
+l_root=$(grep -nF 'os.OpenRoot(dir)' <<<"$wf" | cut -d: -f1); l_open=$(grep -nF 'root.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)' <<<"$wf" | cut -d: -f1)
+l_own=$(grep -nF 'out.Chown(uid, gid)' <<<"$wf" | cut -d: -f1); l_mod=$(grep -nF 'out.Chmod(0o640)' <<<"$wf" | cut -d: -f1); l_ren=$(grep -nF 'root.Rename(tmpName, name)' <<<"$wf" | cut -d: -f1)
+[[ -n "$l_root" && -n "$l_open" && -n "$l_own" && -n "$l_mod" && -n "$l_ren" ]] && (( l_root < l_open && l_open < l_own && l_own < l_mod && l_mod < l_ren )) \
+    && ok "Go writer: confined to the feed dir (os.Root), exclusive 0600 create, owner, then 0640, then rename" || no "Go writer creation order" "root=$l_root open=$l_open own=$l_own mode=$l_mod rename=$l_ren"
 grep -qE 'user\.Lookup\("nftban"\)' "$GO_FEEDS" && no "Go writer still looks up the nftban USER as owner" || ok "Go writer does not make the service account the owner"
 
 echo "=== single-feed update dispatch ==="

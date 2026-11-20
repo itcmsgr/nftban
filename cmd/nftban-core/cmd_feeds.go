@@ -59,22 +59,34 @@ var feedFileOwner = func() (uid, gid int, ok bool) {
 	return 0, g, true
 }
 
-// writeFeedFile writes entries to outputFile as root:nftban 0640, correct AT CREATION:
-// the temp file is created exclusively (O_EXCL, never through a pre-placed link: a stale
-// temp entry is unlinked first), owned and moded through its descriptor, synced, and only
-// then renamed over the snapshot. rename(2) replaces a link at outputFile, never its target.
+// writeFeedFile writes entries to outputFile as root:nftban 0640, correct AT CREATION. Every
+// operation happens inside the feed directory through os.Root (no path can leave it, no link is
+// followed out of it). The temp file is created exclusively (O_EXCL; a stale temp entry is
+// unlinked first, the link itself, never a target) with mode 0600, owned through its descriptor,
+// and only then widened to the declared 0640 (group read never precedes the right group), synced,
+// and renamed over the snapshot. rename(2) replaces a link at outputFile, never its target.
 func writeFeedFile(outputFile string, entries []string) error {
-	tmpFile := outputFile + ".tmp"
-	if err := os.Remove(tmpFile); err != nil && !os.IsNotExist(err) {
+	dir, name := filepath.Split(outputFile)
+	if dir == "" {
+		dir = "."
+	}
+	tmpName := name + ".tmp"
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return fmt.Errorf("failed to open feeds directory: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	if err := root.Remove(tmpName); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to clear stale temp file: %w", err)
 	}
-	out, err := os.OpenFile(tmpFile, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o640)
+	out, err := root.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %w", err)
 	}
+	discard := func() { _ = root.Remove(tmpName) }
 	fail := func(e error) error {
-		out.Close()
-		os.Remove(tmpFile)
+		_ = out.Close()
+		discard()
 		return e
 	}
 	if uid, gid, ok := feedFileOwner(); ok {
@@ -82,12 +94,15 @@ func writeFeedFile(outputFile string, entries []string) error {
 			return fail(fmt.Errorf("chown feed file: %w", err))
 		}
 	}
+	// declared mode (fhs-spec /var/lib/nftban/feeds *.txt): group nftban reads, set after the owner
 	if err := out.Chmod(0o640); err != nil {
 		return fail(fmt.Errorf("chmod feed file: %w", err))
 	}
 	writer := bufio.NewWriter(out)
 	for _, ip := range entries {
-		fmt.Fprintln(writer, ip)
+		if _, err := fmt.Fprintln(writer, ip); err != nil {
+			return fail(fmt.Errorf("write failed: %w", err))
+		}
 	}
 	if err := writer.Flush(); err != nil {
 		return fail(fmt.Errorf("flush failed: %w", err))
@@ -96,11 +111,11 @@ func writeFeedFile(outputFile string, entries []string) error {
 		return fail(fmt.Errorf("sync failed: %w", err))
 	}
 	if err := out.Close(); err != nil {
-		os.Remove(tmpFile)
+		discard()
 		return fmt.Errorf("close failed: %w", err)
 	}
-	if err := os.Rename(tmpFile, outputFile); err != nil {
-		os.Remove(tmpFile)
+	if err := root.Rename(tmpName, name); err != nil {
+		discard()
 		return fmt.Errorf("failed to save feed file: %w", err)
 	}
 	return nil
