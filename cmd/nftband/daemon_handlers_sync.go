@@ -716,9 +716,18 @@ func (d *Daemon) handleLoadCIDRsRequest(params map[string]any) SocketResponse {
 		var ipv4CIDRs, ipv6CIDRs []string
 
 		if setType == "blacklist" {
-			// Load feeds
+			// Load feeds: only those the ONE feed authority enforces (v1.238 D5-2, owner GO
+			// 2026-11-20). Never a disabled, not-enabled or expired feed; additive as before.
 			feedsDir := dataDir + "/feeds"
-			ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet, _, err := feeds.LoadAllFeeds(feedsDir)
+			fcfg := nftbanconf.MustLoad()
+			fd, ferr := feeds.Evaluate(fcfg.ConfigDir, fcfg.DataDir, fcfg.FeedsEnabled)
+			if ferr != nil {
+				return SocketResponse{Success: false, Error: "feed authority undecidable, nothing loaded: " + ferr.Error()}
+			}
+			if len(fd.Enforced) == 0 {
+				return SocketResponse{Success: true, Data: map[string]any{"loaded": 0, "note": "no enforced feeds"}}
+			}
+			ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet, err := feeds.LoadEnforcedFeeds(feedsDir, fd.Enforced)
 			if err != nil {
 				return SocketResponse{Success: false, Error: "failed to load feeds: " + err.Error()}
 			}
