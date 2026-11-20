@@ -525,7 +525,9 @@ nftban_feeds_update_single() {
     # v1.59.1 TOCTOU: Set perms before rename (prevents window with wrong perms)
     local staging_file="${parsed_file}.staging"
     echo "$parse_result" > "${staging_file}.tmp"
-    chown nftban:nftban "${staging_file}.tmp" 2>/dev/null || true
+    # v1.238 (SEC-FEED-STAGING-SNAPSHOTS-OWNED-BY-NFTBAN-ACCOUNT, fhs-spec feeds/*.txt): root:nftban,
+    # group read for the exporter and operators; the service account does not own enforced content.
+    chown root:nftban "${staging_file}.tmp" 2>/dev/null || true
     chmod 640 "${staging_file}.tmp" 2>/dev/null || true
     mv -f "${staging_file}.tmp" "$staging_file"
     local ip_count

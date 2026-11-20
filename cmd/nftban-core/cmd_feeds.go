@@ -42,34 +42,107 @@ import (
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
-// setFeedFileOwnership sets nftban:nftban ownership and 0640 permissions on feed files
-// This allows the unified exporter (running as nftban user) to read feed files
-func setFeedFileOwnership(path string) error {
-	// Set permissions to 0640 (rw-r-----)
-	if err := os.Chmod(path, 0640); err != nil {
-		return fmt.Errorf("chmod failed: %w", err)
-	}
-
-	// Look up nftban user and group
-	nftbanUser, err := user.Lookup("nftban")
+// feedFileOwner returns the owner of an enforced feed snapshot: root:nftban (v1.238,
+// SEC-FEED-STAGING-SNAPSHOTS-OWNED-BY-NFTBAN-ACCOUNT, fhs-spec /var/lib/nftban/feeds *.txt).
+// The nftban group keeps read access (unified exporter, operators); the service account no
+// longer owns the content root enforces. ok=false: no nftban group, the file stays root:root.
+// A variable so tests can run unprivileged.
+var feedFileOwner = func() (uid, gid int, ok bool) {
+	grp, err := user.LookupGroup("nftban")
 	if err != nil {
-		// Fallback: just set group-readable (root:nftban)
-		if grp, err := user.LookupGroup("nftban"); err == nil {
-			if gid, err := strconv.Atoi(grp.Gid); err == nil {
-				_ = os.Chown(path, 0, gid)
+		return 0, 0, false
+	}
+	g, err := strconv.Atoi(grp.Gid)
+	if err != nil {
+		return 0, 0, false
+	}
+	return 0, g, true
+}
+
+// writeFeedFile writes entries to outputFile as root:nftban 0640, correct AT CREATION. Every
+// operation happens inside the feed directory through os.Root (no path can leave it, no link is
+// followed out of it). The temp file is created exclusively (O_EXCL; a stale temp entry is
+// unlinked first, the link itself, never a target) with mode 0600, owned through its descriptor,
+// and only then widened to the declared 0640 (group read never precedes the right group), synced,
+// and renamed over the snapshot. rename(2) replaces a link at outputFile, never its target.
+func writeFeedFile(outputFile string, entries []string) error {
+	dir, name := filepath.Split(outputFile)
+	if dir == "" {
+		dir = "."
+	}
+	tmpName := name + ".tmp"
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return fmt.Errorf("failed to open feeds directory: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+	if err := root.Remove(tmpName); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to clear stale temp file: %w", err)
+	}
+	out, err := root.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	discard := func() { _ = root.Remove(tmpName) }
+	fail := func(e error) error {
+		_ = out.Close()
+		discard()
+		return e
+	}
+	if uid, gid, ok := feedFileOwner(); ok {
+		if err := out.Chown(uid, gid); err != nil {
+			return fail(fmt.Errorf("chown feed file: %w", err))
+		}
+	}
+	// declared mode (fhs-spec /var/lib/nftban/feeds *.txt): group nftban reads, set after the owner
+	if err := out.Chmod(0o640); err != nil {
+		return fail(fmt.Errorf("chmod feed file: %w", err))
+	}
+	writer := bufio.NewWriter(out)
+	for _, ip := range entries {
+		if _, err := fmt.Fprintln(writer, ip); err != nil {
+			return fail(fmt.Errorf("write failed: %w", err))
+		}
+	}
+	if err := writer.Flush(); err != nil {
+		return fail(fmt.Errorf("flush failed: %w", err))
+	}
+	if err := out.Sync(); err != nil {
+		return fail(fmt.Errorf("sync failed: %w", err))
+	}
+	if err := out.Close(); err != nil {
+		discard()
+		return fmt.Errorf("close failed: %w", err)
+	}
+	if err := root.Rename(tmpName, name); err != nil {
+		discard()
+		return fmt.Errorf("failed to save feed file: %w", err)
+	}
+	return nil
+}
+
+// selectFeedsForUpdate: no name = every enabled feed (timer path, unchanged); a name = only
+// that feed (BUG-FEEDS-UPDATE-SINGLE-FEED-REFRESHES-ALL). Names match case-insensitively. An
+// unknown or disabled feed is refused, never reported as updated.
+func selectFeedsForUpdate(configs []FeedConfig, name string) ([]FeedConfig, error) {
+	if name == "" {
+		sel := []FeedConfig{}
+		for _, fc := range configs {
+			if fc.Enabled {
+				sel = append(sel, fc)
 			}
 		}
-		return nil
+		return sel, nil
 	}
-
-	uid, _ := strconv.Atoi(nftbanUser.Uid)
-	gid, _ := strconv.Atoi(nftbanUser.Gid)
-
-	if err := os.Chown(path, uid, gid); err != nil {
-		return fmt.Errorf("chown failed: %w", err)
+	for _, fc := range configs {
+		if strings.EqualFold(fc.Name, name) {
+			if !fc.Enabled {
+				return nil, fmt.Errorf("feed %s is disabled; enable it first: nftban feeds enable %s", fc.Name, fc.Name)
+			}
+			return []FeedConfig{fc}, nil
+		}
 	}
-
-	return nil
+	return nil, fmt.Errorf("unknown feed: %s (list: nftban feeds list)", name)
 }
 
 // extractConfigValue extracts a config value, handling trailing comments
@@ -138,9 +211,13 @@ func cmdFeeds(action string, cfg *nftbanconf.Config) error {
 	case "sync":
 		return cmdFeedsSync(feedsDir, feedsConfig, cfg)
 	case "update":
-		return cmdFeedsUpdate(feedsDir, feedsConfig, cfg)
+		feedName := ""
+		if len(os.Args) >= 4 {
+			feedName = os.Args[3]
+		}
+		return cmdFeedsUpdate(feedsDir, feedsConfig, feedName, cfg)
 	default:
-		return fmt.Errorf("unknown feeds action: %s\nUsage: nftban-core feeds [list|load|stats|update|enable|disable|sync|effective] [FEED_NAME]", action)
+		return fmt.Errorf("unknown feeds action: %s\nUsage: nftban-core feeds [list|load|stats|update [FEED_NAME]|enable|disable|sync|effective] [FEED_NAME]", action)
 	}
 }
 
@@ -706,8 +783,8 @@ type FeedConfig struct {
 	Description string
 }
 
-// cmdFeedsUpdate downloads all enabled feeds using native Go HTTP (no curl needed)
-func cmdFeedsUpdate(feedsDir, configPath string, cfg *nftbanconf.Config) error {
+// cmdFeedsUpdate downloads every enabled feed, or only feedName when given, using native Go HTTP
+func cmdFeedsUpdate(feedsDir, configPath, feedName string, cfg *nftbanconf.Config) error {
 	fmt.Println(version.BannerWithEmoji("🔄", "Update Feeds"))
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println()
@@ -719,14 +796,16 @@ func cmdFeedsUpdate(feedsDir, configPath string, cfg *nftbanconf.Config) error {
 		return fmt.Errorf("failed to parse feeds config: %w", err)
 	}
 
-	enabledFeeds := []FeedConfig{}
-	for _, fc := range feedConfigs {
-		if fc.Enabled {
-			enabledFeeds = append(enabledFeeds, fc)
-		}
+	enabledFeeds, err := selectFeedsForUpdate(feedConfigs, feedName)
+	if err != nil {
+		return err
 	}
 
-	fmt.Printf("  ✅ Found %d feeds (%d enabled)\n", len(feedConfigs), len(enabledFeeds))
+	if feedName != "" {
+		fmt.Printf("  ✅ Updating one feed: %s\n", enabledFeeds[0].Name)
+	} else {
+		fmt.Printf("  ✅ Found %d feeds (%d enabled)\n", len(feedConfigs), len(enabledFeeds))
+	}
 	fmt.Println()
 
 	if len(enabledFeeds) == 0 {
@@ -910,33 +989,9 @@ func downloadAndParseFeed(url, outputFile string) (int, error) {
 		return 0, fmt.Errorf("no valid IPs found in feed")
 	}
 
-	// Write to output file
-	tmpFile := outputFile + ".tmp"
-	out, err := os.Create(tmpFile)
-	if err != nil {
-		return 0, fmt.Errorf("failed to create output file: %w", err)
-	}
-	defer out.Close()
-
-	writer := bufio.NewWriter(out)
-	for _, ip := range validIPs {
-		fmt.Fprintln(writer, ip)
-	}
-	if err := writer.Flush(); err != nil {
-		os.Remove(tmpFile)
-		return 0, fmt.Errorf("flush failed: %w", err)
-	}
-
-	// Atomic rename
-	if err := os.Rename(tmpFile, outputFile); err != nil {
-		os.Remove(tmpFile)
-		return 0, fmt.Errorf("failed to save feed file: %w", err)
-	}
-
-	// v1.13.12: Set nftban ownership so unified exporter can read feed files
-	if err := setFeedFileOwnership(outputFile); err != nil {
-		// Non-fatal - file was created successfully, just warn
-		fmt.Printf("⚠️  Warning: failed to set feed file permissions: %v\n", err)
+	// v1.238: root:nftban 0640 at creation, then atomic rename (writeFeedFile)
+	if err := writeFeedFile(outputFile, validIPs); err != nil {
+		return 0, err
 	}
 
 	return len(validIPs), nil

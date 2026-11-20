@@ -1538,6 +1538,28 @@ file_permissions:
       # v1.237 C2 (owner 2026-11-15): state/ is root's (directories: /var/lib/nftban/state note);
       # its entries are declared one by one below (exact: true) and never swept to nftban:nftban.
       - "/var/lib/nftban/state"
+      # v1.238 (SEC-FEED-STAGING-SNAPSHOTS-OWNED-BY-NFTBAN-ACCOUNT): feed snapshots are root's
+      # (glob entry below), never swept to nftban:nftban.
+      - "/var/lib/nftban/feeds"
+
+  # v1.238 (SEC-FEED-STAGING-SNAPSHOTS-OWNED-BY-NFTBAN-ACCOUNT, owner 2026-11-20): enforced feed
+  # snapshots. Root downloads them (nftban-core feeds update) and four root consumers turn them into
+  # firewall state, so the service account must not own their content. The v1.236 exception kept
+  # them nftban:nftban because the account "can already add bans over IPC"; that premise ended with
+  # 054cb3c8 (service-account IPC read-only + sync). Group nftban keeps READ (unified exporter,
+  # operators). glob: true = PATTERN is a filename glob in PATH (non-recursive); the generated policy
+  # (fhs-state-policy.sh, nftban_fhs_enforce_exact_entries) restores each match IN PLACE with the same
+  # helper as exact entries: regular files only, never through a symlink (a planted link is removed),
+  # only under a root-owned parent closed to group/other writes. Writer: root:nftban 0640 at creation.
+  # The directory entry (directories: /var/lib/nftban/feeds) is unchanged.
+  - path: /var/lib/nftban/feeds
+    artifact_class: state
+    pattern: "*.txt"
+    mode: "0640"
+    owner: root
+    group: nftban
+    glob: true
+    type: file
 
   # /var/lib/nftban/reports/auditors - auditor access
   - path: /var/lib/nftban/reports/auditors
