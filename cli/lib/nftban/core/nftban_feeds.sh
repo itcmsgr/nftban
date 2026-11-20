@@ -467,6 +467,15 @@ nftban_feeds_update_single() {
         return 0
     fi
 
+    # v1.238: a provider feed (FEED_<NAME>_FORMAT, e.g. abuseipdb) needs its API key and the
+    # provider's response format: only nftban-core handles it, never this curl fallback.
+    local feed_format
+    feed_format=$(nftban_feeds_get_property "$feed_name" "FORMAT")
+    if [[ -n "$feed_format" ]]; then
+        nftban_feeds_log ERROR "Feed $feed_name (format $feed_format) needs nftban-core; not downloaded by the shell fallback"
+        return 1
+    fi
+
     # Ensure directories exist
     mkdir -p "$NFTBAN_FEEDS_STORAGE_DIR" "$NFTBAN_FEEDS_CACHE_DIR" || return 1
 

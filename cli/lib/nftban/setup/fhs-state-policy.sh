@@ -63,6 +63,7 @@ nftban_fhs_enforce_exact_entries() {
     # directories first, then files
     _nftban_fhs_exact dir root:root 0700 "/var/lib/nftban/state/applied"
     _nftban_fhs_exact dir root:root 0700 "/var/lib/nftban/state/commit-confirm"
+    _nftban_fhs_exact file root:root 0600 "/etc/nftban/abuseipdb.key"
     _nftban_fhs_exact file root:root 0600 "/var/lib/nftban/state/legacy-backup-migration.state"
     _nftban_fhs_exact file root:root 0600 "/var/lib/nftban/state/installer.lock"
     _nftban_fhs_exact file root:root 0600 "/var/lib/nftban/state/commit-confirm.lock"
@@ -78,5 +79,6 @@ nftban_fhs_enforce_exact_entries() {
     _nftban_fhs_exact file root:nftban 0640 "/var/lib/nftban/state/firewall_transition_health.json"
     _nftban_fhs_exact file root:nftban 0640 "/var/lib/nftban/state/ruleset_fingerprint.json"
     for _nftban_fhs_p in "/var/lib/nftban/feeds"/*.txt; do _nftban_fhs_exact file root:nftban 0640 "$_nftban_fhs_p"; done
+    for _nftban_fhs_p in "/var/lib/nftban/feeds"/*.status; do _nftban_fhs_exact file root:nftban 0640 "$_nftban_fhs_p"; done
     return 0
 }
