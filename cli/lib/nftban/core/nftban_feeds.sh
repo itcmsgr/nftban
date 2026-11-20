@@ -1224,5 +1224,11 @@ export -f nftban_feeds_log
 # =============================================================================
 # Source task queue at end to make nftban_queue_add available for async operations
 # Guard above prevents circular dependency (task_queue.sh sources this file)
-# shellcheck source=/dev/null
-source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/helpers/nftban_task_queue.sh" 2>/dev/null || true
+# The queue is optional here (|| true), but under set -u an unset directory variable inside the
+# helper aborts the whole shell rather than failing the source, so it is sourced only when the
+# directories it derives its paths from are set (nftban.conf sets them on installed hosts).
+# Without them `nftban feeds --help` (no config, e.g. CI) aborted with rc=1 (v1.238 part B).
+if [[ -n "${NFTBAN_DATA_DIR:-}" && -n "${NFTBAN_RUN_DIR:-}" && -n "${NFTBAN_LOG_DIR:-}" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/helpers/nftban_task_queue.sh" 2>/dev/null || true
+fi
