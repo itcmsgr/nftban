@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/feeds"
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
 )
 
 func partBSandbox(t *testing.T, conf string) (cfgDir, dataDir, feedsDir string) {
@@ -337,5 +338,28 @@ func TestFeedExtrasValidated(t *testing.T) {
 	if err := applyFeedExtras(&fc, map[string]string{"X_FORMAT": "AbuseIPDB", "X_MIN_INTERVAL": "6h", "X_LIMIT": "10000", "X_CONFIDENCE_MINIMUM": "100"}); err != nil ||
 		fc.Format != FeedFormatAbuseIPDB || fc.MinInterval != 6*time.Hour || fc.Limit != 10000 || fc.ConfidenceMinimum != 100 {
 		t.Fatalf("valid extras: %+v %v", fc, err)
+	}
+}
+
+// v1.238 BUG-FEEDS-GO-UPDATE-IGNORES-MASTER-SWITCH: with NFTBAN_FEEDS_ENABLED off nothing is
+// downloaded (no request, no provider quota); the timer run succeeds, a named update is refused.
+func TestFeedsUpdateHonoursMasterSwitch(t *testing.T) {
+	cfg, data, fd := partBSandbox(t, partBConf)
+	called := 0
+	fetchPlainFn = func(string) (*fetchResult, error) { called++; return nil, errors.New("must not be called") }
+	fetchAbuseIPDBFn = func(FeedConfig, string) (*fetchResult, error) {
+		called++
+		return nil, errors.New("must not be called")
+	}
+	c := &nftbanconf.Config{ConfigDir: cfg, DataDir: data, FeedsEnabled: false}
+	conf := filepath.Join(cfg, "conf.d", "feeds.conf")
+	if err := cmdFeedsUpdate(fd, conf, "", c); err != nil {
+		t.Fatalf("timer run with feeds off must succeed doing nothing: %v", err)
+	}
+	if err := cmdFeedsUpdate(fd, conf, "spamhaus_drop", c); err == nil || !strings.Contains(err.Error(), "switched off") {
+		t.Fatalf("a named update with feeds off must be refused: %v", err)
+	}
+	if called != 0 {
+		t.Fatalf("a download was attempted with feeds switched off (%d)", called)
 	}
 }

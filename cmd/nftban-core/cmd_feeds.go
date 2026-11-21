@@ -781,6 +781,19 @@ func cmdFeedsUpdate(feedsDir, configPath, feedName string, cfg *nftbanconf.Confi
 		return err
 	}
 
+	// v1.238 (BUG-FEEDS-GO-UPDATE-IGNORES-MASTER-SWITCH): with the feeds master switch off nothing
+	// is downloaded (no request, no provider quota spent), as the shell updater already did. The
+	// timer run (no name) has nothing to do and succeeds; a named update is refused so a caller
+	// cannot take "nothing downloaded" for a refresh.
+	if !cfg.FeedsEnabled {
+		const off = "feeds are switched off (NFTBAN_FEEDS_ENABLED); nothing downloaded. Enable with: nftban config set NFTBAN_FEEDS_ENABLED=true"
+		if feedName != "" {
+			return errors.New(off)
+		}
+		fmt.Println("  ⚠️  " + off)
+		return nil
+	}
+
 	if feedName != "" {
 		fmt.Printf("  ✅ Updating one feed: %s\n", enabledFeeds[0].Name)
 	} else {
