@@ -654,13 +654,15 @@ func (s *Sampler) collectGeobanMetrics() (countries, ranges int) {
 
 // collectFeedStalenessMetrics checks feed file mtimes and updates staleness gauges
 func (s *Sampler) collectFeedStalenessMetrics() {
-	_, dataDir := getMetricsPaths()
+	configDir, dataDir := getMetricsPaths()
 	feedsDir := dataDir + "/feeds"
 
 	entries, err := os.ReadDir(feedsDir)
 	if err != nil {
 		return
 	}
+	// v1.238 part B3: the per-feed threshold of `nftban feeds status`, not a fixed 48h.
+	threshold := FeedStaleThresholds(configDir)
 
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".txt") {
@@ -672,7 +674,7 @@ func (s *Sampler) collectFeedStalenessMetrics() {
 			continue
 		}
 		RecordFeedLastSuccess(feedName, info.ModTime())
-		UpdateFeedStaleness(feedName, info.ModTime(), DefaultFeedStaleThreshold)
+		UpdateFeedStaleness(feedName, info.ModTime(), threshold(feedName))
 	}
 }
 

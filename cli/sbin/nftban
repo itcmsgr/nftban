@@ -1279,12 +1279,14 @@ main() {
     }
 
     case "$cmd" in
-        search|feeds|export|suricata|geoban|install|uninstall|rebuild)
+        # v1.238: feeds is not in this list: `nftban feeds help` shows the module's full help
+        # (it printed only this two-line stub); a verb-level help request still reaches the
+        # module's help via _nftban_dispatch_module and never runs the verb.
+        search|export|suricata|geoban|install|uninstall|rebuild)
             if _v141_args_have_help_flag "$@"; then
                 echo "Usage: nftban $cmd [options]"
                 case "$cmd" in
                     search)   echo "  Search IPs/ports across feeds, ban lists, whitelists." ;;
-                    feeds)    echo "  Manage and inspect threat-intelligence feeds." ;;
                     export)   echo "  Export stats snapshot. Alias for 'nftban stats export'." ;;
                     suricata) echo "  Report Suricata integration state — dormant (status, help)." ;;
                     geoban)   echo "  Country-based IP blocking (ban, unban, whitelist, list, status, update)." ;;

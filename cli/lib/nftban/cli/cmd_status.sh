@@ -1373,6 +1373,20 @@ _status_section_protection() {
     feeds_enabled="${feeds_enabled:-0}"
     printf "  %-20s %s Active\n" "Threat Feeds........" "$feeds_enabled"
     [[ "$feeds_enabled" -eq 0 ]] && printf "      %-16s %s\n" "" "(list: nftban feeds list | enable: nftban feeds enable <FEED>)"
+    # v1.238 part B3: refresh state from the one reader (nftban-core feeds status): expired,
+    # stale or missing snapshots, failed downloads, the API key and a failed full sync, each on
+    # its own line. No thresholds here: this only prints the reader's attention list.
+    local _fs_core="${NFTBAN_LIB_DIR}/bin/nftban-core" _fs_json _fs_line _fs_n=0
+    if [[ -x "$_fs_core" ]] && _fs_json=$("$_fs_core" feeds status --json 2>/dev/null) && [[ -n "$_fs_json" ]]; then
+        while IFS= read -r _fs_line; do
+            [[ -n "$_fs_line" ]] || continue
+            _fs_n=$((_fs_n + 1))
+            printf "      %-16s ⚠️  %s\n" "" "$_fs_line"
+        done < <(jq -r '(.attention // [])[] | .text' <<<"$_fs_json" 2>/dev/null || true)
+        if [[ $_fs_n -gt 0 ]]; then
+            printf "      %-16s %s\n" "" "(details: nftban feeds status)"
+        fi
+    fi
 
     # Login Monitor (v1.52.0: runs inside nftband as loginmon module)
     # v1.56.0 FIX: Check both LOGIN_ENABLED (Go daemon config) and
