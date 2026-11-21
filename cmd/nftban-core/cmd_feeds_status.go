@@ -256,7 +256,7 @@ func buildFeedsStatus(configDir, dataDir string, master bool, configs []FeedConf
 }
 
 // recordNeedsRoot replaces a permission error on a refresh or sync record (0640 root:nftban).
-const recordNeedsRoot = "not readable by this user (needs root or the nftban group)"
+const recordNeedsRoot = "not readable by this user (the records are readable by members of the nftban group)"
 
 // attentionItem is one line `nftban status` and `nftban health` print (they format this list and
 // keep no feed thresholds of their own). Key is stable; Text is for operators.
@@ -312,7 +312,7 @@ func feedsAttention(rep feedsStatusReport) []attentionItem {
 	s := rep.LastFullSync
 	switch {
 	case needRoot:
-		add("feeds_records_need_root", "", "refresh state "+recordNeedsRoot+"; run as root for the full feed state")
+		add("feeds_records_need_root", "", "refresh state "+recordNeedsRoot+"; the full feed state is shown to members of the nftban group")
 	case s.Error != "":
 		add("feeds_sync_record_unreadable", "", "last full sync record unreadable: "+s.Error)
 	case s.Recorded && !s.OK:
