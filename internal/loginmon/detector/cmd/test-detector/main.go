@@ -51,8 +51,12 @@ func main() {
 		if v, ok := r.Detect(line); ok {
 			matchCount++
 			reasonName := detector.ReasonName[v.Reason]
-			fmt.Printf("[MATCH] IP=%s User=%q Reason=%s Score=%d Service=%s\n",
-				v.IP, v.User, reasonName, v.ScoreDelta, v.Service)
+			kind := "MATCH"
+			if v.Success {
+				kind = "SUCCESS" // v1.238: confirmed login, clears the score
+			}
+			fmt.Printf("[%s] IP=%s User=%q Reason=%s Score=%d Service=%s\n",
+				kind, v.IP, v.User, reasonName, v.ScoreDelta, v.Service)
 			fmt.Printf("        Line: %s\n", string(line))
 		}
 	}
