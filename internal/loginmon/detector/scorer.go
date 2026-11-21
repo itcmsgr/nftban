@@ -143,6 +143,7 @@ type IPState struct {
 	FirstSeen    time.Time // First detection time
 	LastService  string    // Last service that detected this IP
 	LastReason   uint16    // Last reason code
+	SuccessReset time.Time // v1.238: last time a confirmed success cleared the score
 }
 
 // recentBanEntry tracks deduplication state with exponential backoff
@@ -291,6 +292,33 @@ func (s *Scorer) RecordVerdict(v Verdict) *BanAction {
 
 	// Check per-IP thresholds (the original LoginMon path)
 	return s.checkThresholds(v.IP, state, v)
+}
+
+// RecordSuccess applies a confirmed successful login (Verdict.Success, v1.238, owner
+// 2026-11-21): the IP's accumulated score is cleared so one later typo cannot cross the
+// temp-ban or escalation threshold. It returns true when the score was cleared.
+//
+// Bounds:
+//   - It NEVER lifts or shortens an existing ban, and leaves BanCount (the escalation ladder
+//     position) untouched: it only stops the past from adding to the next decision.
+//   - At most one clear per IP per TempBanDuration, so a client holding one valid account
+//     cannot keep wiping its score while guessing another account's password.
+//   - An IP the scorer has not seen is not tracked (no state is created for successes).
+func (s *Scorer) RecordSuccess(v Verdict) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state, ok := s.ips[v.IP]
+	if !ok || state.Score <= 0 {
+		return false
+	}
+	now := time.Now()
+	window := s.config.TempBanDuration
+	if !state.SuccessReset.IsZero() && now.Sub(state.SuccessReset) < window {
+		return false
+	}
+	state.Score = 0
+	state.SuccessReset = now
+	return true
 }
 
 // checkThresholds determines if a ban should be triggered
