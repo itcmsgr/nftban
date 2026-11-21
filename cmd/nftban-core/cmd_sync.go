@@ -120,7 +120,13 @@ func cmdSync(cfg *nftbanconf.Config) error {
 			total = 30 * time.Second
 		}
 	}
+	return runDaemonSync(quickMode, join, total)
+}
 
+// runDaemonSync submits (or joins) one daemon sync and reports it, with the daemon's single-writer
+// transaction, never-ban split and protection rules (v1.238 D5-2: also the end of every feeds
+// update, scheduled or single-feed, instead of the additive load).
+func runDaemonSync(quickMode bool, join string, total time.Duration) error {
 	if quickMode {
 		fmt.Println(version.BannerWithEmoji("🔄", "Quick Sync (whitelist/blacklist only)"))
 	} else {

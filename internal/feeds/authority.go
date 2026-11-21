@@ -53,6 +53,7 @@ type Decision struct {
 	Recorded    string   // state read from the file ("" = never evaluated on this host)
 	Enforced    []string // feed names (file stems) whose files are loaded
 	NotEnabled  []string // files with entries that are not enforced (reported)
+	Expired     []string // v1.238: would be enforced, but older than FEED_<NAME>_MAX_AGE (reported; file kept)
 	Reasons     []string // structured reason keys
 	Texts       []string // one text per reason, same order
 	NeedsRecord bool     // the state file must be written (first evaluation, or a change)
@@ -254,7 +255,15 @@ func Evaluate(configDir, dataDir string, master bool) (Decision, error) {
 	if err != nil {
 		return Decision{}, fmt.Errorf("feed files: %w", err)
 	}
-	return Decide(master, EnabledStatus(configDir), files, recorded), nil
+	return evaluateAt(configDir, dataDir, master, recorded, files, time.Now()), nil
+}
+
+// evaluateAt decides, then applies the opt-in per-feed expiry (v1.238 D5-1, expiry.go).
+func evaluateAt(configDir, dataDir string, master bool, recorded string, files []string, now time.Time) Decision {
+	d := Decide(master, EnabledStatus(configDir), files, recorded)
+	maxAge, invalid := MaxAgeStatus(configDir)
+	applyExpiry(&d, filepath.Join(dataDir, "feeds"), maxAge, invalid, now)
+	return d
 }
 
 // LoadEnforcedFeeds loads only the named feed files (Decision.Enforced) into the four sets

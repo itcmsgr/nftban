@@ -236,6 +236,7 @@ func cmdFeedsEffective(cfg *nftbanconf.Config) error {
 		"recorded":    d.Recorded,
 		"enforced":    d.Enforced,
 		"not_enabled": d.NotEnabled,
+		"expired":     d.Expired,
 		"reasons":     d.Reasons,
 		"texts":       d.Texts,
 	}
@@ -444,21 +445,33 @@ func cmdFeedsLoad(feedsDir string, cfg *nftbanconf.Config) error {
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println()
 
-	// Step 1: Load all feeds
-	fmt.Println("Step 1: Loading feeds from disk...")
-	ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet, feedsInfo, err := feeds.LoadAllFeeds(feedsDir)
+	// Step 1: load the feeds the ONE feed authority enforces (v1.238 D5-2): never a disabled,
+	// not-enabled or expired feed. The load stays additive (its callers' semantics); the daemon
+	// full sync is what removes entries.
+	fmt.Println("Step 1: Loading enforced feeds from disk...")
+	fd, err := feeds.Evaluate(cfg.ConfigDir, cfg.DataDir, cfg.FeedsEnabled)
+	if err != nil {
+		return fmt.Errorf("feed authority undecidable, nothing loaded: %w", err)
+	}
+	for _, t := range fd.Texts {
+		fmt.Printf("  ℹ️  %s\n", t)
+	}
+	if len(fd.Enforced) == 0 {
+		fmt.Println("  ⚠️  No enforced feeds: nothing to load")
+		return nil
+	}
+	ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet, err := feeds.LoadEnforcedFeeds(feedsDir, fd.Enforced)
 	if err != nil {
 		return fmt.Errorf("failed to load feeds: %w", err)
 	}
 
-	if len(feedsInfo) == 0 {
-		fmt.Println("  ⚠️  No feeds found")
+	totalEntries := len(ipv4Set) + len(ipv4CIDRSet) + len(ipv6Set) + len(ipv6CIDRSet)
+	if totalEntries == 0 {
+		fmt.Println("  ⚠️  Enforced feeds hold no entries: nothing to load")
 		return nil
 	}
 
-	totalEntries := len(ipv4Set) + len(ipv4CIDRSet) + len(ipv6Set) + len(ipv6CIDRSet)
-
-	fmt.Printf("  ✅ Loaded %d feeds\n", len(feedsInfo))
+	fmt.Printf("  ✅ Loaded %d enforced feeds: %s\n", len(fd.Enforced), strings.Join(fd.Enforced, ", "))
 	fmt.Printf("  ✅ Total IPv4: %d IPs + %d CIDRs\n", len(ipv4Set), len(ipv4CIDRSet))
 	fmt.Printf("  ✅ Total IPv6: %d IPs + %d CIDRs\n", len(ipv6Set), len(ipv6CIDRSet))
 	fmt.Println()
@@ -859,18 +872,14 @@ func cmdFeedsUpdate(feedsDir, configPath, feedName string, cfg *nftbanconf.Confi
 	fmt.Printf("  📊 Total IPs/CIDRs: %d\n", totalIPs)
 	fmt.Println()
 
-	// Step 4: Auto-load feeds into nftables
-	if successCount > 0 {
-		fmt.Println("Step 4: Loading feeds into nftables...")
-		if err := cmdFeedsLoad(feedsDir, cfg); err != nil {
-			// Note: nftables kernel returns this as a string - no typed error available
-			if strings.Contains(err.Error(), "conflicting intervals") {
-				fmt.Printf("  ⚠️  Some feed IPs overlap with existing blocks (already protected)\n")
-			} else {
-				fmt.Printf("⚠️  Warning: failed to load feeds: %v\n", err)
-				fmt.Println("   You can load manually with: sudo nftban-core feeds load")
-			}
-		}
+	// Step 4 (v1.238 D5-2, owner GO 2026-11-20): the daemon's own full sync, not the additive
+	// load. It applies the ONE feed authority (enforced feeds only: disabled, not-enabled and
+	// expired feeds are dropped) in the daemon's single-writer atomic transaction with the
+	// never-ban split and protection rules. It runs whatever the download outcome, so an expiry
+	// or a disable takes effect even when every refresh failed.
+	fmt.Println("Step 4: Applying feeds through the daemon full sync...")
+	if err := runDaemonSync(false, "", 5*time.Minute); err != nil {
+		return fmt.Errorf("feeds downloaded (%d ok, %d failed) but the daemon sync did not complete: %w", successCount, failCount, err)
 	}
 
 	return nil
