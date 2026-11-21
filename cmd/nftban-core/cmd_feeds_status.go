@@ -16,7 +16,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -95,6 +97,7 @@ type feedsStatusReport struct {
 	ScheduleWindow  string           `json:"schedule_window"`
 	AuthorityReason []string         `json:"authority_texts,omitempty"`
 	Worst           string           `json:"worst_state"`
+	Attention       []attentionItem  `json:"attention"`
 }
 
 func tp(t time.Time) *time.Time {
@@ -140,6 +143,9 @@ func buildFeedsStatus(configDir, dataDir string, master bool, configs []FeedConf
 		LastOKAt: tp(srec.LastOKAt), FeedsSkipped: srec.FeedsSkipped, Recorded: sok}
 	if serr != nil {
 		rep.LastFullSync.Error = serr.Error()
+		if errors.Is(serr, fs.ErrPermission) {
+			rep.LastFullSync.Error = recordNeedsRoot
+		}
 	}
 
 	sort.Slice(configs, func(i, j int) bool { return configs[i].Name < configs[j].Name })
@@ -153,6 +159,9 @@ func buildFeedsStatus(configDir, dataDir string, master bool, configs []FeedConf
 		rec, hasRec, rerr := feeds.ReadRefresh(feedsDir, name)
 		if rerr != nil {
 			v.RecordError = rerr.Error()
+			if errors.Is(rerr, fs.ErrPermission) {
+				v.RecordError = recordNeedsRoot
+			}
 		}
 		var mtime time.Time
 		if fi, err := os.Stat(filepath.Join(feedsDir, name+".txt")); err == nil {
@@ -255,7 +264,82 @@ func buildFeedsStatus(configDir, dataDir string, master bool, configs []FeedConf
 		}
 		rep.Feeds = append(rep.Feeds, v)
 	}
+	rep.Attention = feedsAttention(rep)
 	return rep, nil
+}
+
+// recordNeedsRoot replaces a permission error on a refresh or sync record (0640 root:nftban).
+const recordNeedsRoot = "not readable by this user (needs root or the nftban group)"
+
+// attentionItem is one line `nftban status` and `nftban health` print (they format this list and
+// keep no feed thresholds of their own). Key is stable; Text is for operators.
+type attentionItem struct {
+	Key  string `json:"key"`
+	Feed string `json:"feed,omitempty"`
+	Text string `json:"text"`
+}
+
+// feedsAttention lists what needs an operator: per enabled feed the snapshot state, the last
+// download outcome and the key, and separately the last full-sync outcome. A failed download is
+// listed even when the snapshot is still fresh; a failed sync even when every download succeeded.
+func feedsAttention(rep feedsStatusReport) []attentionItem {
+	out := []attentionItem{}
+	add := func(key, feed, text string) { out = append(out, attentionItem{Key: key, Feed: feed, Text: text}) }
+	// Records the caller may not read (0640 root:nftban) are one line, not one per feed.
+	needRoot := rep.LastFullSync.Error == recordNeedsRoot
+	for _, v := range rep.Feeds {
+		if !v.Enabled {
+			continue
+		}
+		switch v.State {
+		case feedStateExpired:
+			where := "no longer in the kernel sets (removed by a successful full sync)"
+			if v.Enforcement == "pending_removal" {
+				where = "still in the kernel sets until the next successful full sync"
+			}
+			add("feed_expired", v.Feed, "feed "+v.Feed+" expired (past MAX_AGE "+v.MaxAge+"): excluded by the feed authority; "+where)
+		case feedStateStale:
+			add("feed_stale", v.Feed, "feed "+v.Feed+" stale: last successful refresh older than "+v.StaleAfter+"; still enforced")
+		case feedStateMissing:
+			add("feed_missing", v.Feed, "feed "+v.Feed+" enabled but no snapshot on disk yet")
+		}
+		if a := v.LastAttempt; a != nil && !a.OK {
+			last := "never"
+			if v.LastSuccessAt != nil {
+				last = v.LastSuccessAt.Format("2006-01-02 15:04 UTC")
+			}
+			add("feed_refresh_failed", v.Feed, fmt.Sprintf("feed %s: last refresh failed at %s (%s; %d in a row); last successful %s; snapshot retained",
+				v.Feed, a.At.Format("2006-01-02 15:04 UTC"), a.Reason, v.ConsecutiveFailures, last))
+		}
+		if v.Credential != "" && v.Credential != "ok" && !strings.HasPrefix(v.Credential, "unknown") {
+			add("feed_credential", v.Feed, "feed "+v.Feed+": API key "+v.Credential+" (nftban feeds abuseipdb key set)")
+		}
+		switch v.RecordError {
+		case "":
+		case recordNeedsRoot:
+			needRoot = true
+		default:
+			add("feed_record_unreadable", v.Feed, "feed "+v.Feed+": "+v.RecordError)
+		}
+	}
+	s := rep.LastFullSync
+	switch {
+	case needRoot:
+		add("feeds_records_need_root", "", "refresh state "+recordNeedsRoot+"; run as root for the full feed state")
+	case s.Error != "":
+		add("feeds_sync_record_unreadable", "", "last full sync record unreadable: "+s.Error)
+	case s.Recorded && !s.OK:
+		last := "never"
+		if s.LastOKAt != nil {
+			last = s.LastOKAt.Format("2006-01-02 15:04 UTC")
+		}
+		at := "unknown time"
+		if s.At != nil {
+			at = s.At.Format("2006-01-02 15:04 UTC")
+		}
+		add("feeds_sync_failed", "", fmt.Sprintf("last full sync failed at %s (%s: %s); last successful full sync %s", at, s.Effect, s.Reason, last))
+	}
+	return out
 }
 
 // nextFeedsTimer asks systemd (read-only) when the feeds timer elapses next; "" when unknown.
@@ -287,6 +371,7 @@ func cmdFeedsStatus(feedsConfig string, cfg *nftbanconf.Config) error {
 			return fmt.Errorf("unknown feed: %s (list: nftban feeds list)", only)
 		}
 		rep.Feeds = kept
+		rep.Attention = feedsAttention(rep)
 	}
 	if hasFlag("--json") {
 		data, err := json.Marshal(rep)

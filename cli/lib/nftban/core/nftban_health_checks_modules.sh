@@ -92,6 +92,16 @@ nftban_health_check_modules() {
     if [[ -x "$_fa_core" ]]; then
         if _fa=$("$_fa_core" feeds effective 2>/dev/null) && [[ -n "$_fa" ]]; then
             _fa_reasons=$(jq -r '(.reasons // []) as $r | (.texts // []) as $t | range(0; $r | length) | "[\($r[.])] \($t[.])"' <<<"$_fa" 2>/dev/null || true)
+            # v1.238 part B3: the refresh state from the one reader (nftban-core feeds status):
+            # failed downloads, stale/missing snapshots, the API key, the last full sync. Expiry
+            # is already among the authority reasons above, so feed_expired is not repeated.
+            local _fs _fs_lines
+            if _fs=$("$_fa_core" feeds status --json 2>/dev/null) && [[ -n "$_fs" ]]; then
+                _fs_lines=$(jq -r '(.attention // [])[] | select(.key != "feed_expired") | "[\(.key)] \(.text)"' <<<"$_fs" 2>/dev/null || true)
+                if [[ -n "$_fs_lines" ]]; then
+                    _fa_reasons="${_fa_reasons:+$_fa_reasons$'\n'}$_fs_lines"
+                fi
+            fi
         else
             _fa_reasons="[feeds_authority_unknown] the feed authority could not be decided (nftban-core feeds effective failed)"
         fi

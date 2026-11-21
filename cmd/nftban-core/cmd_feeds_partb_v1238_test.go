@@ -222,6 +222,47 @@ func TestFeedsStatusExpiryFailureAndSyncAreSeparate(t *testing.T) {
 	if rep.LastFullSync.OK || !rep.LastFullSync.Recorded || rep.LastFullSync.LastOKAt == nil || rep.Worst != feedStateExpired {
 		t.Fatalf("a failed sync must stay visible: %+v worst=%s", rep.LastFullSync, rep.Worst)
 	}
+	// B3: the attention list status/health print. Expiry, the failed download and the failed
+	// sync are separate items; the fresh and the disabled feed contribute nothing.
+	keys := map[string]string{}
+	for _, it := range rep.Attention {
+		keys[it.Key+"/"+it.Feed] = it.Text
+	}
+	if len(rep.Attention) != 4 {
+		t.Fatalf("attention: %+v", rep.Attention)
+	}
+	if txt := keys["feed_expired/abuseipdb"]; !strings.Contains(txt, "excluded by the feed authority") ||
+		!strings.Contains(txt, "until the next successful full sync") || strings.Contains(txt, "removed at 72") {
+		t.Fatalf("expiry attention: %q", txt)
+	}
+	if txt := keys["feed_refresh_failed/abuseipdb"]; !strings.Contains(txt, "rate_limited") || !strings.Contains(txt, "snapshot retained") {
+		t.Fatalf("download attention: %q", txt)
+	}
+	if txt := keys["feeds_sync_failed/"]; !strings.Contains(txt, "daemon busy") || !strings.Contains(txt, "last successful full sync") {
+		t.Fatalf("sync attention: %q", txt)
+	}
+	if _, ok := keys["feed_credential/abuseipdb"]; !ok {
+		t.Fatalf("an absent key on an enabled provider feed must be listed: %+v", rep.Attention)
+	}
+}
+
+// B3: a non-root reader gets one "needs root" line, not one per feed; disabled feeds add nothing.
+func TestFeedsAttentionCollapsesPermissionErrors(t *testing.T) {
+	rep := feedsStatusReport{
+		Feeds: []feedStatusView{
+			{Feed: "a", Enabled: true, State: feedStateFresh, RecordError: recordNeedsRoot},
+			{Feed: "b", Enabled: true, State: feedStateFresh, RecordError: recordNeedsRoot},
+			{Feed: "c", Enabled: false, State: feedStateDisabled, RecordError: "refresh record c.status: corrupt"},
+		},
+		LastFullSync: syncView{Error: recordNeedsRoot},
+	}
+	got := feedsAttention(rep)
+	if len(got) != 1 || got[0].Key != "feeds_records_need_root" {
+		t.Fatalf("attention: %+v", got)
+	}
+	if a := feedsAttention(feedsStatusReport{}); a == nil || len(a) != 0 {
+		t.Fatalf("nothing to report must be an empty list (JSON []), got %#v", a)
+	}
 }
 
 func TestFeedExtrasValidated(t *testing.T) {
