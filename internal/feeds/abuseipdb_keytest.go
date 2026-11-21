@@ -6,9 +6,11 @@ package feeds
 // v1.238 part B2: `nftban feeds abuseipdb test` (owner 2026-11-20: standalone, reused by setup).
 //
 // Endpoint and cost: ONE GET /api/v2/check?ipAddress=127.0.0.1&maxAgeInDays=1. AbuseIPDB counts
-// daily limits per endpoint [DOCS: check 1,000/day on the Standard (free) plan, blacklist 5/day],
-// so the test does not use a blacklist request. That the check quota is separate is from the
-// published table; it is confirmed by the coordinated live request before it is stated as fact.
+// daily limits per endpoint [DOCS: check 1,000/day on the Standard (free) plan], so the test does
+// not use a blacklist request. Live L1 (2026-11-21, lab4, one blacklist request): the provider
+// stated X-RateLimit-Limit 10 for the blacklist endpoint on that key, not the 5/day of the
+// published table, so no user-facing text states a number; status shows the stated quota. The
+// check quota itself was not measured (the owner skipped the key-test call).
 //
 // The test proves only that the key is accepted. It never writes the snapshot, the refresh record
 // or anything else: a successful test cannot make an old enforced list look fresh.

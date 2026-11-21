@@ -1028,8 +1028,9 @@ nftban feeds abuseipdb <command>   AbuseIPDB blacklist feed (needs your own Abus
   setup                       Store the key, test it, then ask before enabling
   key set | status | remove   The API key (set: hidden prompt, or stdin; never an argument)
   test [--json]               One request to the check endpoint: proves the key is accepted.
-                              Costs a check request (1,000/day free), not a blacklist download
-                              (5/day free). Never changes the snapshot or its refresh time.
+                              Costs a check request, not a blacklist download (each endpoint has
+                              its own daily limit; status shows the blacklist quota the provider
+                              last stated). Never changes the snapshot or its refresh time.
   enable | disable            The generic feed switch. Disable removes only AbuseIPDB's
                               contribution; a ban held for another reason stays.
   update                      Refresh AbuseIPDB only (respects the provider back-off and
@@ -1040,8 +1041,9 @@ nftban feeds abuseipdb <command>   AbuseIPDB blacklist feed (needs your own Abus
   config [show]               Effective FEED_ABUSEIPDB_* settings
   config set <prop> <value>   CONFIDENCE_MINIMUM, LIMIT, MAX_AGE, MIN_INTERVAL (nftban.conf.local)
 
-Expiry: past MAX_AGE (default 72h) the snapshot is excluded by the feed authority and removed
-from the kernel at the next successful full sync; the file stays on disk.
+Expiry: past MAX_AGE (default 72h) the snapshot is excluded by the feed authority; its
+contribution leaves the kernel sets at the next successful full sync (addresses also listed by
+another feed or banned for another reason stay banned). The file stays on disk.
 Mutating commands ask first; without a terminal add --yes.
 Remote lookup and reporting: not available (pending a separate decision).
 HELP

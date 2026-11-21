@@ -81,7 +81,7 @@ type keyTestReport struct {
 	NotBefore string `json:"retry_not_before,omitempty"`
 }
 
-const keyTestCost = "one request against the check endpoint's daily limit (1,000/day on the free plan per AbuseIPDB's published limits); the blacklist download limit (5/day) is not used"
+const keyTestCost = "one request against the check endpoint's daily limit; the separate blacklist download limit is not used"
 
 func cmdFeedsAbuseIPDBTest(cfg *nftbanconf.Config) error {
 	rep := keyTestReport{Endpoint: "GET " + feeds.AbuseIPDBCheckURL + "?ipAddress=127.0.0.1&maxAgeInDays=1", Cost: keyTestCost, Quota: "unknown"}
