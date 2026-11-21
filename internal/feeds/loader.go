@@ -29,6 +29,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/itcmsgr/nftban/internal/metrics"
 )
@@ -65,6 +66,7 @@ func LoadAllFeeds(feedsDir string) (map[string]bool, map[string]bool, map[string
 		return nil, nil, nil, nil, nil, fmt.Errorf("failed to read feeds directory: %w", err)
 	}
 
+	var staleThreshold func(feed string) time.Duration // resolved on the first snapshot
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -91,10 +93,13 @@ func LoadAllFeeds(feedsDir string) (map[string]bool, map[string]bool, map[string
 
 		feedName := strings.TrimSuffix(entry.Name(), ".txt")
 
-		// v1.40.0: Record per-feed staleness metrics
+		// v1.40.0: Record per-feed staleness metrics (v1.238: per-feed threshold, StaleThresholds)
 		if info != nil {
+			if staleThreshold == nil {
+				staleThreshold = metrics.FeedStaleThresholds("")
+			}
 			metrics.RecordFeedLastSuccess(feedName, info.ModTime())
-			metrics.UpdateFeedStaleness(feedName, info.ModTime(), metrics.DefaultFeedStaleThreshold)
+			metrics.UpdateFeedStaleness(feedName, info.ModTime(), staleThreshold(feedName))
 		}
 
 		// Store feed info (total = single IPs + CIDRs)

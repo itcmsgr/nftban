@@ -38,7 +38,9 @@ Group=root
 # Log to both journal AND file for easy viewing
 # v1.235: skipped (not failed) without firewall authority.
 ExecCondition=+/usr/lib/nftban/bin/nftband --authority-check
-ExecStart=/bin/bash -c '/usr/sbin/nftban feeds update 2>&1 | tee -a /var/log/nftban/feeds.log'
+# v1.238 part B: pipefail, so the unit reports the update's own exit status (a failed download or
+# a failed full sync is non-zero), not tee's.
+ExecStart=/bin/bash -c 'set -o pipefail; /usr/sbin/nftban feeds update 2>&1 | tee -a /var/log/nftban/feeds.log'
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=nftban-feeds

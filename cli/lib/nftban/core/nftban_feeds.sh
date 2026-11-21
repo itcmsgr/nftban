@@ -347,6 +347,25 @@ nftban_feeds_enable() {
         echo "📥 Downloading feed..."
     fi
 
+    # v1.238 part B2: a provider feed (FEED_<NAME>_FORMAT) is downloaded only by nftban-core: the one
+    # downloader that reads the key, records the outcome and ends with the daemon full sync. Its exit
+    # status is the update's (a failed or deferred download is reported, the feed stays enabled).
+    local feed_format
+    feed_format=$(nftban_feeds_get_property "$feed_name" "FORMAT")
+    if [[ -n "$feed_format" ]]; then
+        local core="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core}"
+        if [[ ! -x "$core" ]]; then
+            echo "❌ Feed $feed_name (format $feed_format) needs nftban-core to download; it is enabled but not downloaded" >&2
+            return 1
+        fi
+        if [[ "$quiet" == "true" ]]; then
+            "$core" feeds update "$feed_name" >/dev/null 2>&1
+        else
+            "$core" feeds update "$feed_name"
+        fi
+        return $?
+    fi
+
     # Download in foreground with live feedback
     # Pass "true" for no_sync since we'll queue the sync after download
     if nftban_feeds_update_single "$feed_name" "true"; then
@@ -465,6 +484,15 @@ nftban_feeds_update_single() {
     if [[ "$feed_enabled" != "true" ]]; then
         nftban_feeds_log WARN "Feed is disabled, skipping: $feed_name"
         return 0
+    fi
+
+    # v1.238: a provider feed (FEED_<NAME>_FORMAT, e.g. abuseipdb) needs its API key and the
+    # provider's response format: only nftban-core handles it, never this curl fallback.
+    local feed_format
+    feed_format=$(nftban_feeds_get_property "$feed_name" "FORMAT")
+    if [[ -n "$feed_format" ]]; then
+        nftban_feeds_log ERROR "Feed $feed_name (format $feed_format) needs nftban-core; not downloaded by the shell fallback"
+        return 1
     fi
 
     # Ensure directories exist
@@ -1196,5 +1224,11 @@ export -f nftban_feeds_log
 # =============================================================================
 # Source task queue at end to make nftban_queue_add available for async operations
 # Guard above prevents circular dependency (task_queue.sh sources this file)
-# shellcheck source=/dev/null
-source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/helpers/nftban_task_queue.sh" 2>/dev/null || true
+# The queue is optional here (|| true), but under set -u an unset directory variable inside the
+# helper aborts the whole shell rather than failing the source, so it is sourced only when the
+# directories it derives its paths from are set (nftban.conf sets them on installed hosts).
+# Without them `nftban feeds --help` (no config, e.g. CI) aborted with rc=1 (v1.238 part B).
+if [[ -n "${NFTBAN_DATA_DIR:-}" && -n "${NFTBAN_RUN_DIR:-}" && -n "${NFTBAN_LOG_DIR:-}" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/helpers/nftban_task_queue.sh" 2>/dev/null || true
+fi
