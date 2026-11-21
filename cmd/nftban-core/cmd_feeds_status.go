@@ -227,10 +227,16 @@ func buildFeedsStatus(configDir, dataDir string, master bool, configs []FeedConf
 
 		// Enforcement: what the authority decides now, and whether the last successful full sync
 		// applied the feed. Feeds share merged kernel sets, so this is never "verified in kernel".
-		appliedLast := sok && in(srec.LastOKFeeds, name)
+		// Without a recorded successful full sync nothing is known about kernel presence.
+		syncKnown := sok && !srec.LastOKAt.IsZero()
+		appliedLast := syncKnown && in(srec.LastOKFeeds, name)
 		lastOK := "never"
 		if !srec.LastOKAt.IsZero() {
 			lastOK = srec.LastOKAt.UTC().Format("2006-01-02 15:04 UTC")
+		}
+		excluded := "excluded by the feed authority"
+		if v.State == feedStateExpired {
+			excluded = "expired"
 		}
 		switch {
 		case in(d.Enforced, name) && appliedLast:
@@ -240,8 +246,16 @@ func buildFeedsStatus(configDir, dataDir string, master bool, configs []FeedConf
 			v.Enforcement = "pending_sync"
 			v.EnforcementText = "selected by the feed authority; not yet included in a successful full sync (last successful: " + lastOK + ")"
 		case appliedLast:
+			// owner 2026-11-21: the last successful sync included it; its removal is not confirmed.
 			v.Enforcement = "pending_removal"
-			v.EnforcementText = "excluded by the feed authority; its contribution stays in the kernel sets until the next successful full sync (last successful: " + lastOK + ")"
+			v.EnforcementText = excluded + "; removal has not yet been confirmed by a successful full sync (last successful: " + lastOK + ", which included it)"
+		case !syncKnown && v.State != feedStateDisabled:
+			v.Enforcement = "unknown"
+			v.EnforcementText = excluded + "; kernel presence unknown (no successful full sync recorded)"
+		case v.State == feedStateExpired:
+			// the same addresses may still be banned by another feed or reason
+			v.Enforcement = "not_enforced"
+			v.EnforcementText = "expired; contribution excluded from the last successful sync (" + lastOK + ")"
 		default:
 			v.Enforcement = "not_enforced"
 			v.EnforcementText = "not enforced"
@@ -280,11 +294,9 @@ func feedsAttention(rep feedsStatusReport) []attentionItem {
 		}
 		switch v.State {
 		case feedStateExpired:
-			where := "contribution excluded from the last successful sync" // the same addresses may still be banned by another feed or reason
-			if v.Enforcement == "pending_removal" {
-				where = "its contribution stays in the kernel sets until the next successful full sync"
-			}
-			add("feed_expired", v.Feed, "feed "+v.Feed+" expired (past MAX_AGE "+v.MaxAge+"): excluded by the feed authority; "+where)
+			// The enforcement text carries the sync-confirmed part (expired; removal not yet
+			// confirmed / contribution excluded from the last successful sync / presence unknown).
+			add("feed_expired", v.Feed, "feed "+v.Feed+" past MAX_AGE "+v.MaxAge+", excluded by the feed authority: "+v.EnforcementText)
 		case feedStateStale:
 			add("feed_stale", v.Feed, "feed "+v.Feed+" stale: last successful refresh older than "+v.StaleAfter+"; still enforced")
 		case feedStateMissing:

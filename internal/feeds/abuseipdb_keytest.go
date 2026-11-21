@@ -7,10 +7,10 @@ package feeds
 //
 // Endpoint and cost: ONE GET /api/v2/check?ipAddress=127.0.0.1&maxAgeInDays=1. AbuseIPDB counts
 // daily limits per endpoint [DOCS: check 1,000/day on the Standard (free) plan], so the test does
-// not use a blacklist request. Live L1 (2026-11-21, lab4, one blacklist request): the provider
-// stated X-RateLimit-Limit 10 for the blacklist endpoint on that key, not the 5/day of the
-// published table, so no user-facing text states a number; status shows the stated quota. The
-// check quota itself was not measured (the owner skipped the key-test call).
+// not use a blacklist request. Live L1 (2026-11-21, lab4, one blacklist request): quota reported
+// for this key: 10 (X-RateLimit-Limit on the blacklist endpoint). User-facing text states no
+// number; status shows the quota the provider reports. The check quota was not measured (the
+// owner skipped the key-test call).
 //
 // The test proves only that the key is accepted. It never writes the snapshot, the refresh record
 // or anything else: a successful test cannot make an old enforced list look fresh.

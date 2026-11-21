@@ -95,7 +95,7 @@ func recordFullSync(feedsDir string, resp SocketResponse, now time.Time) {
 		if rec.OK {
 			log.Printf("[FEEDS] FEED-TRANSITION feed=%s state=expired: past its MAX_AGE, excluded by the feed authority; contribution excluded from this successful full sync (snapshot kept)", f)
 		} else {
-			log.Printf("[FEEDS] FEED-TRANSITION feed=%s state=expired: past its MAX_AGE, excluded by the feed authority; this full sync did not complete; its contribution stays in the kernel sets until the next successful one", f)
+			log.Printf("[FEEDS] FEED-TRANSITION feed=%s state=expired: past its MAX_AGE, excluded by the feed authority; this full sync did not complete: expired; removal has not yet been confirmed by a successful full sync", f)
 		}
 	}
 }

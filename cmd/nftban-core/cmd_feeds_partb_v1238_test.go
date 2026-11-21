@@ -203,7 +203,8 @@ func TestFeedsStatusExpiryFailureAndSyncAreSeparate(t *testing.T) {
 	}
 	a := by["abuseipdb"]
 	if a.State != feedStateExpired || a.Enforcement != "pending_removal" ||
-		!strings.Contains(a.EnforcementText, "until the next successful full sync") ||
+		!strings.HasPrefix(a.EnforcementText, "expired; removal has not yet been confirmed by a successful full sync") ||
+		strings.Contains(a.EnforcementText, "stays in the kernel") ||
 		!strings.Contains(a.StateText, "excluded by the feed authority") {
 		t.Fatalf("expired feed: %+v", a)
 	}
@@ -232,7 +233,7 @@ func TestFeedsStatusExpiryFailureAndSyncAreSeparate(t *testing.T) {
 		t.Fatalf("attention: %+v", rep.Attention)
 	}
 	if txt := keys["feed_expired/abuseipdb"]; !strings.Contains(txt, "excluded by the feed authority") ||
-		!strings.Contains(txt, "until the next successful full sync") || strings.Contains(txt, "removed at 72") {
+		!strings.Contains(txt, "removal has not yet been confirmed by a successful full sync") || strings.Contains(txt, "removed at 72") {
 		t.Fatalf("expiry attention: %q", txt)
 	}
 	if txt := keys["feed_refresh_failed/abuseipdb"]; !strings.Contains(txt, "rate_limited") || !strings.Contains(txt, "snapshot retained") {
@@ -263,13 +264,59 @@ func TestFeedsAttentionCollapsesPermissionErrors(t *testing.T) {
 	if a := feedsAttention(feedsStatusReport{}); a == nil || len(a) != 0 {
 		t.Fatalf("nothing to report must be an empty list (JSON []), got %#v", a)
 	}
-	// After a successful sync left the expired feed out: its CONTRIBUTION is excluded; the text
-	// never claims the addresses left the kernel (another feed or reason may still ban them).
-	after := feedsAttention(feedsStatusReport{Feeds: []feedStatusView{
-		{Feed: "abuseipdb", Enabled: true, State: feedStateExpired, MaxAge: "72h0m0s", Enforcement: "not_enforced"}}})
-	if len(after) != 1 || !strings.Contains(after[0].Text, "contribution excluded from the last successful sync") ||
-		strings.Contains(after[0].Text, "no longer in") || strings.Contains(after[0].Text, "removed from the kernel") {
-		t.Fatalf("expired after sync: %+v", after)
+}
+
+// Owner 2026-11-21: an expired feed's kernel state is stated only as far as a successful full
+// sync confirms it. Excluded by a successful sync -> "contribution excluded from the last
+// successful sync"; no successful sync recorded -> presence unknown. Never "no longer in kernel".
+func TestFeedsStatusExpiredKernelStateOnlyAsConfirmed(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		sync     *feeds.SyncRecord
+		enf, txt string
+	}{
+		{"excluded by a successful sync", &feeds.SyncRecord{OK: true, Effect: "applied", Enforced: []string{"spamhaus_drop"}},
+			"not_enforced", "expired; contribution excluded from the last successful sync"},
+		{"no sync recorded", nil, "unknown", "expired; kernel presence unknown (no successful full sync recorded)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, data, fd := partBSandbox(t, partBConf)
+			now := time.Now().UTC().Truncate(time.Second)
+			p := filepath.Join(fd, "abuseipdb.txt")
+			if err := os.WriteFile(p, []byte("192.0.2.1\n"), 0o640); err != nil {
+				t.Fatal(err)
+			}
+			setMtime(t, p, now.Add(-80*time.Hour))
+			if tc.sync != nil {
+				tc.sync.At = now.Add(-time.Hour)
+				if _, err := feeds.WriteSync(fd, *tc.sync); err != nil {
+					t.Fatal(err)
+				}
+			}
+			configs, err := parseFeedsConfig(filepath.Join(cfg, "conf.d", "feeds.conf"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			rep, err := buildFeedsStatus(cfg, data, true, configs, now, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, v := range rep.Feeds {
+				if v.Feed != "abuseipdb" {
+					continue
+				}
+				if v.State != feedStateExpired || v.Enforcement != tc.enf || !strings.HasPrefix(v.EnforcementText, tc.txt) {
+					t.Fatalf("%+v", v)
+				}
+			}
+			for _, it := range rep.Attention {
+				for _, bad := range []string{"no longer in", "stays in the kernel", "removed from the kernel"} {
+					if strings.Contains(it.Text, bad) {
+						t.Fatalf("attention claims kernel state: %q", it.Text)
+					}
+				}
+			}
+		})
 	}
 }
 
