@@ -42,9 +42,6 @@ const (
 // feedsTimerUnit runs `nftban feeds update` daily (OnCalendar 03:20, RandomizedDelaySec 15m).
 const feedsTimerUnit = "nftban-core-feeds.timer"
 
-// feedsTimerInterval is the timer's period: the expected refresh interval of every feed.
-const feedsTimerInterval = 24 * time.Hour
-
 type attemptView struct {
 	At     *time.Time `json:"at"`
 	OK     bool       `json:"ok"`
@@ -108,16 +105,6 @@ func tp(t time.Time) *time.Time {
 	return &u
 }
 
-// staleAfter: twice the feed's expected interval (the daily timer, or the feed's minimum
-// interval when longer). Expiry comes only from an explicit MAX_AGE.
-func staleAfter(minInterval time.Duration) time.Duration {
-	iv := feedsTimerInterval
-	if minInterval > iv {
-		iv = minInterval
-	}
-	return 2 * iv
-}
-
 // buildFeedsStatus assembles the report (pure apart from the reads; nextTimer is injected).
 func buildFeedsStatus(configDir, dataDir string, master bool, configs []FeedConfig, now time.Time, nextTimer string) (feedsStatusReport, error) {
 	feedsDir := filepath.Join(dataDir, "feeds")
@@ -154,7 +141,7 @@ func buildFeedsStatus(configDir, dataDir string, master bool, configs []FeedConf
 	for _, fc := range configs {
 		name := strings.ToLower(fc.Name)
 		v := feedStatusView{Feed: name, Enabled: fc.Enabled, Format: fc.Format}
-		sa := staleAfter(fc.MinInterval)
+		sa := feeds.StaleAfter(fc.MinInterval) // the one stale policy (the nftban_feed_stale gauge uses it too)
 		v.StaleAfter = sa.String()
 		rec, hasRec, rerr := feeds.ReadRefresh(feedsDir, name)
 		if rerr != nil {
@@ -254,7 +241,7 @@ func buildFeedsStatus(configDir, dataDir string, master bool, configs []FeedConf
 			v.EnforcementText = "selected by the feed authority; not yet included in a successful full sync (last successful: " + lastOK + ")"
 		case appliedLast:
 			v.Enforcement = "pending_removal"
-			v.EnforcementText = "excluded by the feed authority; still in the kernel sets until the next successful full sync (last successful: " + lastOK + ")"
+			v.EnforcementText = "excluded by the feed authority; its contribution stays in the kernel sets until the next successful full sync (last successful: " + lastOK + ")"
 		default:
 			v.Enforcement = "not_enforced"
 			v.EnforcementText = "not enforced"
@@ -293,9 +280,9 @@ func feedsAttention(rep feedsStatusReport) []attentionItem {
 		}
 		switch v.State {
 		case feedStateExpired:
-			where := "no longer in the kernel sets (removed by a successful full sync)"
+			where := "contribution excluded from the last successful sync" // the same addresses may still be banned by another feed or reason
 			if v.Enforcement == "pending_removal" {
-				where = "still in the kernel sets until the next successful full sync"
+				where = "its contribution stays in the kernel sets until the next successful full sync"
 			}
 			add("feed_expired", v.Feed, "feed "+v.Feed+" expired (past MAX_AGE "+v.MaxAge+"): excluded by the feed authority; "+where)
 		case feedStateStale:
@@ -459,7 +446,7 @@ func printFeedsStatus(rep feedsStatusReport, all bool) {
 		}
 		fmt.Printf("  Snapshot:                %s\n", v.StateText)
 		if v.ExpiresAt != nil && v.State != feedStateExpired {
-			fmt.Printf("  Expiry:                  excluded by the authority after %s; removed from the kernel at the next successful full sync\n", v.ExpiresAt.Format("2006-01-02 15:04 UTC"))
+			fmt.Printf("  Expiry:                  excluded by the authority after %s; its contribution leaves the kernel sets at the next successful full sync\n", v.ExpiresAt.Format("2006-01-02 15:04 UTC"))
 		}
 		fmt.Printf("  Enforcement:             %s\n", v.EnforcementText)
 		if v.NextPermittedRetry != nil {

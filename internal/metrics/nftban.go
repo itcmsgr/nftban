@@ -32,6 +32,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/itcmsgr/nftban/internal/nftbanconf"
 )
 
 // =============================================================================
@@ -145,7 +147,7 @@ var (
 	feedStale = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "nftban",
 		Name:      "feed_stale",
-		Help:      "Whether feed data is stale (1=stale, 0=fresh). Stale = file mtime older than threshold",
+		Help:      "Whether feed data is stale (1=stale, 0=fresh). Stale = snapshot mtime older than 2 x max(24h, FEED_<NAME>_MIN_INTERVAL), the same rule as nftban feeds status",
 	}, []string{"feed"})
 
 	// v1.40.0: Ban duration histogram — time from ban to unban
@@ -951,8 +953,37 @@ func RecordBanEnforcementLatency(op string, latencySec float64) {
 // =============================================================================
 // Track per-feed file freshness for alerting on stale threat intelligence
 
-// DefaultFeedStaleThreshold is the default duration after which a feed is considered stale
+// DefaultFeedStaleThreshold is the stale threshold of a feed without a longer MIN_INTERVAL
+// (2 x the daily feeds timer). It is used only when no policy is registered.
 const DefaultFeedStaleThreshold = 48 * time.Hour
+
+// v1.238 part B3: the per-feed stale policy is owned by internal/feeds (feeds.StaleThresholds,
+// the same rule `nftban feeds status` uses) and registered here at init, because this package
+// cannot import internal/feeds (internal/feeds imports metrics).
+var feedStalePolicy func(configDir string) func(feed string) time.Duration
+
+// SetFeedStalePolicy registers the per-feed stale policy (called from internal/feeds init).
+func SetFeedStalePolicy(p func(configDir string) func(feed string) time.Duration) {
+	feedStalePolicy = p
+}
+
+// FeedStaleThresholds returns the per-feed stale threshold for configDir ("" = the configured
+// config dir), or DefaultFeedStaleThreshold for every feed when no policy is registered or no
+// config can be loaded.
+func FeedStaleThresholds(configDir string) func(feed string) time.Duration {
+	if feedStalePolicy == nil {
+		return func(string) time.Duration { return DefaultFeedStaleThreshold }
+	}
+	if configDir == "" {
+		// non-fatal lookup (getMetricsPaths uses MustLoad, which exits without a config)
+		c := nftbanconf.Get()
+		if c == nil || c.ConfigDir == "" {
+			return func(string) time.Duration { return DefaultFeedStaleThreshold }
+		}
+		configDir = c.ConfigDir
+	}
+	return feedStalePolicy(configDir)
+}
 
 // RecordFeedLastSuccess records the mtime of a successfully loaded feed file
 func RecordFeedLastSuccess(feedName string, mtime time.Time) {

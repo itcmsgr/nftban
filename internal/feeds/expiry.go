@@ -13,8 +13,8 @@ package feeds
 //     A failed request writes nothing; a permission repair (chown/chmod) changes ctime, not mtime;
 //     an API test (`nftban feeds abuseipdb test`) never writes the snapshot. None of them resets
 //     the age.
-//   - MAX_AGE is the age limit for SELECTION: past it the feed is excluded by the authority. It
-//     leaves the kernel at the next successful full sync (feeds timer, `feeds update`, enable/
+//   - MAX_AGE is the age limit for SELECTION: past it the feed is excluded by the authority. Its
+//     contribution leaves the kernel sets at the next successful full sync (feeds timer, `feeds update`, enable/
 //     disable, rebuild/reload, ...), not at exactly MAX_AGE.
 //   - the snapshot stays on disk (status shows it as expired); only the feed's own contribution
 //     stops: the full sync builds the feed sets from Enforced only, so addresses that another
@@ -119,7 +119,7 @@ func applyExpiry(d *Decision, feedsDir string, maxAge map[string]time.Duration, 
 		}
 		d.Expired = append(d.Expired, f)
 		d.Reasons = append(d.Reasons, ReasonFeedExpired)
-		d.Texts = append(d.Texts, fmt.Sprintf("feed %s expired: last successful refresh %s ago exceeds MAX_AGE %s; excluded by the feed authority until a refresh succeeds; removed from the kernel at the next successful full sync (snapshot kept on disk)",
+		d.Texts = append(d.Texts, fmt.Sprintf("feed %s expired: last successful refresh %s ago exceeds MAX_AGE %s; excluded by the feed authority until a refresh succeeds; its contribution leaves the kernel sets at the next successful full sync (snapshot kept on disk)",
 			f, age.Truncate(time.Minute), limit))
 	}
 	d.Enforced = kept

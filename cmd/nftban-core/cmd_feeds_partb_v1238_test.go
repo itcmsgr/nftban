@@ -263,6 +263,14 @@ func TestFeedsAttentionCollapsesPermissionErrors(t *testing.T) {
 	if a := feedsAttention(feedsStatusReport{}); a == nil || len(a) != 0 {
 		t.Fatalf("nothing to report must be an empty list (JSON []), got %#v", a)
 	}
+	// After a successful sync left the expired feed out: its CONTRIBUTION is excluded; the text
+	// never claims the addresses left the kernel (another feed or reason may still ban them).
+	after := feedsAttention(feedsStatusReport{Feeds: []feedStatusView{
+		{Feed: "abuseipdb", Enabled: true, State: feedStateExpired, MaxAge: "72h0m0s", Enforcement: "not_enforced"}}})
+	if len(after) != 1 || !strings.Contains(after[0].Text, "contribution excluded from the last successful sync") ||
+		strings.Contains(after[0].Text, "no longer in") || strings.Contains(after[0].Text, "removed from the kernel") {
+		t.Fatalf("expired after sync: %+v", after)
+	}
 }
 
 func TestFeedExtrasValidated(t *testing.T) {
