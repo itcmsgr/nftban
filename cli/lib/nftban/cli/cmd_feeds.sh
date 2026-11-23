@@ -116,6 +116,30 @@ fi
 
 
 # Interactive selection menu with numbers
+# v1.238 (owner 2026-11-23): master switch value and the file it is effectively set in, read like
+# the daemon (nftban.conf, then nftban.conf.local; the last definition wins). Prints
+# "<on|off|unknown> <file or empty>". The source is shown only when resolved on this host.
+_nftban_feeds_master_effective() {
+    local f v="" src="" cfg="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+    for f in "$cfg/nftban.conf" "$cfg/nftban.conf.local"; do
+        local x
+        if x=$(_nftban_feeds_conf_value "$f" NFTBAN_FEEDS_ENABLED); then v="$x"; src="$f"; fi
+    done
+    case "${v,,}" in
+        true|yes|1|on)   echo "on $src" ;;
+        false|no|0|off)  echo "off $src" ;;
+        *)               echo "unknown " ;;
+    esac
+}
+
+# _nftban_feeds_enforcement_text <feeds-effective-json> — one line: what NFTBan enforces and why.
+_nftban_feeds_enforcement_text() {
+    jq -r '(.enforced // []) as $e | ($e | map(ascii_upcase) | join(", ")) as $n | .state as $s |
+        if $s == "CONFLICT_KEPT" then "\($n) retained from before the upgrade (CONFLICT_KEPT)"
+        elif ($e | length) > 0 then "\($n) enforced (\($s))"
+        else "no feed enforced (\($s))" end' <<<"$1" 2>/dev/null
+}
+
 nftban_feeds_select() {
     # Source output module for banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
@@ -408,6 +432,10 @@ nftban_feeds_list() {
     local stats
     stats=$(nftban_feeds_get_stats)
     echo "Status: $stats"
+    # v1.238 (owner 2026-11-23): what the marks and the interval column mean
+    echo "[✓] Selected   [✗] Not selected.   Interval = the provider's update interval; NFTBan refreshes on its daily feeds timer."
+    local _lm; _lm=$(_nftban_feeds_master_effective)
+    [[ "${_lm%% *}" == "off" ]] && echo "Master switch OFF: selected feeds are not applied unless retained (see: nftban feeds status)."
     echo ""
 
     # v1.238: per-feed last/next update from the one reader (nftban-core feeds status)
@@ -443,7 +471,7 @@ nftban_feeds_list() {
             interval=$(nftban_feeds_get_property "$feed" "INTERVAL")
 
             local status_icon="[✗]"
-            local status_text="0 IPs (off)"
+            local status_text="not selected"
 
             if [[ "$enabled" == "true" ]]; then
                 status_icon="[✓]"
@@ -452,7 +480,7 @@ nftban_feeds_list() {
                 if [[ -f "$feed_file" ]]; then
                     local count
                     count=$(wc -l < "$feed_file")
-                    status_text="$count IPs"
+                    status_text="$count entries"
                 else
                     status_text="enabled"
                 fi
@@ -475,12 +503,12 @@ nftban_feeds_list() {
 
     echo "Commands:"
     echo "  nftban feeds select             Interactive selection menu"
-    echo "  nftban feeds enable             Turn ALL feeds on (master switch NFTBAN_FEEDS_ENABLED)"
-    echo "  nftban feeds disable            Turn ALL feeds off (master switch; removes feed-derived"
-    echo "                                  protection only — geoban and manual bans stay)"
-    echo "  nftban feeds enable <feed>      Enable one feed (per-feed switch)"
-    echo "  nftban feeds disable <feed>     Disable one feed (per-feed switch)"
-    echo "  nftban feeds update              Update all enabled feeds"
+    echo "  nftban feeds enable             Enable the selected feeds (master switch NFTBAN_FEEDS_ENABLED)"
+    echo "  nftban feeds disable            Remove feed-derived protection; keep the selection (master"
+    echo "                                  switch; geoban and manual bans stay)"
+    echo "  nftban feeds enable <feed>      Select one feed (per-feed switch)"
+    echo "  nftban feeds disable <feed>     Unselect one feed (per-feed switch)"
+    echo "  nftban feeds update              Update all selected feeds"
     echo "  nftban feeds status              Detailed status"
     echo ""
 }
@@ -499,7 +527,9 @@ nftban_feeds_status_json() {
         local all_feeds
         all_feeds=$(nftban_feeds_discover_all 2>/dev/null || echo "")
 
-        local enabled_count=0 total_count=0 total_ips=0
+        local enabled_count=0 total_count=0 total_ips=0 _fsj_all
+        _fsj_all=$(_nftban_feeds_status_json)
+        jq -e . >/dev/null 2>&1 <<<"$_fsj_all" || _fsj_all='{}'
         # Accumulate per-feed JSON objects (each produced by jq -n) into a
         # newline-separated stream; jq -s '.' later folds it into one array.
         local enabled_feeds_stream=""
@@ -530,13 +560,25 @@ nftban_feeds_status_json() {
             fi
 
             if command -v jq >/dev/null 2>&1; then
-                local feed_obj
+                # v1.238: existing fields kept for current consumers (ip_count = entries, last_update =
+                # snapshot file time); added: entries, snapshot_timestamp, selected_source and the
+                # refresh record (last_successful_refresh, last_failed_attempt, next_scheduled_refresh).
+                local feed_obj _rec
+                _rec=$(jq -c --arg f "$feed_lower" '[.feeds[]? | select(.feed == $f)][0] // null' <<<"$_fsj_all" 2>/dev/null) || _rec=null
+                [[ -n "$_rec" ]] || _rec=null
                 feed_obj=$(jq -n \
                     --arg name        "$feed" \
                     --argjson enabled true \
                     --argjson ip_count "$count" \
                     --arg last_update "$mtime" \
-                    '{name: $name, enabled: $enabled, ip_count: $ip_count, last_update: $last_update}')
+                    --arg src "$(nftban_feeds_property_source "$feed" ENABLED)" \
+                    --argjson rec "${_rec:-null}" \
+                    '{name: $name, enabled: $enabled, ip_count: $ip_count, last_update: $last_update,
+                      entries: $ip_count, snapshot_timestamp: (if $last_update == "" then null else $last_update end),
+                      selected_source: (if $src == "" then null else $src end),
+                      last_successful_refresh: ($rec.last_success_at // null),
+                      last_failed_attempt: (if $rec.last_attempt and ($rec.last_attempt.ok | not) then {at: $rec.last_attempt.at, reason: $rec.last_attempt.reason} else null end),
+                      next_scheduled_refresh: ($rec.next_update_text // null)}')
                 enabled_feeds_stream+="${feed_obj}"$'\n'
             fi
         done
@@ -550,17 +592,35 @@ nftban_feeds_status_json() {
             else
                 feeds_array='[]'
             fi
+            # v1.238: master switch (+ source file when resolved), selection and the feed authority
+            local _fa _ms _ms_val _ms_src
+            _fa=$("${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core" feeds effective 2>/dev/null) || _fa=""
+            jq -e . >/dev/null 2>&1 <<<"$_fa" || _fa="null"
+            _ms=$(_nftban_feeds_master_effective); _ms_val="${_ms%% *}"; _ms_src="${_ms#* }"
+            if [[ "$_fa" != "null" ]]; then
+                _ms_val=$(jq -r 'if .master then "on" else "off" end' <<<"$_fa")
+                [[ "$(_nftban_feeds_master_effective)" == "$_ms_val "* ]] || _ms_src=""
+            fi
             data=$(jq -n \
                 --argjson enabled_count "$enabled_count" \
                 --argjson total_count   "$total_count" \
                 --argjson total_ips     "$total_ips" \
                 --argjson feeds         "$feeds_array" \
+                --argjson authority     "$_fa" \
+                --arg ms "$_ms_val" --arg ms_src "$_ms_src" \
                 '{
                     summary: {
                         enabled_count: $enabled_count,
                         total_count:   $total_count,
-                        total_ips:     $total_ips
+                        total_ips:     $total_ips,
+                        selected_count: $enabled_count,
+                        snapshot_entries_total: $total_ips
                     },
+                    master_switch: {state: $ms, source: (if $ms_src == "" then null else $ms_src end)},
+                    selected: [$feeds[].name],
+                    authority: (if $authority == null then null else
+                        {state: $authority.state, master: $authority.master, enforced: ($authority.enforced // []),
+                         reasons: ($authority.reasons // []), texts: ($authority.texts // [])} end),
                     enabled_feeds: $feeds
                 }')
         else
@@ -592,18 +652,28 @@ nftban_feeds_status() {
     echo "═══════════════════════════════════════════════════════════════════"
     echo ""
 
-    # Overall stats
-    local stats
-    stats=$(nftban_feeds_get_stats)
-    echo "Status: $stats"
-
-    # v1.236 (design §7): the feed authority — which feed files the firewall enforces and why.
-    local _fa _fa_core="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
-    if _fa=$("$_fa_core" feeds effective 2>/dev/null) && [[ -n "$_fa" ]]; then
-        echo "Feed authority: $(jq -r '.state' <<<"$_fa" 2>/dev/null) (master switch $(jq -r 'if .master then "on" else "off" end' <<<"$_fa" 2>/dev/null)); enforced: $(jq -r '(.enforced // []) | if length == 0 then "none" else join(", ") end' <<<"$_fa" 2>/dev/null)"
+    # v1.238 (owner 2026-11-23): master switch, selection and enforcement on separate lines — the
+    # pre-v1.238 "Status: N/M feeds enabled" mixed the per-feed selection with what is enforced.
+    local _fa _fa_core="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core" _ms _ms_val _ms_src
+    local _sel="" _sel_n=0 _all_n=0 _f
+    for _f in $(nftban_feeds_discover_all 2>/dev/null); do
+        _all_n=$((_all_n + 1))
+        [[ "$(nftban_feeds_get_property "$_f" ENABLED)" == "true" ]] && { _sel_n=$((_sel_n + 1)); _sel+="${_sel:+, }$_f"; }
+    done
+    _fa=$("$_fa_core" feeds effective 2>/dev/null) || _fa=""
+    _ms=$(_nftban_feeds_master_effective); _ms_val="${_ms%% *}"; _ms_src="${_ms#* }"
+    if [[ -n "$_fa" ]]; then
+        # the daemon's decision is the authority for the value; the file is shown when it agrees
+        _ms_val=$(jq -r 'if .master then "on" else "off" end' <<<"$_fa" 2>/dev/null || echo unknown)
+        [[ "$(_nftban_feeds_master_effective)" == "$_ms_val "* ]] || _ms_src=""
+    fi
+    printf '%-20s%s%s\n' "Master switch" "${_ms_val^^}" "${_ms_src:+   (NFTBAN_FEEDS_ENABLED in $_ms_src)}"
+    printf '%-20s%s\n' "Selected feeds" "$_sel_n of $_all_n${_sel:+: $_sel}"
+    if [[ -n "$_fa" ]]; then
+        printf '%-20s%s\n' "Enforcement" "$(_nftban_feeds_enforcement_text "$_fa")"
         jq -r '(.reasons // []) as $r | (.texts // []) as $t | range(0; $r | length) | "  [\($r[.])] \($t[.])"' <<<"$_fa" 2>/dev/null || true
     else
-        echo "Feed authority: UNKNOWN (could not be decided — see: /usr/lib/nftban/bin/nftban-core feeds effective)"
+        printf '%-20s%s\n' "Enforcement" "UNKNOWN (could not be decided — see: /usr/lib/nftban/bin/nftban-core feeds effective)"
     fi
 
     # v1.141 PR-C (D-feed-count): pre-v1.141 'Status:' line conflated three
@@ -646,7 +716,7 @@ nftban_feeds_status() {
         fi
     fi
     echo "  Feed file count:  $_feed_files"
-    echo "  Feed IP total:    $_feed_ip_total  (sum across enabled feed files)"
+    echo "  Snapshot entries: $_feed_ip_total  (total across the selected feeds' snapshot files; entries are often CIDRs)"
     if declare -f nftban_stats_get_unified >/dev/null 2>&1; then
         local _cached_agg
         _cached_agg=$(nftban_stats_get_unified ".feeds.total" 2>/dev/null || echo "")
@@ -659,7 +729,7 @@ nftban_feeds_status() {
     # Enabled feeds detail
     local _fs_json
     _fs_json=$(_nftban_feeds_status_json)
-    echo "Enabled Feeds:"
+    echo "Selected feeds:"
     local all_feeds
     all_feeds=$(nftban_feeds_discover_all)
 
@@ -674,28 +744,30 @@ nftban_feeds_status() {
             local feed_lowercase
             feed_lowercase=$(echo "$feed" | tr '[:upper:]' '[:lower:]')
             local feed_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds/${feed_lowercase}.txt"
+            local _sel_src
+            _sel_src=$(nftban_feeds_property_source "$feed" ENABLED)
             if [[ -f "$feed_file" ]]; then
                 local count
                 count=$(wc -l < "$feed_file")
-                local mtime
-                mtime=$(date -r "$feed_file" '+%Y-%m-%d %H:%M:%S')
-                printf "  • %-30s %8s IPs  (Updated: %s)\n" "$feed" "$count" "$mtime"
+                printf "  • %-30s %8s entries in snapshot%s\n" "$feed" "$count" "${_sel_src:+   (selected in $_sel_src)}"
             else
-                printf "  • %-30s %s\n" "$feed" "not yet downloaded"
+                printf "  • %-30s %s%s\n" "$feed" "not yet downloaded" "${_sel_src:+   (selected in $_sel_src)}"
             fi
-            # v1.238: last successful update and next update (one reader)
-            if [[ -n "$_fs_json" ]]; then
-                local _fs_long
-                _fs_long=$(_nftban_feeds_refresh_long "$_fs_json" "$feed_lowercase")
-                if [[ -n "$_fs_long" ]]; then
-                    printf "%s\n" "$_fs_long"
-                fi
+            # v1.238: refresh record (last successful refresh, last failed attempt, next scheduled
+            # refresh = the feeds timer's actual next run). Without a record, only the snapshot
+            # file's modification time is known: labelled "Snapshot timestamp".
+            local _fs_long=""
+            [[ -n "$_fs_json" ]] && _fs_long=$(_nftban_feeds_refresh_long "$_fs_json" "$feed_lowercase")
+            if [[ -n "$_fs_long" ]]; then
+                printf "%s\n" "$_fs_long"
+            elif [[ -f "$feed_file" ]]; then
+                printf "      Snapshot timestamp:      %s\n" "$(date -r "$feed_file" '+%Y-%m-%d %H:%M:%S %Z')"
             fi
         fi
     done
 
     if [[ "$found_enabled" == "false" ]]; then
-        echo "  (none enabled yet)"
+        echo "  (none selected)"
     fi
 
     echo ""
@@ -740,6 +812,14 @@ _nftban_feeds_master_resolve() {
     fi
     nftban_config_set_global NFTBAN_FEEDS_ENABLED "$val" || {
         _fmr_out false not_changed "ERROR: could not set NFTBAN_FEEDS_ENABLED=$val — nothing changed"; return 1; }
+    # v1.238 (owner 2026-11-23): read back through the daemon's path and name the source file.
+    local _rb _want; [[ "$val" == "true" ]] && _want=on || _want=off
+    _rb=$(_nftban_feeds_master_effective)
+    if [[ "${_rb%% *}" != "$_want" ]]; then
+        _fmr_out false not_changed "ERROR: NFTBAN_FEEDS_ENABLED is ${_rb%% *} after the write (effective in ${_rb#* }) — the selection is NOT saved as requested"
+        return 1
+    fi
+    [[ "$jm" == "true" ]] || echo "✓ Selection saved: NFTBAN_FEEDS_ENABLED=$val (effective, from ${_rb#* })"
     if ! "$core" feeds resolve "$state"; then
         _fmr_out false not_converged "ERROR: configuration saved (NFTBAN_FEEDS_ENABLED=$val), but the feed-authority decision was not recorded; enforcement not converged"
         return 1
@@ -751,10 +831,10 @@ _nftban_feeds_master_resolve() {
         rc=1
     fi
     if [[ $rc -eq 0 ]]; then
-        conv="All feeds (master switch) $state; recorded RESOLVED_${state^^}; enforcement converged (full sync completed)"
+        conv="Applied: master switch $state, recorded RESOLVED_${state^^}; a full sync completed"
         _fmr_out true converged "$conv"
     else
-        _fmr_out false not_converged "WARNING: configuration saved (all feeds $state, RESOLVED_${state^^}); enforcement NOT converged — the full sync did not complete (rc=$rc). Check: nftban feeds status"
+        _fmr_out false not_converged "WARNING: selection saved (master switch $state, RESOLVED_${state^^}) but NOT applied — the full sync did not complete (rc=$rc). Check: nftban feeds status"
         return 1
     fi
 }
@@ -1530,7 +1610,9 @@ _nftban_feeds_refresh_short() {
 _nftban_feeds_refresh_long() {
     jq -r --arg f "$2" '.feeds[]? | select(.feed == $f)
         | def t: if . == null then "never" else (.[0:16] | sub("T"; " ")) + " UTC" end;
-        "      Last update: \(.last_success_at | t)\(if .last_attempt and (.last_attempt.ok | not) then " (last attempt failed: " + .last_attempt.reason + ")" else "" end)\n      Next update: \(.next_update_text // "none (feed or feeds switched off)")"' \
+        "      Last successful refresh: \(.last_success_at | t)"
+        + (if .last_attempt and (.last_attempt.ok | not) then "\n      Last failed attempt:     \(if .last_attempt.at then (.last_attempt.at | t) else "time not recorded" end) — \(.last_attempt.reason)" else "" end)
+        + "\n      Next scheduled refresh:  \(.next_update_text // "none (feed or feeds switched off)")"' \
         <<<"$1" 2>/dev/null || true
 }
 

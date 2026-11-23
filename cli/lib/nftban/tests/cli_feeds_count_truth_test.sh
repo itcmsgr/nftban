@@ -98,7 +98,7 @@ OUT=$(bash -c "
         done
     fi
     echo \"  Feed file count:  \$_feed_files\"
-    echo \"  Feed IP total:    \$_feed_ip_total  (sum across enabled feed files)\"
+    echo \"  Snapshot entries: \$_feed_ip_total  (total across the selected feeds' snapshot files; entries are often CIDRs)\"
     _cached_agg=\$(nftban_stats_get_unified .feeds.total 2>/dev/null || echo \"\")
     if [[ -n \"\$_cached_agg\" ]]; then
         echo \"  Cached aggregate: \$_cached_agg  (from stats cache; may differ after dedup/geoban merge)\"
@@ -117,10 +117,10 @@ else
 fi
 
 # T2 — explicit 'Feed IP total' label with value 600
-if grep -qE 'Feed IP total:.*\b600\b' <<<"$OUT"; then
-    ok "T2 'Feed IP total: 600'"
+if grep -qE 'Snapshot entries:.*\b600\b' <<<"$OUT"; then
+    ok "T2 'Snapshot entries: 600' (v1.238 label; was 'Feed IP total')"
 else
-    no "T2 'Feed IP total'" "label or value missing; got: $(grep -i 'IP total' <<<\"$OUT\" | head -1)"
+    no "T2 'Snapshot entries'" "label or value missing; got: $(grep -i 'Snapshot entries' <<<\"$OUT\" | head -1)"
 fi
 
 # T3 — explicit 'Cached aggregate' label with the (different) cache value 575
@@ -134,7 +134,7 @@ fi
 # they are distinct. (Any of T1/T2/T3 failing falls into one of those lines;
 # T4 is the holistic check.)
 if grep -qE 'Feed file count' <<<"$OUT" \
-   && grep -qE 'Feed IP total' <<<"$OUT" \
+   && grep -qE 'Snapshot entries' <<<"$OUT" \
    && grep -qE 'Cached aggregate' <<<"$OUT"; then
     ok "T4 all three distinct labels present in the same render"
 else

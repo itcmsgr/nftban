@@ -175,6 +175,7 @@ feed_snapshot_boundary_v1238_test	cli/lib/nftban/tests/feed_snapshot_boundary_v1
 feeds_abuseipdb_menu_v1238_test	cli/lib/nftban/tests/feeds_abuseipdb_menu_v1238_test.sh	core	test	feeds	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 feeds_authority_test	cli/lib/nftban/tests/feeds_authority_test.sh	feeds	test	feed-enablement-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 feeds_select_strict_e2e_v152_test	cli/lib/nftban/tests/feeds_select_strict_e2e_v152_test.sh	feeds	test	feeds	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+feeds_status_truth_v1238_test	cli/lib/nftban/tests/feeds_status_truth_v1238_test.sh	core	test	feeds	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 fetch_verified_v157_test	cli/lib/nftban/tests/fetch_verified_v157_test.sh	packaging	test	build-fetch	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 fhs_lane_v175_test	cli/lib/nftban/tests/fhs_lane_v175_test.sh	packaging	test	fhs	PACKAGE_BUILD	policy-gates	true	false	false	false	false	false			
 firewall_authority_v1235_test	cli/lib/nftban/tests/firewall_authority_v1235_test.sh	firewall	test	lifecycle	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
