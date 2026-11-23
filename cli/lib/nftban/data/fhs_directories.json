@@ -507,10 +507,10 @@
       },
       {
         "path": "/var/lib/nftban/feeds",
-        "mode": "0750",
+        "mode": "2750",
         "owner": "root",
         "group": "nftban",
-        "description": "Threat feed data",
+        "description": "Threat feed data (snapshots, per-feed refresh records, full-sync.status). v1.238 D-2 (owner GO 2026-11-23): setgid so every file created here gets group nftban without CAP_CHOWN (nftband has none); root-owned, no group write; writers still set each file 0640.",
         "created_by": "tmpfiles"
       },
       {
