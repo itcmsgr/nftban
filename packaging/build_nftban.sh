@@ -1866,9 +1866,9 @@ for _seed_pair in \\
     fi
 done
 
-# v1.238 BUG-CONNECTOR-CONFIG-UNREADABLE-BY-EXPORTER: same repair as the DEB postinst — connector
-# files left root:root by pre-v1.238 `nftban connector add` become root:nftban 0640 (readable by the
-# exporter, User=nftban). Regular non-symlink root:root files only; never fails %post.
+# v1.238 BUG-CONNECTOR-CONFIG-UNREADABLE-BY-EXPORTER: same repair as the DEB postinst - connector
+# files left root:root by pre-v1.238 nftban connector add become root:nftban 0640 (readable by the
+# exporter, User=nftban). Regular non-symlink root:root files only; never fails this scriptlet.
 for _cf in /etc/nftban/connectors/*.conf; do
     [ -f "\$_cf" ] && [ ! -L "\$_cf" ] || continue
     [ "\$(stat -c '%%U:%%G' "\$_cf" 2>/dev/null)" = "root:root" ] || continue
