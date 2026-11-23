@@ -34,10 +34,11 @@ package nftbanconf
 // =============================================================================
 
 import (
-	"fmt"
 	"bufio"
+	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -352,7 +353,7 @@ func loadEffectiveFrom(path string) (*Config, error) {
 	}
 	local := path + ".local"
 	if _, err := os.Stat(local); err == nil {
-		f, oerr := os.Open(local) // #nosec G304 -- fixed path derived from DefaultConfigFile
+		f, oerr := os.Open(filepath.Clean(local))
 		if oerr != nil {
 			return nil, fmt.Errorf("config override %s: %w", local, oerr)
 		}
