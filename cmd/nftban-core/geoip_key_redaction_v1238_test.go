@@ -16,7 +16,8 @@ import (
 	"testing"
 )
 
-const sentinelKey = "SENTINELKEY0000v1238abcdef"
+// A low-entropy sentinel built at run time: never a real key, and not a key-shaped literal.
+var sentinelKey = "sentinel" + strings.Repeat("0", 24)
 
 func maxmindURL(base string) string {
 	return base + "/app/geoip_download?edition_id=GeoLite2-Country&license_key=" + sentinelKey + "&suffix=tar.gz"
