@@ -410,6 +410,10 @@ nftban_feeds_list() {
     echo "Status: $stats"
     echo ""
 
+    # v1.238: per-feed last/next update from the one reader (nftban-core feeds status)
+    local _fs_json
+    _fs_json=$(_nftban_feeds_status_json)
+
     # Get all categories
     local categories
     categories=$(nftban_feeds_get_categories)
@@ -455,6 +459,14 @@ nftban_feeds_list() {
             fi
 
             printf "│ %-4s %-25s %-15s %-10s │\n" "$status_icon" "${feed:0:25}" "$status_text" "${interval:-DAILY}"
+            # v1.238: when it was last updated and when the next update is due (one reader).
+            if [[ "$enabled" == "true" && -n "$_fs_json" ]]; then
+                local _fs_short
+                _fs_short=$(_nftban_feeds_refresh_short "$_fs_json" "${feed,,}")
+                if [[ -n "$_fs_short" ]]; then
+                    printf "│      %-52s │\n" "$_fs_short"
+                fi
+            fi
         done
 
         echo "└──────────────────────────────────────────────────────────────────┘"
@@ -645,6 +657,8 @@ nftban_feeds_status() {
     echo ""
 
     # Enabled feeds detail
+    local _fs_json
+    _fs_json=$(_nftban_feeds_status_json)
     echo "Enabled Feeds:"
     local all_feeds
     all_feeds=$(nftban_feeds_discover_all)
@@ -668,6 +682,14 @@ nftban_feeds_status() {
                 printf "  • %-30s %8s IPs  (Updated: %s)\n" "$feed" "$count" "$mtime"
             else
                 printf "  • %-30s %s\n" "$feed" "not yet downloaded"
+            fi
+            # v1.238: last successful update and next update (one reader)
+            if [[ -n "$_fs_json" ]]; then
+                local _fs_long
+                _fs_long=$(_nftban_feeds_refresh_long "$_fs_json" "$feed_lowercase")
+                if [[ -n "$_fs_long" ]]; then
+                    printf "%s\n" "$_fs_long"
+                fi
             fi
         fi
     done
@@ -1487,6 +1509,30 @@ nftban_feeds_update_json() {
 # HELP TEXT
 # =============================================================================
 
+
+# v1.238 (owner 2026-11-21): per-feed "last updated / next update" for list and status. Both
+# format the one reader (nftban-core feeds status --json); no times are computed here.
+_nftban_feeds_status_json() {
+    local core="${NFTBAN_LIB_DIR}/bin/nftban-core"
+    [[ -x "$core" ]] || return 0
+    "$core" feeds status --json 2>/dev/null || true
+}
+
+# _nftban_feeds_refresh_short <json> <feed_lower>: "last MM-DD HH:MM - next MM-DD HH:MM UTC"
+_nftban_feeds_refresh_short() {
+    jq -r --arg f "$2" '.feeds[]? | select(.feed == $f)
+        | def t: if . == null then "never" else (.[5:16] | sub("T"; " ")) end;
+        "last \(.last_success_at | t) - next \(if .next_update_at then (.next_update_at | t) else "none" end) UTC\(if .next_permitted_retry then " (deferred)" else "" end)"' \
+        <<<"$1" 2>/dev/null || true
+}
+
+# _nftban_feeds_refresh_long <json> <feed_lower>: two indented lines for nftban feeds status
+_nftban_feeds_refresh_long() {
+    jq -r --arg f "$2" '.feeds[]? | select(.feed == $f)
+        | def t: if . == null then "never" else (.[0:16] | sub("T"; " ")) + " UTC" end;
+        "      Last update: \(.last_success_at | t)\(if .last_attempt and (.last_attempt.ok | not) then " (last attempt failed: " + .last_attempt.reason + ")" else "" end)\n      Next update: \(.next_update_text // "none (feed or feeds switched off)")"' \
+        <<<"$1" 2>/dev/null || true
+}
 
 _nftban_feeds_help() {
     # Source output module for banner

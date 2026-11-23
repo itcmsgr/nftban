@@ -42,6 +42,45 @@ const (
 // feedsTimerUnit runs `nftban feeds update` daily (OnCalendar 03:20, RandomizedDelaySec 15m).
 const feedsTimerUnit = "nftban-core-feeds.timer"
 
+// The timer's schedule (install/systemd/nftban-core-feeds.timer; a test keeps these in step):
+// every day at 03:20 host time plus a fixed per-host delay of up to 15 minutes. Every feed is
+// refreshed by that one timer; FEED_<NAME>_INTERVAL does not change it.
+const (
+	feedsTimerHour     = 3
+	feedsTimerMinute   = 20
+	feedsTimerMaxDelay = 15 * time.Minute
+)
+
+// nextTimerRun returns the start of the first daily timer run at or after t (host time).
+func nextTimerRun(t time.Time) time.Time {
+	run := time.Date(t.Year(), t.Month(), t.Day(), feedsTimerHour, feedsTimerMinute, 0, 0, t.Location())
+	if run.Before(t) {
+		run = run.AddDate(0, 0, 1)
+	}
+	return run
+}
+
+// nextUpdate is the timer run that will refresh the feed: the next run, or, when a back-off or
+// minimum interval forbids a request until notBefore, the first run after it (earlier runs skip
+// the feed). systemdNext is the timer's own next elapse ("" when unknown); it is shown as-is when
+// no deferral applies, because it includes the host's fixed random delay.
+func nextUpdate(now, notBefore time.Time, systemdNext string) (*time.Time, string) {
+	from := now
+	deferred := !notBefore.IsZero() && notBefore.After(now)
+	if deferred {
+		from = notBefore.In(now.Location())
+	}
+	run := nextTimerRun(from)
+	text := run.Format("2006-01-02 15:04") + " + up to 15 min (host time; daily feeds timer)"
+	if !deferred && systemdNext != "" {
+		text = systemdNext + " (daily feeds timer)"
+	}
+	if deferred {
+		text += "; earlier runs skip it until " + notBefore.UTC().Format("2006-01-02 15:04 UTC") + " (back-off or minimum interval)"
+	}
+	return tp(run), text
+}
+
 type attemptView struct {
 	At     *time.Time `json:"at"`
 	OK     bool       `json:"ok"`
@@ -63,6 +102,8 @@ type feedStatusView struct {
 	ConsecutiveFailures int          `json:"consecutive_failures"`
 	FailingSince        *time.Time   `json:"failing_since,omitempty"`
 	NextPermittedRetry  *time.Time   `json:"next_permitted_retry,omitempty"` // only when a back-off/minimum interval applies
+	NextUpdateAt        *time.Time   `json:"next_update_at,omitempty"`       // start of the timer run that will refresh it (enabled feeds)
+	NextUpdateText      string       `json:"next_update_text,omitempty"`
 	MaxAge              string       `json:"max_age,omitempty"`
 	ExpiresAt           *time.Time   `json:"expires_at,omitempty"`
 	StaleAfter          string       `json:"stale_after"`
@@ -187,8 +228,14 @@ func buildFeedsStatus(configDir, dataDir string, master bool, configs []FeedConf
 			v.ConsecutiveFailures = rec.ConsecutiveFailures
 			v.FailingSince = tp(rec.FailingSince)
 		}
-		if next := feeds.NextPermitted(rec, fc.MinInterval, now); !next.IsZero() {
-			v.NextPermittedRetry = tp(next)
+		notBefore := feeds.NextPermitted(rec, fc.MinInterval, now)
+		if !notBefore.IsZero() {
+			v.NextPermittedRetry = tp(notBefore)
+		}
+		// v1.238 (owner 2026-11-21): one "next update" per feed, so an operator does not have to
+		// combine the timer and the feed's back-off/minimum interval by hand.
+		if fc.Enabled && master {
+			v.NextUpdateAt, v.NextUpdateText = nextUpdate(now, notBefore, nextTimer)
 		}
 		if ma, ok := maxAges[strings.ToUpper(name)]; ok {
 			v.MaxAge = ma.String()
@@ -461,15 +508,13 @@ func printFeedsStatus(rep feedsStatusReport, all bool) {
 			fmt.Printf("  Expiry:                  excluded by the authority after %s; its contribution leaves the kernel sets at the next successful full sync\n", v.ExpiresAt.Format("2006-01-02 15:04 UTC"))
 		}
 		fmt.Printf("  Enforcement:             %s\n", v.EnforcementText)
+		if v.NextUpdateText != "" {
+			fmt.Printf("  Next update:             %s\n", v.NextUpdateText)
+		} else if v.Enabled && !rep.Master {
+			fmt.Println("  Next update:             none (feeds are switched off: FEEDS_ENABLED)")
+		}
 		if v.NextPermittedRetry != nil {
 			fmt.Printf("  Next permitted request:  %s\n", fmtTime(v.NextPermittedRetry, now))
-		}
-		if v.Enabled {
-			next := rep.NextScheduled
-			if next == "" {
-				next = rep.ScheduleWindow
-			}
-			fmt.Printf("  Next scheduled refresh:  %s\n", next)
 		}
 		if v.RecordError != "" {
 			fmt.Printf("  ⚠️  %s\n", v.RecordError)
