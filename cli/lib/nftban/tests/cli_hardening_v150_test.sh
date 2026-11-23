@@ -159,6 +159,7 @@ botguard_env() {
     cat <<'STUBS'
 NFTBAN_LIB_DIR_REAL="$NFTBAN_LIB_DIR"
 _botguard_config_set() { return 0; }          # config write is a no-op success
+_botguard_save_switch() { return 0; }         # v1.238 D1/D2 writer: same no-op success
 systemctl() { return 1; }                     # daemon "not active"
 # The function sources lib/nft_fragment.sh; pre-define the symbol so the source
 # is a no-op and our stub wins. The stub FAILS (rc=1) to drive the error path.

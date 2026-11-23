@@ -110,6 +110,111 @@ _nftban_module_read_key() {
 #
 # KEY is optional: omit it to use the canonical variable for <module>; pass it
 # for the two-argument form kept for existing call sites.
+# -----------------------------------------------------------------------------
+# v1.238 D1/D2 (owner 2026-11-23): ONE rule for the DDoS, PortScan and BotGuard enable switches,
+# shared by the rebuild gate, the daemon (Go: same order, util.ModuleSwitchValue), health, status
+# and the CLI writer:
+#   conf.d/<module>/main.conf  <  conf.d/<module>/main.conf.local  <  nftban.conf.local
+#   (an explicit central value wins; the last definition counts)
+#   truth table nftban_bool_is_true; anything else is INVALID and resolves to off (never fail open).
+# Before v1.238 the shell gate ignored the central file while the DDoS/PortScan daemons read it and
+# accepted only "true": on lab4 the kernel ran the chains while the daemon and health said off.
+# GeoBan, LoginMon and feeds keep their own (already agreeing) rules.
+# -----------------------------------------------------------------------------
+_nftban_module_central_wins() { case "$1" in ddos|portscan|botguard) return 0 ;; *) return 1 ;; esac; }
+
+# nftban_module_enable_resolve <module> -> "<raw value>\t<source file>\t<valid|invalid|unset>"
+nftban_module_enable_resolve() {
+    local module="$1" key cfg="${NFTBAN_CONFIG_DIR:-/etc/nftban}" f v val="" src="" st
+    key="$(_nftban_module_enable_var "$module")" || return 2
+    local -a files=("$cfg/conf.d/${module}/main.conf" "$cfg/conf.d/${module}/main.conf.local")
+    _nftban_module_central_wins "$module" && files+=("$cfg/nftban.conf.local")
+    for f in "${files[@]}"; do
+        v="$(_nftban_module_read_key "$f" "$key")"
+        if [[ -n "$v" ]]; then val="$v"; src="$f"; fi
+    done
+    case "${val,,}" in
+        "")                                        st="unset" ;;
+        true|yes|1|on|enabled|false|no|0|off|disabled) st="valid" ;;
+        *)                                         st="invalid" ;;
+    esac
+    printf '%s\t%s\t%s\n' "$val" "$src" "$st"
+}
+
+# nftban_module_enable_state <module> [--json] — v1.238 D1/D2 status, option A (owner 2026-11-23): what
+# the configuration asks for, what nftband reports, what is observed in the kernel — shown separately,
+# no new state file. CONSISTENT when all three agree; INCONSISTENT when they conflict; UNKNOWN when a
+# source cannot be read. A chain in the kernel alone does not prove a reload completed (a failed
+# reload is reported by the command that ran it).
+nftban_module_enable_state() {
+    local module="$1" json="${2:-}" rb val src validity cfg_on daemon="unknown" kernel="unknown" chain state reason=""
+    rb=$(nftban_module_enable_resolve "$module") || return 2
+    IFS=$'\t' read -r val src validity <<<"$rb"
+    nftban_module_effective_enabled "$module" >/dev/null 2>&1 && cfg_on=true || cfg_on=false
+    local sock="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock" raw dj
+    if [[ -S "$sock" ]] && command -v socat >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 \
+       && raw=$(echo '{"method":"modules","params":{}}' | timeout 5 socat -t 5 - "UNIX-CONNECT:$sock" 2>/dev/null); then
+        dj=$(jq -r --arg m "$module" '[.data[]? | select(.name==$m) | .enabled][0] // "absent"' <<<"$raw" 2>/dev/null) || dj=""
+        case "$dj" in true) daemon=true ;; false) daemon=false ;; absent) daemon=false ;; *) daemon=unknown ;; esac
+    fi
+    case "$module" in ddos) chain=ddos_protection ;; portscan) chain=portscan_detection ;; botguard) chain=http_bot_guard ;; *) chain="" ;; esac
+    if [[ -n "$chain" ]] && command -v nft >/dev/null 2>&1; then
+        local nerr
+        if nerr=$(nft list chain ip nftban "$chain" 2>&1 >/dev/null); then kernel=true
+        elif [[ "$nerr" == *"No such file"* || "$nerr" == *"does not exist"* ]]; then kernel=false
+        else kernel=unknown; fi
+    fi
+    if [[ "$daemon" == unknown || "$kernel" == unknown ]]; then
+        state=UNKNOWN; reason="daemon=$daemon kernel=$kernel"
+    elif [[ "$cfg_on" == "$daemon" && "$cfg_on" == "$kernel" ]]; then
+        state=CONSISTENT
+    else
+        state=INCONSISTENT; reason="config=$cfg_on daemon=$daemon kernel=$kernel"
+    fi
+    [[ "$validity" == invalid ]] && reason="${reason:+$reason; }invalid value '$val' in $src (treated as off)"
+    if [[ "$json" == "--json" ]]; then
+        jq -n -c --arg key "$(_nftban_module_enable_var "$module")" --arg val "$val" --arg src "$src" --arg validity "$validity" \
+            --argjson cfg "$cfg_on" --arg daemon "$daemon" --arg kernel "$kernel" --arg state "$state" --arg reason "$reason" \
+            '{config: {enabled: $cfg, key: $key, value: (if $val == "" then null else $val end),
+                       source: (if $src == "" then null else $src end), validity: $validity},
+              daemon: (if $daemon == "unknown" then null else ($daemon == "true") end),
+              kernel: (if $kernel == "unknown" then null else ($kernel == "true") end),
+              state: $state, reason: (if $reason == "" then null else $reason end)}'
+        return 0
+    fi
+    printf '  Configuration:  %s%s\n' "$([[ $cfg_on == true ]] && echo enabled || echo disabled)" "${src:+ ($(_nftban_module_enable_var "$module")=\"$val\" in $src)}"
+    [[ "$validity" == invalid ]] && printf '  ERROR:          invalid value "%s" for %s in %s (treated as disabled)\n' "$val" "$(_nftban_module_enable_var "$module")" "$src"
+    printf '  Daemon:         %s\n' "$(case $daemon in true) echo enabled;; false) echo disabled;; *) echo 'UNKNOWN (nftband did not answer)';; esac)"
+    printf '  Kernel:         %s\n' "$(case $kernel in true) echo "chain $chain present";; false) echo "chain $chain absent";; *) echo 'UNKNOWN (could not read)';; esac)"
+    printf '  State:          %s%s\n' "$state" "${reason:+ ($reason)}"
+}
+
+# nftban_module_enable_state_merge <module> <json> — add .enable_state to a status JSON document.
+nftban_module_enable_state_merge() {
+    local es; es=$(nftban_module_enable_state "$1" --json 2>/dev/null) || es=""
+    if [[ -n "$es" ]] && jq -e . >/dev/null 2>&1 <<<"$2"; then
+        jq -c --argjson es "$es" 'if (type == "object" and has("data") and (.data|type) == "object") then .data.enable_state = $es else . + {enable_state: $es} end' <<<"$2"
+    else
+        printf '%s\n' "$2"
+    fi
+}
+
+# nftban_module_status_with_state <module> <json_mode> <status function> — run a module's existing
+# status and add the config / daemon / kernel block (text) or .enable_state (JSON); its rc is kept.
+nftban_module_status_with_state() {
+    local module="$1" jm="$2" fn="$3" out rc=0
+    if [[ "$jm" == "true" ]]; then
+        out=$("$fn" "$jm") || rc=$?
+        nftban_module_enable_state_merge "$module" "$out"
+        return $rc
+    fi
+    "$fn" "$jm" || rc=$?
+    echo ""
+    echo "Enable switch (configuration / daemon / kernel):"
+    nftban_module_enable_state "$module" || true
+    return $rc
+}
+
 nftban_module_effective_enabled() {
     local module="$1" key="${2:-}"
     if [[ -z "$key" ]]; then
@@ -132,6 +237,11 @@ nftban_module_effective_enabled() {
     [[ -n "$v" ]] && val="$v"
     v="$(_nftban_module_read_key "${base}.local" "$key")"
     [[ -n "$v" ]] && val="$v"
+    # v1.238 D1/D2: an explicit central value wins for ddos / portscan / botguard (see above).
+    if _nftban_module_central_wins "$module"; then
+        v="$(_nftban_module_read_key "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" "$key")"
+        [[ -n "$v" ]] && val="$v"
+    fi
 
     # ⛔ DELIBERATE BEHAVIOUR CHANGE. This was `[[ "$val" == "true" ]]`, so a host
     #    declaring DDOS_ENABLED="yes" — an explicit operator request to enable —
@@ -170,6 +280,13 @@ nftban_module_set_enabled() {
         return 2
     }
     local local_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/${module}/main.conf.local"
+    # v1.238 D1/D2 (owner 2026-11-23): write only to an operator file — the central
+    # nftban.conf.local when the key is explicitly defined there (it wins), otherwise the module
+    # .local (even if the current value comes from the package .conf).
+    local central="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
+    if _nftban_module_central_wins "$module" && grep -qE "^[[:space:]]*${key}=" "$central" 2>/dev/null; then
+        local_conf="$central"
+    fi
     mkdir -p "$(dirname "$local_conf")" || return 1
     if grep -q "^${key}=" "$local_conf" 2>/dev/null; then
         sed -i "s/^${key}=.*/${key}=\"${want}\"/" "$local_conf" || return 1

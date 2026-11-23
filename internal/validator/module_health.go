@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/procenv"
+	"github.com/itcmsgr/nftban/internal/util"
 )
 
 // ConfigDir is the base config directory. Overridable for testing.
@@ -86,7 +87,7 @@ func evaluateBotGuard(doc *RulesetDocument, svcState ServiceState) *ModuleHealth
 	h := &ModuleHealth{}
 
 	// Config axis
-	h.Config = readConfigBool("conf.d/botguard/main.conf.local", "conf.d/botguard/main.conf", "HTTP_BOTGUARD_ENABLED")
+	h.Config = readModuleSwitch("conf.d/botguard/main.conf", "HTTP_BOTGUARD_ENABLED")
 	if h.Config == ConfigDisabled {
 		return h // disabled → skip all other axes
 	}
@@ -219,7 +220,7 @@ func evaluateDDoS(doc *RulesetDocument) *ModuleHealth {
 	h := &ModuleHealth{}
 
 	// Config axis
-	h.Config = readConfigBool("conf.d/ddos/main.conf.local", "conf.d/ddos/main.conf", "DDOS_ENABLED")
+	h.Config = readModuleSwitch("conf.d/ddos/main.conf", "DDOS_ENABLED")
 
 	// Structural axis: 4 required chains in IPv4.
 	// GAP-D1: Also check IPv6 if ip6 table exists — DDoS chains should
@@ -362,7 +363,7 @@ func evaluateDDoS(doc *RulesetDocument) *ModuleHealth {
 func evaluatePortscan(doc *RulesetDocument) *ModuleHealth {
 	h := &ModuleHealth{}
 
-	h.Config = readConfigBool("conf.d/portscan/main.conf.local", "conf.d/portscan/main.conf", "PORTSCAN_ENABLED")
+	h.Config = readModuleSwitch("conf.d/portscan/main.conf", "PORTSCAN_ENABLED")
 
 	// v1.229.7 PR-3A: mode-aware, symmetric with evaluateDDoS. Before this the
 	// portscan arm demanded portscan_detection whenever PORTSCAN_ENABLED=true,
@@ -865,6 +866,49 @@ func readConfigBool(localPath, basePath, key string) ConfigState {
 		}
 	}
 	return ConfigDisabled
+}
+
+// readModuleSwitch — v1.238 D1/D2 (owner 2026-11-23): the enable switch of DDoS, PortScan and BotGuard,
+// resolved like every other reader: main.conf, then main.conf.local, then the central nftban.conf.local
+// (an explicit central value wins); the LAST definition in each file counts; truth table
+// module.SwitchValue (true|yes|1|on|enabled). Before this, health read the first line of the module
+// .local, accepted only "true" and ignored the central file, so it reported a module off while the
+// kernel enforced it (lab4).
+func readModuleSwitch(basePath, key string) ConfigState {
+	val, found := "", false
+	for _, p := range []string{basePath, basePath + ".local", "nftban.conf.local"} {
+		if v, ok := readLastKeyFromFile(filepath.Join(ConfigDir, p), key); ok {
+			val, found = v, true
+		}
+	}
+	if !found {
+		return ConfigDisabled
+	}
+	if on, _ := util.ModuleSwitchValue(val); on {
+		return ConfigEnabled
+	}
+	return ConfigDisabled
+}
+
+// readLastKeyFromFile returns the last KEY=value definition in a shell config file.
+func readLastKeyFromFile(path, key string) (string, bool) {
+	data, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return "", false
+	}
+	prefix := key + "="
+	val, found := "", false
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, prefix) {
+			v := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+			if i := strings.Index(v, " #"); i >= 0 && v[0] != '"' && v[0] != '\'' {
+				v = v[:i]
+			}
+			val, found = strings.Trim(strings.TrimSpace(v), "\"'"), true
+		}
+	}
+	return val, found
 }
 
 // readKeyFromFile reads a KEY="value" line from a shell config file.

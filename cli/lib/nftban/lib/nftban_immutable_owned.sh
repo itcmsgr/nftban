@@ -593,6 +593,88 @@ nftban_master_switch_preflight() {
     return 1
 }
 
+# nftban_module_switch_preflight <installed version> : v1.238 D1/D2 (owner 2026-11-23). v1.238 resolves
+# the DDoS / PortScan / BotGuard enable switches with ONE rule (module main.conf < main.conf.local <
+# central nftban.conf.local, an explicit central value wins; true|yes|1|on|enabled) and fixes the
+# BotGuard daemon, which ignored every central HTTP_BOT* key. Before the upgrade changes what this host
+# enforces, compare today's decision (what the kernel follows on versions before 1.238: module files only;
+# DDoS/PortScan via the shell gate table, BotGuard via the daemon table true|yes|1|on) with the new one.
+# Agree -> proceed. Differ -> STOP before any change, name module, key and files, and say how to resolve
+# with a text editor (the installed CLI predates the new rule). Upgrades from >= 1.238 and installs
+# without a previous version are not affected. Returns 0 = proceed, 1 = stop.
+_nmsp_val() { # <file> <key> -> last value, quotes/comment stripped; rc 1 when not defined
+    [ -r "$1" ] || return 1
+    _nmsp_l=$(grep -E "^[[:space:]]*$2=" "$1" 2>/dev/null | tail -n 1)
+    [ -n "$_nmsp_l" ] || return 1
+    _nmsp_l=${_nmsp_l#*=}
+    case $_nmsp_l in
+        \"*) _nmsp_l=${_nmsp_l#\"}; _nmsp_l=${_nmsp_l%%\"*} ;;
+        \'*) _nmsp_l=${_nmsp_l#\'}; _nmsp_l=${_nmsp_l%%\'*} ;;
+        *)   _nmsp_l=${_nmsp_l%%#*}; _nmsp_l=$(printf '%s' "$_nmsp_l" | tr -d '[:space:]') ;;
+    esac
+    printf '%s' "$_nmsp_l"
+}
+_nmsp_on() { # <value> <table: new|bgold>
+    _nmsp_lc=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
+    case $2:$_nmsp_lc in
+        new:true|new:yes|new:1|new:on|new:enabled) return 0 ;;
+        bgold:true|bgold:yes|bgold:1|bgold:on) return 0 ;;
+    esac
+    return 1
+}
+nftban_module_switch_preflight() {
+    _nmsp_old=${1:-}
+    [ -n "$_nmsp_old" ] || return 0
+    _nmsp_maj=${_nmsp_old%%.*}; _nmsp_rest=${_nmsp_old#*.}; _nmsp_min=${_nmsp_rest%%.*}
+    case "$_nmsp_maj$_nmsp_min" in *[!0-9]*|'') return 0 ;; esac
+    if [ "$_nmsp_maj" -gt 1 ] || { [ "$_nmsp_maj" -eq 1 ] && [ "$_nmsp_min" -ge 238 ]; }; then return 0; fi
+    _nmsp_d=${NFTBAN_CONFIG_DIR:-/etc/nftban}; _nmsp_c=$_nmsp_d/nftban.conf.local; _nmsp_stop=0
+    for _nmsp_m in ddos portscan botguard; do
+        case $_nmsp_m in ddos) _nmsp_k=DDOS_ENABLED; _nmsp_t=new; _nmsp_n=DDoS ;;
+                         portscan) _nmsp_k=PORTSCAN_ENABLED; _nmsp_t=new; _nmsp_n=PortScan ;;
+                         botguard) _nmsp_k=HTTP_BOTGUARD_ENABLED; _nmsp_t=bgold; _nmsp_n=BotGuard ;; esac
+        _nmsp_b=$_nmsp_d/conf.d/$_nmsp_m/main.conf; _nmsp_mv=""; _nmsp_mf=""
+        for _nmsp_f in "$_nmsp_b" "$_nmsp_b.local"; do
+            if _nmsp_x=$(_nmsp_val "$_nmsp_f" "$_nmsp_k"); then _nmsp_mv=$_nmsp_x; _nmsp_mf=$_nmsp_f; fi
+        done
+        _nmsp_v=$_nmsp_mv; _nmsp_vf=$_nmsp_mf
+        if _nmsp_x=$(_nmsp_val "$_nmsp_c" "$_nmsp_k"); then _nmsp_v=$_nmsp_x; _nmsp_vf=$_nmsp_c; fi
+        if _nmsp_on "$_nmsp_mv" "$_nmsp_t"; then _nmsp_o=ON; else _nmsp_o=OFF; fi
+        if _nmsp_on "$_nmsp_v" new; then _nmsp_w=ON; else _nmsp_w=OFF; fi
+        if [ "$_nmsp_o" != "$_nmsp_w" ]; then
+            _nmsp_stop=1
+            echo "nftban:   $_nmsp_n ($_nmsp_k): today $_nmsp_o (\"$_nmsp_mv\" in ${_nmsp_mf:-defaults}); after the upgrade $_nmsp_w (\"$_nmsp_v\" in ${_nmsp_vf:-defaults})." >&2
+            if [ "$_nmsp_vf" = "$_nmsp_c" ]; then
+                echo "nftban:     keep today's behaviour: delete the $_nmsp_k line from $_nmsp_c" >&2
+                echo "nftban:     or apply the central value: set $_nmsp_k=\"$_nmsp_v\" in $_nmsp_b.local" >&2
+            else
+                echo "nftban:     keep today's behaviour: set $_nmsp_k=\"$(_nmsp_on "$_nmsp_mv" "$_nmsp_t" && echo true || echo false)\" in $_nmsp_b.local" >&2
+            fi
+        fi
+    done
+    # BotGuard: central HTTP_BOT* keys are ignored before 1.238 and apply after it. Only keys whose
+    # value differs from what the module files give today change behaviour.
+    if [ -r "$_nmsp_c" ]; then
+        _nmsp_bb=$_nmsp_d/conf.d/botguard/main.conf
+        for _nmsp_k in $(grep -oE '^[[:space:]]*HTTP_BOT[A-Z0-9_]*=' "$_nmsp_c" 2>/dev/null | tr -d ' \t=' | sort -u); do
+            [ "$_nmsp_k" = HTTP_BOTGUARD_ENABLED ] && continue
+            _nmsp_cv=$(_nmsp_val "$_nmsp_c" "$_nmsp_k") || continue
+            _nmsp_mv=""; _nmsp_set=0
+            for _nmsp_f in "$_nmsp_bb" "$_nmsp_bb.local"; do
+                if _nmsp_x=$(_nmsp_val "$_nmsp_f" "$_nmsp_k"); then _nmsp_mv=$_nmsp_x; _nmsp_set=1; fi
+            done
+            [ "$_nmsp_set" -eq 1 ] && [ "$_nmsp_mv" = "$_nmsp_cv" ] && continue
+            _nmsp_stop=1
+            echo "nftban:   BotGuard $_nmsp_k: set in $_nmsp_c (ignored before 1.238) and different from the BotGuard files; it will take effect after the upgrade." >&2
+            echo "nftban:     keep today's behaviour: delete the $_nmsp_k line from $_nmsp_c — or apply it: copy that line to $_nmsp_bb.local" >&2
+        done
+    fi
+    [ "$_nmsp_stop" -eq 0 ] && return 0
+    echo "nftban: upgrade STOPPED before any change: v1.238 resolves the module settings above differently on this host (see each line)." >&2
+    echo "nftban: nothing was changed; the installed version keeps running. Edit the files as shown (any text editor), then repeat the upgrade." >&2
+    return 1
+}
+
 # Shared entry point: package (DEB preinst / RPM %pre) AND every CLI path that replaces the
 # forward chain (firewall rebuild/init/reload/reset/restore/takeover, update git/local).
 # $1 = what is stopped (default: the package install/upgrade). Returns 0 = proceed, 1 = stop.

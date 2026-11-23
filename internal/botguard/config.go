@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/internal/constants"
+	"github.com/itcmsgr/nftban/internal/util"
 )
 
 // Config holds all bot guard configuration.
@@ -201,8 +202,11 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	// 3. Load central override (nftban.conf.local — highest priority)
-	// configDir is two levels up: conf.d/botguard/main.conf → conf.d → /etc/nftban
-	configDir := filepath.Dir(filepath.Dir(path))
+	// v1.238 D1/D2 (BUG-BOTGUARD-DAEMON-CENTRAL-LOCAL-PATH-WRONG, lab4 2026-11-23): the config dir is
+	// THREE levels up (main.conf → conf.d/botguard → conf.d → /etc/nftban). Two levels resolved to
+	// /etc/nftban/conf.d/nftban.conf.local, which does not exist, so every central HTTP_BOT* override
+	// was silently ignored.
+	configDir := filepath.Dir(filepath.Dir(filepath.Dir(path)))
 	centralLocal := filepath.Join(configDir, "nftban.conf.local")
 	if err := applyConfigFile(cfg, centralLocal); err != nil {
 		return nil, err
@@ -249,7 +253,8 @@ func applyConfigFile(cfg *Config, path string) error {
 func applyConfigKey(cfg *Config, key, value string) {
 	switch key {
 	case "HTTP_BOTGUARD_ENABLED":
-		cfg.Enabled = parseBool(value)
+		// v1.238 D1/D2: the module truth table (adds "enabled", same as the shell gate)
+		cfg.Enabled, _ = util.ModuleSwitchValue(value)
 	case "HTTP_BOT_FAST_LOOP_INTERVAL":
 		if v, err := strconv.Atoi(value); err == nil && v > 0 {
 			cfg.LoopInterval = time.Duration(v) * time.Second

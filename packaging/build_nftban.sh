@@ -859,6 +859,11 @@ trap '_nftban_rc=\$?; if [ "\$_nftban_rc" -ne 0 ]; then nftban_immut_relock_owne
 # any change (absent = the agreed default). Same reader as every other.
 nftban_master_switch_preflight || exit 1
 nftban_forward_unmanaged_preflight || exit 1
+# v1.238 D1/D2 (owner 2026-11-23): on upgrade (\$1 = 2), stop before the unified module-switch rule
+# would change what this host enforces. The installed version comes from the rpm database.
+if [ "\$1" -ge 2 ] 2>/dev/null; then
+    nftban_module_switch_preflight "\$(rpm -q --qf '%%{VERSION}' nftban-core 2>/dev/null | head -n 1)" || exit 1
+fi
 # =============================================================================
 # v108-item7c: Deprecated nftban-ui / GOTH GUI unit cleanup (NEW-package-side)
 # =============================================================================
