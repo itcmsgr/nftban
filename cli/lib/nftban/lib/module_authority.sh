@@ -158,10 +158,16 @@ nftban_module_enable_state() {
         case "$dj" in true) daemon=true ;; false) daemon=false ;; absent) daemon=false ;; *) daemon=unknown ;; esac
     fi
     case "$module" in ddos) chain=ddos_protection ;; portscan) chain=portscan_detection ;; botguard) chain=http_bot_guard ;; *) chain="" ;; esac
+    # Kernel: present / absent only when nft says so; any other failure stays UNKNOWN (registry
+    # contract: an unknown observation never becomes "absent"). Error class from the shared probe lib.
     if [[ -n "$chain" ]] && command -v nft >/dev/null 2>&1; then
-        local nerr
-        if nerr=$(nft list chain ip nftban "$chain" 2>&1 >/dev/null); then kernel=true
-        elif [[ "$nerr" == *"No such file"* || "$nerr" == *"does not exist"* ]]; then kernel=false
+        local nerr nrc=0
+        declare -F nftban_nft_probe_error_class >/dev/null 2>&1 \
+            || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_probe.sh" >/dev/null 2>&1 || true
+        nerr=$(nft list chain ip nftban "$chain" 2>&1 >/dev/null) || nrc=$?
+        if [[ $nrc -eq 0 ]]; then kernel=true
+        elif declare -F nftban_nft_probe_error_class >/dev/null 2>&1 \
+             && [[ "$(nftban_nft_probe_error_class "$nerr" "$nrc")" == NOT_FOUND ]]; then kernel=false
         else kernel=unknown; fi
     fi
     if [[ "$daemon" == unknown || "$kernel" == unknown ]]; then
