@@ -1259,7 +1259,7 @@ COMMANDS:
     restart             Restart login monitoring service
     logs [N]            Show last N lines of logs (default: 50)
     test                Send a test alert email
-    run                 Run login monitoring (used by service)
+    run                 Run the legacy shell login monitor in the foreground
     mode [MODE]         Set email alert mode (realtime|digest|both)
     digest [ACTION]     Manage daily digest (status|send|clear)
     config [--json]     Show login monitoring configuration
@@ -1295,16 +1295,34 @@ MONITORED SERVICES (auto-detected):
     Panel:
       • DirectAdmin       - Control panel login failures
 
-BAN THRESHOLDS:
-    Default: 5 failed attempts in 5 minutes = Auto-ban
+BAN THRESHOLDS (as of v1.238):
+    The loginmon module in nftband bans by SCORE, not by a per-service
+    attempt count. Each detected failure adds a fixed number of points to
+    the source IP; the score decays over time. Settings are read from
+    /etc/nftban/conf.d/login/scorer.conf (override in scorer.conf.local):
+      THRESHOLD_TEMP_BAN=45       # score for a temporary ban
+      THRESHOLD_ESCALATE=65       # score for escalated bans (by ban count:
+                                  #   2nd ban 4h, 3rd 12h, later 24h)
+      THRESHOLD_PERMANENT=100     # score for a permanent ban
+      TEMP_BAN_DURATION=15m       # length of the temporary ban
+      SCORE_DECAY_INTERVAL=5m     # parsed but NOT applied: decay runs every 5m
+      SCORE_DECAY_AMOUNT=5        # points removed per decay step
+      IP_RETENTION_DURATION=24h   # how long an idle IP is remembered
+    Example: a failed wp-login.php POST adds 20 points, so 3 failures
+    before decay (60 points) reach THRESHOLD_TEMP_BAN.
+    Only login attempts count: lost-password, reset and register requests
+    to wp-login.php do not. A confirmed successful login (WordPress, SSH,
+    DirectAdmin, Roundcube, Dovecot) clears that IP's score, at most once
+    per TEMP_BAN_DURATION; it never lifts an existing ban.
+    The per-signal *_SCORE keys in scorer.conf are parsed but not applied;
+    the detectors use fixed scores (see the comments in scorer.conf).
 
-    All services use the same threshold for simplicity:
-      LOGIN_FAIL_THRESHOLD=5      # Failed attempts before ban
-      LOGIN_FAIL_WINDOW=300       # Time window (300 sec = 5 min)
-
-    Override per-service in /etc/nftban/conf.d/login_thresholds.conf:
-      LOGIN_SERVICE_SSH_FAIL_THRESHOLD=3        # Stricter for SSH
-      LOGIN_SERVICE_WORDPRESS_FAIL_THRESHOLD=10 # More lenient for WP
+    The LOGIN_SERVICE_*_FAIL_THRESHOLD / _FAIL_WINDOW / _BAN_* keys in
+    /etc/nftban/conf.d/login/services.conf are NOT read by nftband. Some
+    are read only by the legacy shell monitor ('nftban login run', run in
+    the foreground; its systemd service was retired in v1.23.0).
+    LOGIN_MODE=classic selects the daemon's journal/log input, not the
+    shell monitor.
 
 TARGETS:
     ssh                 SSH login monitoring
@@ -1341,8 +1359,8 @@ CONFIGURATION:
     - NFTBAN_LOGIN_ALERT_EMAIL: Destination email address
     - NFTBAN_LOGIN_ALERT_GEOIP: Include GeoIP information
     - NFTBAN_LOGIN_ALERT_FORMAT: html or text
-    - LOGIN_FAIL_THRESHOLD: Failed attempts before ban (default: 5)
-    - LOGIN_FAIL_WINDOW: Time window in seconds (default: 300)
+
+    Ban scoring (nftband loginmon): /etc/nftban/conf.d/login/scorer.conf
 
 DAEMON (loginmon module):
     Service: nftband.service (built-in loginmon module)
