@@ -99,6 +99,14 @@ echo "=== help ==="
 grep -q 'not a$' "$LIB/cli/cmd_geoban.sh" && grep -q 'global whitelist: feeds, detection modules' "$LIB/cli/cmd_geoban.sh" \
   && ok "help states the exception is not a global whitelist" || no "help wording"
 
+grep -q 'GeoBan health (nftban health / validator, contract M81-3)' "$LIB/cli/cmd_geoban.sh" \
+  && ok "help states what M81-3 checks today" || no "M81-3 help note missing"
+SBIN="$(cd "$LIB/../../.." && pwd)/cli/sbin/nftban"
+stub=$(grep -E '^ +search\|export\|' "$SBIN" || true)
+if [[ -n "$stub" && "$stub" != *geoban* ]]; then
+    ok "dispatcher does not shadow 'nftban geoban help' with the two-line stub (batch 1: notes were unreachable)"
+else no "geoban still in the dispatcher help stub"; fi
+
 echo ""
 echo "RESULTS: PASS=$PASS FAIL=$FAIL"
 [[ $FAIL -eq 0 ]]
