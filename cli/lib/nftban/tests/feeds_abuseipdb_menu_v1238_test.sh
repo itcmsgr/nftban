@@ -119,6 +119,30 @@ help=$(NFTBAN_LIB_DIR=/nonexistent bash -c 'eval "$1"; eval "$2"; _nftban_feeds_
 [[ "$help" == *"nftban feeds abuseipdb <command>"* && "$help" == *"key set | status | remove"* && $(wc -l <<<"$help") -gt 40 ]] \
     && ok "feeds help is the full help and includes the abuseipdb commands" || no "feeds help content"
 
+echo "=== one downloader; property reader = Go reader order (v1.238 feeds bugs) ==="
+pr=$(awk '/^(_nftban_feeds_conf_value|nftban_feeds_get_property)\(\) \{/ {f=1} f {print} f && /^\}/ {f=0}' "$FEEDS_SH")
+mkdir -p "$W/etc/conf.d"
+printf '%s\n' 'FEED_X_ENABLED="false"' 'FEED_X_URL="https://a.invalid/x"   # comment' 'FEED_Y_ENABLED=true # unquoted' "FEED_Z_LIMIT='5'" > "$W/etc/conf.d/feeds.conf"
+printf '%s\n' 'FEED_X_ENABLED="true"' > "$W/etc/conf.d/feeds.conf.local"
+printf '%s\n' '# FEED_X_URL="https://commented.invalid"' > "$W/etc/nftban.conf.local"
+prop(){ NFTBAN_FEEDS_CONFIG="$W/etc/conf.d/feeds.conf" NFTBAN_CONFIG_DIR="$W/etc" bash -c 'eval "$1"; nftban_feeds_get_property "$2" "$3"' _ "$pr" "$1" "$2"; }
+[[ "$(prop X ENABLED)" == "true" ]] && ok "feeds.conf.local overrides feeds.conf (as the Go reader)" || no "feeds.conf.local ignored" "$(prop X ENABLED)"
+[[ "$(prop X URL)" == "https://a.invalid/x" && "$(prop Y ENABLED)" == "true" && "$(prop Z LIMIT)" == "5" && -z "$(prop Q URL)" ]] \
+    && ok "values read like the Go reader (quotes, trailing comment, commented line ignored, unknown empty)" || no "value parsing" "$(prop X URL)|$(prop Y ENABLED)|$(prop Z LIMIT)"
+printf '%s\n' 'FEED_X_ENABLED="false"' > "$W/etc/nftban.conf.local"
+[[ "$(prop X ENABLED)" == "false" ]] && ok "nftban.conf.local is applied last (highest)" || no "central override" "$(prop X ENABLED)"
+us=$(awk '/^nftban_feeds_update_single\(\) \{/ {f=1} f {print} f && /^\}/ {exit}' "$FEEDS_SH")
+ld=$(grep -m1 -n '"$_core" feeds update "$feed_name"' <<<"$us" || true); ld="${ld%%:*}"
+lc=$(grep -m1 -n 'if ! curl ' <<<"$us" || true); lc="${lc%%:*}"
+[[ -n "$ld" && -n "$lc" && $ld -lt $lc ]] && ok "per-feed update hands off to nftban-core before any shell download" || no "update_single delegation" "core=$ld curl=$lc"
+if grep -qF 'NFTBAN_FEEDS_CACHE_DIR}/${feed_name}.tmp' <<<"$us" || ! grep -qF 'mktemp -d' <<<"$us"; then
+    no "fallback still downloads into the service account's cache dir"
+else
+    ok "fallback download goes to a private mktemp directory, never /var/cache/nftban/feeds"
+fi
+en2=$(awk '/^nftban_feeds_enable\(\) \{/ {f=1} f {print} f && /^\}/ {exit}' "$FEEDS_SH")
+grep -qF 'if [[ -n "$feed_format" || -x "$core" ]]; then' <<<"$en2" && ok "enable downloads every feed through nftban-core when installed" || no "enable delegation"
+
 echo "=== per-feed last/next update lines (format the one reader) ==="
 hl=$(awk '/^_nftban_feeds_refresh_(short|long)\(\) \{/ {f=1} f {print} f && /^\}/ {f=0}' "$CMD_FEEDS")
 J='{"feeds":[{"feed":"abuseipdb","last_success_at":"2026-11-21T03:22:10Z","next_update_at":"2026-11-23T03:20:00Z","next_update_text":"2026-11-23 03:20 + up to 15 min (host time; daily feeds timer); earlier runs skip it until 2026-11-22 05:00 UTC (back-off or minimum interval)","next_permitted_retry":"2026-11-22T05:00:00Z","last_attempt":{"ok":false,"reason":"abuseipdb: rate_limited (HTTP 429)"}},{"feed":"spamhaus_drop","last_success_at":null,"next_update_at":"2026-11-22T03:20:00Z","next_update_text":"Sun 2026-11-22 03:27:41 UTC (daily feeds timer)"}]}'
