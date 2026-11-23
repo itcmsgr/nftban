@@ -698,6 +698,16 @@ nftban_health_cmd_truth() {
                 *)      entries="n/a (shared blacklist set; not counted per source — see nftban stats)" ;;
             esac
         fi
+        # v1.238 part B3 (owner 2026-11-21): the validator's feeds "loaded"/"stale" come from
+        # snapshot FILE AGE (any enabled feed newer than 7 days), which proves a snapshot is
+        # available, not that it is loaded in the kernel. Wording only: the JSON state and the
+        # verdict are unchanged; the per-feed state is `nftban feeds status`.
+        if [[ "$sub" == "feeds" ]]; then
+            case "$state" in
+                loaded) state="available"; entries="a recent snapshot is on disk (< 7 days); kernel loading not checked here (nftban feeds status)" ;;
+                stale)  entries="no enabled feed has a snapshot newer than 7 days (nftban feeds status)" ;;
+            esac
+        fi
         printf "  %-11s  %-9s  %s\n" "$sub" "$state" "$entries"
     done
 

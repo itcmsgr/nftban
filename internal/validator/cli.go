@@ -151,8 +151,14 @@ func (r *ValidationResult) PrintSummary() {
 			r.Modules.LoginMon.Config, r.Modules.LoginMon.Runtime, r.Modules.LoginMon.Effective)
 	}
 	if r.Modules.Blacklist != nil {
+		// v1.238: feeds "loaded" is a snapshot file-age check (a recent snapshot is available),
+		// not a kernel check; the text says so, the state value is unchanged.
+		feedsShown := r.Modules.Blacklist.Feeds.State
+		if feedsShown == "loaded" {
+			feedsShown = "loaded(snapshot available; kernel not checked)"
+		}
 		fmt.Printf("  Blacklist: manual=%s feeds=%s geoban=%s\n",
-			r.Modules.Blacklist.Manual.State, r.Modules.Blacklist.Feeds.State, r.Modules.Blacklist.Geoban.State)
+			r.Modules.Blacklist.Manual.State, feedsShown, r.Modules.Blacklist.Geoban.State)
 	}
 	fmt.Println()
 

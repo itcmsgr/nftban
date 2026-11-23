@@ -24,12 +24,13 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"os/user"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -47,78 +48,22 @@ import (
 // The nftban group keeps read access (unified exporter, operators); the service account no
 // longer owns the content root enforces. ok=false: no nftban group, the file stays root:root.
 // A variable so tests can run unprivileged.
-var feedFileOwner = func() (uid, gid int, ok bool) {
-	grp, err := user.LookupGroup("nftban")
-	if err != nil {
-		return 0, 0, false
-	}
-	g, err := strconv.Atoi(grp.Gid)
-	if err != nil {
-		return 0, 0, false
-	}
-	return 0, g, true
-}
+var feedFileOwner = feeds.FileOwner
 
-// writeFeedFile writes entries to outputFile as root:nftban 0640, correct AT CREATION. Every
-// operation happens inside the feed directory through os.Root (no path can leave it, no link is
-// followed out of it). The temp file is created exclusively (O_EXCL; a stale temp entry is
-// unlinked first, the link itself, never a target) with mode 0600, owned through its descriptor,
-// and only then widened to the declared 0640 (group read never precedes the right group), synced,
-// and renamed over the snapshot. rename(2) replaces a link at outputFile, never its target.
+// writeFeedFile writes entries to outputFile as root:nftban 0640, correct AT CREATION, through
+// the one feed-directory writer (feeds.WriteFeedDirFile: os.Root, exclusive 0600 temp file,
+// owned through its descriptor, widened to 0640, synced, renamed over the snapshot).
 func writeFeedFile(outputFile string, entries []string) error {
 	dir, name := filepath.Split(outputFile)
 	if dir == "" {
 		dir = "."
 	}
-	tmpName := name + ".tmp"
-	root, err := os.OpenRoot(dir)
-	if err != nil {
-		return fmt.Errorf("failed to open feeds directory: %w", err)
-	}
-	defer func() { _ = root.Close() }()
-	if err := root.Remove(tmpName); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to clear stale temp file: %w", err)
-	}
-	out, err := root.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
-	}
-	discard := func() { _ = root.Remove(tmpName) }
-	fail := func(e error) error {
-		_ = out.Close()
-		discard()
-		return e
-	}
-	if uid, gid, ok := feedFileOwner(); ok {
-		if err := out.Chown(uid, gid); err != nil {
-			return fail(fmt.Errorf("chown feed file: %w", err))
-		}
-	}
-	// declared mode (fhs-spec /var/lib/nftban/feeds *.txt): group nftban reads, set after the owner
-	if err := out.Chmod(0o640); err != nil {
-		return fail(fmt.Errorf("chmod feed file: %w", err))
-	}
-	writer := bufio.NewWriter(out)
+	var b strings.Builder
 	for _, ip := range entries {
-		if _, err := fmt.Fprintln(writer, ip); err != nil {
-			return fail(fmt.Errorf("write failed: %w", err))
-		}
+		b.WriteString(ip)
+		b.WriteByte('\n')
 	}
-	if err := writer.Flush(); err != nil {
-		return fail(fmt.Errorf("flush failed: %w", err))
-	}
-	if err := out.Sync(); err != nil {
-		return fail(fmt.Errorf("sync failed: %w", err))
-	}
-	if err := out.Close(); err != nil {
-		discard()
-		return fmt.Errorf("close failed: %w", err)
-	}
-	if err := root.Rename(tmpName, name); err != nil {
-		discard()
-		return fmt.Errorf("failed to save feed file: %w", err)
-	}
-	return nil
+	return feeds.WriteFeedDirFile(dir, name, []byte(b.String()), feedFileOwner)
 }
 
 // selectFeedsForUpdate: no name = every enabled feed (timer path, unchanged); a name = only
@@ -197,6 +142,16 @@ func cmdFeeds(action string, cfg *nftbanconf.Config) error {
 		return cmdFeedsEnable(feedsConfig, feedName, false)
 	case "effective":
 		return cmdFeedsEffective(cfg)
+	case "status":
+		return cmdFeedsStatus(feedsConfig, cfg)
+	case "abuseipdb-key":
+		sub := ""
+		if len(os.Args) >= 4 {
+			sub = os.Args[3]
+		}
+		return cmdFeedsAbuseIPDBKey(cfg, sub)
+	case "abuseipdb-test":
+		return cmdFeedsAbuseIPDBTest(cfg)
 	case "resolve":
 		// v1.236 (design §7): records the operator's master decision. Called by
 		// `nftban feeds enable|disable` without a feed name, after the switch is set.
@@ -217,7 +172,7 @@ func cmdFeeds(action string, cfg *nftbanconf.Config) error {
 		}
 		return cmdFeedsUpdate(feedsDir, feedsConfig, feedName, cfg)
 	default:
-		return fmt.Errorf("unknown feeds action: %s\nUsage: nftban-core feeds [list|load|stats|update [FEED_NAME]|enable|disable|sync|effective] [FEED_NAME]", action)
+		return fmt.Errorf("unknown feeds action: %s\nUsage: nftban-core feeds [list|load|stats|status [--json] [--all] [--feed NAME]|update [FEED_NAME]|enable|disable|sync|effective|abuseipdb-key <set|status|remove>|abuseipdb-test [--json]] [FEED_NAME]", action)
 	}
 }
 
@@ -236,6 +191,7 @@ func cmdFeedsEffective(cfg *nftbanconf.Config) error {
 		"recorded":    d.Recorded,
 		"enforced":    d.Enforced,
 		"not_enabled": d.NotEnabled,
+		"expired":     d.Expired,
 		"reasons":     d.Reasons,
 		"texts":       d.Texts,
 	}
@@ -444,21 +400,33 @@ func cmdFeedsLoad(feedsDir string, cfg *nftbanconf.Config) error {
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println()
 
-	// Step 1: Load all feeds
-	fmt.Println("Step 1: Loading feeds from disk...")
-	ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet, feedsInfo, err := feeds.LoadAllFeeds(feedsDir)
+	// Step 1: load the feeds the ONE feed authority enforces (v1.238 D5-2): never a disabled,
+	// not-enabled or expired feed. The load stays additive (its callers' semantics); the daemon
+	// full sync is what removes entries.
+	fmt.Println("Step 1: Loading enforced feeds from disk...")
+	fd, err := feeds.Evaluate(cfg.ConfigDir, cfg.DataDir, cfg.FeedsEnabled)
+	if err != nil {
+		return fmt.Errorf("feed authority undecidable, nothing loaded: %w", err)
+	}
+	for _, t := range fd.Texts {
+		fmt.Printf("  ℹ️  %s\n", t)
+	}
+	if len(fd.Enforced) == 0 {
+		fmt.Println("  ⚠️  No enforced feeds: nothing to load")
+		return nil
+	}
+	ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet, err := feeds.LoadEnforcedFeeds(feedsDir, fd.Enforced)
 	if err != nil {
 		return fmt.Errorf("failed to load feeds: %w", err)
 	}
 
-	if len(feedsInfo) == 0 {
-		fmt.Println("  ⚠️  No feeds found")
+	totalEntries := len(ipv4Set) + len(ipv4CIDRSet) + len(ipv6Set) + len(ipv6CIDRSet)
+	if totalEntries == 0 {
+		fmt.Println("  ⚠️  Enforced feeds hold no entries: nothing to load")
 		return nil
 	}
 
-	totalEntries := len(ipv4Set) + len(ipv4CIDRSet) + len(ipv6Set) + len(ipv6CIDRSet)
-
-	fmt.Printf("  ✅ Loaded %d feeds\n", len(feedsInfo))
+	fmt.Printf("  ✅ Loaded %d enforced feeds: %s\n", len(fd.Enforced), strings.Join(fd.Enforced, ", "))
 	fmt.Printf("  ✅ Total IPv4: %d IPs + %d CIDRs\n", len(ipv4Set), len(ipv4CIDRSet))
 	fmt.Printf("  ✅ Total IPv6: %d IPs + %d CIDRs\n", len(ipv6Set), len(ipv6CIDRSet))
 	fmt.Println()
@@ -781,7 +749,19 @@ type FeedConfig struct {
 	Enabled     bool
 	Category    string
 	Description string
+	// v1.238 part B
+	Format            string        // "" = plain IP/CIDR list; "abuseipdb" = AbuseIPDB blacklist API
+	MinInterval       time.Duration // no new request sooner than this after the last success (0 = none)
+	ConfidenceMinimum int           // abuseipdb: 0 = provider default
+	Limit             int           // abuseipdb: 0 = provider default
 }
+
+// FeedFormatAbuseIPDB selects the AbuseIPDB blacklist provider (key from abuseIPDBKeyFile).
+const FeedFormatAbuseIPDB = "abuseipdb"
+
+// abuseIPDBKeyName is the credential file in the config dir (fhs-spec: root:root 0600). Fixed, not
+// configurable: the key is read from one declared, root-only place.
+const abuseIPDBKeyName = "abuseipdb.key"
 
 // cmdFeedsUpdate downloads every enabled feed, or only feedName when given, using native Go HTTP
 func cmdFeedsUpdate(feedsDir, configPath, feedName string, cfg *nftbanconf.Config) error {
@@ -826,27 +806,30 @@ func cmdFeedsUpdate(feedsDir, configPath, feedName string, cfg *nftbanconf.Confi
 	fmt.Println("Step 3: Downloading feeds...")
 	fmt.Println(strings.Repeat("-", 70))
 
-	successCount := 0
-	failCount := 0
-	totalIPs := 0
+	successCount, failCount, deferredCount, totalIPs := 0, 0, 0, 0
+	var failed, deferred []string
+	now := time.Now()
 
 	for i, feed := range enabledFeeds {
 		fmt.Printf("\n[%d/%d] %s\n", i+1, len(enabledFeeds), feed.Name)
 		fmt.Printf("  Category: %s\n", feed.Category)
-		fmt.Printf("  URL: %s\n", feed.URL)
-
-		// Download feed
-		feedFile := filepath.Join(feedsDir, strings.ToLower(feed.Name)+".txt")
-		ipCount, err := downloadAndParseFeed(feed.URL, feedFile)
-		if err != nil {
-			fmt.Printf("  ❌ Error: %v\n", err)
-			failCount++
-			continue
+		if feed.Format == FeedFormatAbuseIPDB {
+			fmt.Printf("  Provider: AbuseIPDB blacklist API (key: %s)\n", filepath.Join(cfg.ConfigDir, abuseIPDBKeyName))
+		} else {
+			fmt.Printf("  URL: %s\n", feed.URL)
 		}
 
-		fmt.Printf("  ✅ Downloaded: %d IPs/CIDRs\n", ipCount)
-		successCount++
-		totalIPs += ipCount
+		switch r := refreshOne(feed, feedsDir, cfg.ConfigDir, now); r.outcome {
+		case refreshDeferred:
+			deferredCount++
+			deferred = append(deferred, feed.Name)
+		case refreshFailed:
+			failCount++
+			failed = append(failed, feed.Name)
+		default:
+			successCount++
+			totalIPs += r.entries
+		}
 	}
 
 	fmt.Println()
@@ -854,26 +837,130 @@ func cmdFeedsUpdate(feedsDir, configPath, feedName string, cfg *nftbanconf.Confi
 	fmt.Println("Download Summary:")
 	fmt.Printf("  ✅ Success: %d feeds\n", successCount)
 	if failCount > 0 {
-		fmt.Printf("  ❌ Failed: %d feeds\n", failCount)
+		fmt.Printf("  ❌ Failed: %d feeds (%s)\n", failCount, strings.Join(failed, ", "))
+	}
+	if deferredCount > 0 {
+		fmt.Printf("  ⏸️  Deferred: %d feeds (%s)\n", deferredCount, strings.Join(deferred, ", "))
 	}
 	fmt.Printf("  📊 Total IPs/CIDRs: %d\n", totalIPs)
 	fmt.Println()
 
-	// Step 4: Auto-load feeds into nftables
-	if successCount > 0 {
-		fmt.Println("Step 4: Loading feeds into nftables...")
-		if err := cmdFeedsLoad(feedsDir, cfg); err != nil {
-			// Note: nftables kernel returns this as a string - no typed error available
-			if strings.Contains(err.Error(), "conflicting intervals") {
-				fmt.Printf("  ⚠️  Some feed IPs overlap with existing blocks (already protected)\n")
-			} else {
-				fmt.Printf("⚠️  Warning: failed to load feeds: %v\n", err)
-				fmt.Println("   You can load manually with: sudo nftban-core feeds load")
-			}
-		}
+	// Step 4 (v1.238 D5-2, owner GO 2026-11-20): the daemon's own full sync, not the additive
+	// load. It applies the ONE feed authority (enforced feeds only: disabled, not-enabled and
+	// expired feeds are dropped) in the daemon's single-writer atomic transaction with the
+	// never-ban split and protection rules. It runs whatever the download outcome, so an expiry
+	// or a disable takes effect even when every refresh failed. The daemon records the sync
+	// outcome (feeds/full-sync.status) itself.
+	fmt.Println("Step 4: Applying feeds through the daemon full sync...")
+	syncErr := runDaemonSync(false, "", 5*time.Minute)
+
+	// v1.238 part B: download and sync outcomes are separate and both decide the exit status. A
+	// failed download is non-zero even when the sync succeeded; a failed sync is non-zero even
+	// when every download succeeded.
+	return updateOutcome(feedName, failed, deferred, syncErr)
+}
+
+// Refresh outcomes of one feed.
+const (
+	refreshOK       = "ok"
+	refreshFailed   = "failed"
+	refreshDeferred = "deferred"
+)
+
+type refreshResult struct {
+	outcome string
+	entries int
+}
+
+// Fetchers (variables so tests use a mock).
+var (
+	fetchPlainFn     = fetchPlain
+	fetchAbuseIPDBFn = fetchAbuseIPDB
+)
+
+// refreshOne refreshes one feed (v1.238 part B). No request is sent before the provider's
+// back-off or the feed's minimum interval (deferred: the record is not touched, nothing was
+// attempted). A failed request leaves the snapshot and its last successful refresh time as they
+// were and records the failure; a success replaces the snapshot first, then records it.
+func refreshOne(feed FeedConfig, feedsDir, configDir string, now time.Time) refreshResult {
+	rec, _, rerr := feeds.ReadRefresh(feedsDir, feed.Name)
+	if rerr != nil {
+		fmt.Printf("  ⚠️  %v (replaced by the next outcome)\n", rerr)
+	}
+	if next := feeds.NextPermitted(rec, feed.MinInterval, now); !next.IsZero() {
+		fmt.Printf("  ⏸️  Deferred: next permitted request %s (in %s)\n", next.UTC().Format("2006-01-02 15:04 UTC"), next.Sub(now).Round(time.Minute))
+		return refreshResult{outcome: refreshDeferred}
 	}
 
-	return nil
+	var res *fetchResult
+	var err error
+	if feed.Format == FeedFormatAbuseIPDB {
+		res, err = fetchAbuseIPDBFn(feed, configDir)
+	} else {
+		res, err = fetchPlainFn(feed.URL)
+	}
+	feedFile := filepath.Join(feedsDir, strings.ToLower(feed.Name)+".txt")
+	if err == nil {
+		// v1.238: root:nftban 0640 at creation, then atomic rename (writeFeedFile)
+		err = writeFeedFile(feedFile, res.entries)
+	}
+	if err != nil {
+		var notBefore time.Time
+		var rl feeds.RateLimitInfo
+		var pe *feeds.ProviderError
+		if errors.As(err, &pe) {
+			notBefore, rl = pe.NotBefore, pe.RateLimit
+		}
+		fmt.Printf("  ❌ Error: %v\n", err)
+		fmt.Println("     Snapshot not replaced; its last successful refresh time is unchanged.")
+		tr, werr := feeds.RecordFailure(feedsDir, feed.Name, err.Error(), notBefore, rl, time.Now())
+		reportRecord(feed.Name, tr, err.Error(), werr)
+		return refreshResult{outcome: refreshFailed}
+	}
+	tr, werr := feeds.RecordSuccess(feedsDir, feed.Name, len(res.entries), res.generatedAt, res.prov, time.Now())
+	reportRecord(feed.Name, tr, "", werr)
+	fmt.Printf("  ✅ Downloaded: %d IPs/CIDRs\n", len(res.entries))
+	if res.detail != "" {
+		fmt.Printf("     %s\n", res.detail)
+	}
+	if res.generatedAt != "" {
+		fmt.Printf("     Provider generated at: %s (provider time; the local refresh time is now)\n", res.generatedAt)
+	}
+	return refreshResult{outcome: refreshOK, entries: len(res.entries)}
+}
+
+// reportRecord prints a refresh-record write problem and the once-only transition line (the
+// journal of the feeds timer keeps it: transitions only, never one line per attempt).
+func reportRecord(feed, transition, reason string, werr error) {
+	if werr != nil {
+		fmt.Printf("  ⚠️  Could not write the refresh record for %s: %v\n", feed, werr)
+	}
+	switch transition {
+	case feeds.TransitionFailure:
+		fmt.Printf("  FEED-TRANSITION feed=%s state=failing reason=%q\n", strings.ToLower(feed), reason)
+	case feeds.TransitionRecovery:
+		fmt.Printf("  FEED-TRANSITION feed=%s state=recovered\n", strings.ToLower(feed))
+	}
+}
+
+// updateOutcome is the exit status of `feeds update`. A named feed that was deferred is not
+// refreshed, so it is non-zero too; deferral in a scheduled run (all feeds) is reported, not a
+// failure.
+func updateOutcome(feedName string, failed, deferred []string, syncErr error) error {
+	var parts []string
+	if len(failed) > 0 {
+		parts = append(parts, fmt.Sprintf("download failed for %s (snapshot kept, last successful refresh unchanged)", strings.Join(failed, ", ")))
+	}
+	if feedName != "" && len(deferred) > 0 {
+		parts = append(parts, fmt.Sprintf("%s not refreshed: request deferred (see: nftban-core feeds status)", strings.Join(deferred, ", ")))
+	}
+	if syncErr != nil {
+		parts = append(parts, "full sync did not complete: "+syncErr.Error())
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(parts, "; "))
 }
 
 // parseFeedsConfig reads feeds.conf and extracts feed definitions
@@ -890,6 +977,7 @@ func parseFeedsConfig(configPath string) ([]FeedConfig, error) {
 	feedEnabled := make(map[string]bool)
 	feedCategories := make(map[string]string)
 	feedDescriptions := make(map[string]string)
+	feedExtra := make(map[string]string) // NAME_SUFFIX -> value (v1.238 part B properties)
 
 	for _, cf := range configFiles {
 		content, err := os.ReadFile(cf)
@@ -933,6 +1021,13 @@ func parseFeedsConfig(configPath string) ([]FeedConfig, error) {
 				} else if strings.HasSuffix(varName, "_DESCRIPTION") {
 					feedName := strings.TrimSuffix(varName, "_DESCRIPTION")
 					feedDescriptions[feedName] = value
+				} else {
+					for _, suf := range []string{"_FORMAT", "_MIN_INTERVAL", "_CONFIDENCE_MINIMUM", "_LIMIT"} {
+						if strings.HasSuffix(varName, suf) {
+							feedExtra[strings.TrimSuffix(varName, suf)+suf] = value
+							break
+						}
+					}
 				}
 			}
 		}
@@ -953,48 +1048,107 @@ func parseFeedsConfig(configPath string) ([]FeedConfig, error) {
 		if fc.Description == "" {
 			fc.Description = "No description"
 		}
+		if err := applyFeedExtras(&fc, feedExtra); err != nil {
+			return nil, err
+		}
 		feedConfigs = append(feedConfigs, fc)
 	}
 
 	return feedConfigs, nil
 }
 
-// downloadAndParseFeed downloads a feed URL and parses valid IPs/CIDRs
-func downloadAndParseFeed(url, outputFile string) (int, error) {
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: 60 * time.Second,
+// applyFeedExtras reads the v1.238 per-feed properties. An invalid value is a config error
+// (reported, never guessed).
+func applyFeedExtras(fc *FeedConfig, extra map[string]string) error {
+	fc.Format = strings.ToLower(extra[fc.Name+"_FORMAT"])
+	if fc.Format != "" && fc.Format != FeedFormatAbuseIPDB {
+		return fmt.Errorf("FEED_%s_FORMAT=%q is not supported (supported: %s)", fc.Name, fc.Format, FeedFormatAbuseIPDB)
 	}
+	if v := extra[fc.Name+"_MIN_INTERVAL"]; v != "" && v != "0" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < 0 {
+			return fmt.Errorf("FEED_%s_MIN_INTERVAL=%q is not a valid duration (e.g. 6h)", fc.Name, v)
+		}
+		fc.MinInterval = d
+	}
+	for suf, dst := range map[string]*int{"_CONFIDENCE_MINIMUM": &fc.ConfidenceMinimum, "_LIMIT": &fc.Limit} {
+		if v := extra[fc.Name+suf]; v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 0 {
+				return fmt.Errorf("FEED_%s%s=%q is not a valid number", fc.Name, suf, v)
+			}
+			*dst = n
+		}
+	}
+	return nil
+}
 
+// fetchResult is one successful download (before the snapshot is replaced).
+type fetchResult struct {
+	entries     []string
+	generatedAt string               // provider's own time (abuseipdb meta.generatedAt), "" when none
+	detail      string               // one line for the operator
+	prov        *feeds.ProviderStats // provider feeds only
+}
+
+// fetchAbuseIPDB fetches the AbuseIPDB blacklist with the key from the root-only key file. Errors
+// never contain the key (provider errors are sanitized; the credential reader never echoes it).
+func fetchAbuseIPDB(feed FeedConfig, configDir string) (*fetchResult, error) {
+	key, err := feeds.ReadCredentialFile(filepath.Join(configDir, abuseIPDBKeyName))
+	if err != nil {
+		return nil, err
+	}
+	p := feeds.AbuseIPDBParams{ConfidenceMinimum: feed.ConfidenceMinimum, Limit: feed.Limit}
+	if p.ConfidenceMinimum == 0 {
+		p.ConfidenceMinimum = feeds.AbuseIPDBDefaultConfidence
+	}
+	if p.Limit == 0 {
+		p.Limit = feeds.AbuseIPDBDefaultLimit
+	}
+	base := feed.URL
+	if base == "" {
+		base = feeds.AbuseIPDBDefaultURL
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	res, err := feeds.FetchAbuseIPDB(ctx, &http.Client{Timeout: 2 * time.Minute}, base, key, p, 0)
+	if err != nil {
+		return nil, err
+	}
+	if len(res.Entries) == 0 {
+		return nil, fmt.Errorf("abuseipdb: response held no usable address (received %d, rejected %d); snapshot not replaced", res.Received, res.Rejected)
+	}
+	d := fmt.Sprintf("received %d, accepted %d, rejected %d (confidence >= %d, limit %d)", res.Received, res.Accepted, res.Rejected, p.ConfidenceMinimum, p.Limit)
+	if res.RateLimit.Known {
+		d += fmt.Sprintf("; quota %d/%d left", res.RateLimit.Remaining, res.RateLimit.Limit)
+	}
+	prov := &feeds.ProviderStats{RequestedConfidence: p.ConfidenceMinimum, RequestedLimit: p.Limit,
+		Received: res.Received, Accepted: res.Accepted, Rejected: res.Rejected, MinScore: res.MinScore, MaxScore: res.MaxScore}
+	prov.SetQuota(res.RateLimit, time.Now())
+	return &fetchResult{entries: res.Entries, generatedAt: res.GeneratedAt, detail: d, prov: prov}, nil
+}
+
+// fetchPlain downloads a plain IP/CIDR list. Nothing is written here: the caller replaces the
+// snapshot and records the outcome in one place.
+func fetchPlain(url string) (*fetchResult, error) {
+	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
-		return 0, fmt.Errorf("HTTP request failed: %w", err)
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
-	defer resp.Body.Close()
-
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("bad HTTP status: %s", resp.Status)
+		return nil, fmt.Errorf("bad HTTP status: %s", resp.Status)
 	}
-
-	// Read and parse the feed content
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return 0, fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
-
-	// Parse IPs/CIDRs from the feed
 	validIPs := parseIPsFromFeed(string(body))
-
 	if len(validIPs) == 0 {
-		return 0, fmt.Errorf("no valid IPs found in feed")
+		return nil, fmt.Errorf("no valid IPs found in feed")
 	}
-
-	// v1.238: root:nftban 0640 at creation, then atomic rename (writeFeedFile)
-	if err := writeFeedFile(outputFile, validIPs); err != nil {
-		return 0, err
-	}
-
-	return len(validIPs), nil
+	return &fetchResult{entries: validIPs}, nil
 }
 
 // parseIPsFromFeed extracts valid IPv4/IPv6 addresses and CIDRs from feed content
