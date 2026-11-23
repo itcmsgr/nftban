@@ -91,14 +91,14 @@ reset; printf 'DDOS_ENABLED="yes"\n' > "$W/etc/conf.d/ddos/main.conf.local"
 rc=0; out=$(pf 1.237.0) || rc=$?; [[ $rc -eq 0 ]] && ok "no central keys -> upgrade proceeds" || no "compatible" "$out"
 printf 'DDOS_ENABLED="false"\n' > "$C"
 rc=0; out=$(pf 1.237.0) || rc=$?
-[[ $rc -ne 0 && "$out" == *"DDoS (DDOS_ENABLED): today ON"*"after the upgrade OFF"* && "$out" == *"delete the DDOS_ENABLED line from $C"* \
-   && "$out" == *"set DDOS_ENABLED=\"false\" in $W/etc/conf.d/ddos/main.conf.local"* && "$out" == *"nothing was changed"* ]] \
+[[ $rc -ne 0 && "$out" == *"DDoS (DDOS_ENABLED): installed version resolves ON"*"v1.238 resolves OFF"* && "$out" == *"to keep DDoS ON: delete the DDOS_ENABLED line from $C"* \
+   && "$out" == *"to apply OFF: set DDOS_ENABLED=\"false\" in $W/etc/conf.d/ddos/main.conf.local"* && "$out" == *"nothing was changed"* ]] \
   && ok "central false vs module yes -> STOP, names key and files, editor instructions" || no "conflict stop" "rc=$rc $out"
 rc=0; out=$(pf 1.238.0) || rc=$?; [[ $rc -eq 0 ]] && ok "upgrade from >= 1.238.0 -> not checked" || no "new version" "$out"
 rc=0; out=$(pf "") || rc=$?; [[ $rc -eq 0 ]] && ok "no previous version (install) -> not checked" || no "install"
 printf 'DDOS_ENABLED="yes"\n' > "$C"; rc=0; out=$(pf 1.237.0) || rc=$?; [[ $rc -eq 0 ]] && ok "files agree after the operator's edit -> proceeds" || no "resolved" "$out"
 reset; printf 'HTTP_BOTGUARD_ENABLED="enabled"\n' > "$W/etc/conf.d/botguard/main.conf.local"
-rc=0; out=$(pf 1.237.0) || rc=$?; [[ $rc -ne 0 && "$out" == *"BotGuard (HTTP_BOTGUARD_ENABLED): today OFF"* ]] && ok "BotGuard 'enabled' (off for the old daemon) -> STOP" || no "botguard enabled" "$out"
+rc=0; out=$(pf 1.237.0) || rc=$?; [[ $rc -ne 0 && "$out" == *"BotGuard (HTTP_BOTGUARD_ENABLED): installed version resolves OFF"* ]] && ok "BotGuard 'enabled' (off for the old daemon) -> STOP" || no "botguard enabled" "$out"
 reset; printf 'HTTP_BOT_SUSPECT_RATE="10/second"\nHTTP_BOT_LOOP_SAME="x"\n' > "$C"; printf 'HTTP_BOT_LOOP_SAME="x"\n' > "$W/etc/conf.d/botguard/main.conf.local"
 rc=0; out=$(pf 1.237.0) || rc=$?
 [[ $rc -ne 0 && "$out" == *"BotGuard HTTP_BOT_SUSPECT_RATE: set in $C (ignored before 1.238)"* && "$out" != *"HTTP_BOT_LOOP_SAME"* && "$out" != *"10/second"* ]] \

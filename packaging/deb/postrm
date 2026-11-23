@@ -582,8 +582,10 @@ nftban_master_switch_preflight() {
 # the DDoS / PortScan / BotGuard enable switches with ONE rule (module main.conf < main.conf.local <
 # central nftban.conf.local, an explicit central value wins; true|yes|1|on|enabled) and fixes the
 # BotGuard daemon, which ignored every central HTTP_BOT* key. Before the upgrade changes what this host
-# enforces, compare today's decision (what the kernel follows on versions before 1.238: module files only;
-# DDoS/PortScan via the shell gate table, BotGuard via the daemon table true|yes|1|on) with the new one.
+# enforces, compare what the installed version's rule resolves from these files (versions before 1.238
+# apply module files only: DDoS/PortScan via the rebuild's shell gate table, BotGuard via the daemon
+# table true|yes|1|on) with the new one. This is a config resolution, not a kernel observation: a failed
+# rebuild on the old version can leave the kernel elsewhere (lab4 2026-11-23: rollback after PortScan).
 # Agree -> proceed. Differ -> STOP before any change, name module, key and files, and say how to resolve
 # with a text editor (the installed CLI predates the new rule). Upgrades from >= 1.238 and installs
 # without a previous version are not affected. Returns 0 = proceed, 1 = stop.
@@ -628,12 +630,12 @@ nftban_module_switch_preflight() {
         if _nmsp_on "$_nmsp_v" new; then _nmsp_w=ON; else _nmsp_w=OFF; fi
         if [ "$_nmsp_o" != "$_nmsp_w" ]; then
             _nmsp_stop=1
-            echo "nftban:   $_nmsp_n ($_nmsp_k): today $_nmsp_o (\"$_nmsp_mv\" in ${_nmsp_mf:-defaults}); after the upgrade $_nmsp_w (\"$_nmsp_v\" in ${_nmsp_vf:-defaults})." >&2
+            echo "nftban:   $_nmsp_n ($_nmsp_k): installed version resolves $_nmsp_o (\"$_nmsp_mv\" in ${_nmsp_mf:-defaults}); v1.238 resolves $_nmsp_w (\"$_nmsp_v\" in ${_nmsp_vf:-defaults})." >&2
             if [ "$_nmsp_vf" = "$_nmsp_c" ]; then
-                echo "nftban:     keep today's behaviour: delete the $_nmsp_k line from $_nmsp_c" >&2
-                echo "nftban:     or apply the central value: set $_nmsp_k=\"$_nmsp_v\" in $_nmsp_b.local" >&2
+                echo "nftban:     to keep $_nmsp_n $_nmsp_o: delete the $_nmsp_k line from $_nmsp_c" >&2
+                echo "nftban:     to apply $_nmsp_w: set $_nmsp_k=\"$_nmsp_v\" in $_nmsp_b.local" >&2
             else
-                echo "nftban:     keep today's behaviour: set $_nmsp_k=\"$(_nmsp_on "$_nmsp_mv" "$_nmsp_t" && echo true || echo false)\" in $_nmsp_b.local" >&2
+                echo "nftban:     to keep $_nmsp_n $_nmsp_o: set $_nmsp_k=\"$(_nmsp_on "$_nmsp_mv" "$_nmsp_t" && echo true || echo false)\" in $_nmsp_b.local" >&2
             fi
         fi
     done
@@ -651,7 +653,7 @@ nftban_module_switch_preflight() {
             [ "$_nmsp_set" -eq 1 ] && [ "$_nmsp_mv" = "$_nmsp_cv" ] && continue
             _nmsp_stop=1
             echo "nftban:   BotGuard $_nmsp_k: set in $_nmsp_c (ignored before 1.238) and different from the BotGuard files; it will take effect after the upgrade." >&2
-            echo "nftban:     keep today's behaviour: delete the $_nmsp_k line from $_nmsp_c — or apply it: copy that line to $_nmsp_bb.local" >&2
+            echo "nftban:     to keep the installed behaviour: delete the $_nmsp_k line from $_nmsp_c — to apply it: copy that line to $_nmsp_bb.local" >&2
         done
     fi
     [ "$_nmsp_stop" -eq 0 ] && return 0
