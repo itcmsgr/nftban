@@ -27,6 +27,11 @@ Every release must pass this checklist.
 - [ ] No postinst script creates directories manually
 - [ ] sysusers.d and tmpfiles.d executed successfully
 - [ ] No recursive chmod/chown present
+- [ ] Every added, renamed or retired configuration key (v1.238+) changes, in the same change: its consumer
+      (the code that applies it), `cli/lib/nftban/data/config-schema.json` (so `nftban config validate`
+      agrees with the consumer), the shipped defaults and help/docs, and the behaviour for an existing
+      operator `.local` (kept and still effective, or reported by `nftban config validate` with the key,
+      file, consequence and supported replacement). Operator `.local` lines are never rewritten.
 
 ---
 
