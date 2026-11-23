@@ -1693,6 +1693,15 @@ func (m *Module) processLine(line []byte) {
 		return // No match - fast path (0 allocations)
 	}
 
+	// v1.238: a confirmed successful login clears the IP's score (bounded; never lifts a
+	// ban). It is not a detection: no event, no detection metric.
+	if verdict.Success {
+		if m.scorer.RecordSuccess(verdict) {
+			log.Printf("[LOGINMON] success ip=%s service=%s: accumulated score cleared (an existing ban is not lifted)", verdict.IP, verdict.Service)
+		}
+		return
+	}
+
 	m.status.RecordEvent()
 
 	// Record detection metrics

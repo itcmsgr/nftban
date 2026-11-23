@@ -476,6 +476,11 @@ func TestSSHDetector_ModernOpenSSHCorpus(t *testing.T) {
 		} {
 			t.Run("nomatch/"+tt.name+arm.suffix, func(t *testing.T) {
 				v, ok := d.Detect([]byte(arm.line))
+				// v1.238: an sshd "Accepted ..." line is a Success verdict (no score; it
+				// clears the IP's score and never bans). Only a SCORING match fails here.
+				if ok && v.Success && v.ScoreDelta == 0 {
+					return
+				}
 				if ok {
 					t.Fatalf("Detect() = match (ip=%v reason=%s), want NO match for %q",
 						v.IP, ReasonName[v.Reason], arm.line)

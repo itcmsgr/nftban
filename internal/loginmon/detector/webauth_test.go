@@ -59,6 +59,12 @@ func TestWebAuthDetector(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			v, ok := d.Detect([]byte(tt.line))
+			// v1.238: a wp-login 302 is a Success verdict (clears the score). These cases
+			// assert FAILURE matches, so a success counts as "no failure match"; the success
+			// path is tested in success_fp_v1238_test.go.
+			if ok && v.Success {
+				ok = false
+			}
 			if ok != tt.wantMatch {
 				t.Fatalf("match=%v want %v (line=%q)", ok, tt.wantMatch, tt.line)
 			}
@@ -136,6 +142,12 @@ func TestWebAuthRealTraffic(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			v, ok := d.Detect([]byte(tt.line))
+			// v1.238: a wp-login 302 is a Success verdict (clears the score). These cases
+			// assert FAILURE matches, so a success counts as "no failure match"; the success
+			// path is tested in success_fp_v1238_test.go.
+			if ok && v.Success {
+				ok = false
+			}
 			if ok != tt.wantMatch {
 				t.Fatalf("match=%v want %v", ok, tt.wantMatch)
 			}

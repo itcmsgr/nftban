@@ -34,6 +34,7 @@ package detector
 import (
 	"bytes"
 	"net/netip"
+	"net/url"
 )
 
 // Score deltas (REST_401_SCORING_DECISION = CONSERVATIVE_DEFAULT, operator 2026-06-13).
@@ -123,6 +124,40 @@ func parseRequestAndStatus(line []byte) (request []byte, status int, ok bool) {
 	return req, n, true
 }
 
+// wpNonCredentialActions are the wp-login.php actions WordPress handles WITHOUT checking a
+// password (wp-login.php switch on $action). Every other value, including an unknown one,
+// falls through to WordPress's login branch (`default:`), so it IS a credential attempt:
+// excluding "anything but empty/login" would let a brute-forcer add ?action=x and never be
+// scored.
+var wpNonCredentialActions = map[string]bool{
+	"lostpassword": true, "retrievepassword": true, "rp": true, "resetpass": true,
+	"register": true, "postpass": true, "logout": true, "confirm_admin_email": true,
+	"confirmaction": true, "checkemail": true, "entered_recovery_mode": true,
+}
+
+// wpCredentialPost reports whether a POST request line to wp-login.php is a credential
+// (login) attempt: its action query parameter (as PHP decodes it; the last one wins) is not
+// one of the non-credential actions.
+func wpCredentialPost(req []byte) bool {
+	// request line: "POST <target> HTTP/x"
+	rest := req[len("POST "):]
+	if sp := bytes.IndexByte(rest, ' '); sp >= 0 {
+		rest = rest[:sp]
+	}
+	q := bytes.IndexByte(rest, '?')
+	if q < 0 {
+		return true // no query: the login form
+	}
+	vals, _ := url.ParseQuery(string(rest[q+1:])) // keeps the pairs that decode
+	acts := vals["action"]
+	if len(acts) == 0 {
+		return true
+	}
+	// exact match: WordPress compares $action case-sensitively, so "LostPassword" reaches
+	// its login branch and must count
+	return !wpNonCredentialActions[acts[len(acts)-1]]
+}
+
 // Detect matches AUTH-failure events only. web_abuse is excluded by design.
 func (d *WebAuthDetector) Detect(line []byte) (Verdict, bool) {
 	req, status, ok := parseRequestAndStatus(line)
@@ -139,8 +174,20 @@ func (d *WebAuthDetector) Detect(line []byte) (Verdict, bool) {
 	// Status is parsed structurally so the bytes-sent field can't be mistaken for it,
 	// and method/path are checked in the request line so a referer/UA mentioning
 	// /wp-login.php can't false-match. High-rate FLOODS are web_abuse (BotScan), not here.
-	if status == 200 && bytes.Contains(req, d.sigPost) && bytes.Contains(req, d.sigWpLogin) {
+	//
+	// v1.238 (owner 2026-11-21, srv4 incident): only a CREDENTIAL post counts. A POST to
+	// wp-login.php with a non-credential action (lost password, reset, register, ...) that
+	// re-renders its form with 200 is not a failed login; scoring it banned an admin who
+	// asked for a password reset three times. A credential POST answered 302 is a successful
+	// login and is reported as such (Success verdict; it clears the score, never a ban).
+	if bytes.HasPrefix(req, d.sigPost) && bytes.Contains(req, d.sigWpLogin) && (status == 200 || status == 302) {
+		if !wpCredentialPost(req) {
+			return Verdict{}, false
+		}
 		if addr, ok := extractAccessLogIP(line); ok {
+			if status == 302 {
+				return Verdict{IP: addr, Reason: ReasonWordPressWPLogin, Service: "wordpress", Success: true}, true
+			}
 			return Verdict{IP: addr, Reason: ReasonWordPressWPLogin, ScoreDelta: scoreWPLoginFail, Service: "wordpress"}, true
 		}
 	}
