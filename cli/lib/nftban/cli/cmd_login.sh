@@ -1301,14 +1301,19 @@ BAN THRESHOLDS (as of v1.238):
     the source IP; the score decays over time. Settings are read from
     /etc/nftban/conf.d/login/scorer.conf (override in scorer.conf.local):
       THRESHOLD_TEMP_BAN=45       # score for a temporary ban
-      THRESHOLD_ESCALATE=65       # score for escalated bans (2h, 4h, 12h, 24h)
+      THRESHOLD_ESCALATE=65       # score for escalated bans (by ban count:
+                                  #   2nd ban 4h, 3rd 12h, later 24h)
       THRESHOLD_PERMANENT=100     # score for a permanent ban
       TEMP_BAN_DURATION=15m       # length of the temporary ban
-      SCORE_DECAY_INTERVAL=5m     # decay step interval
+      SCORE_DECAY_INTERVAL=5m     # parsed but NOT applied: decay runs every 5m
       SCORE_DECAY_AMOUNT=5        # points removed per decay step
       IP_RETENTION_DURATION=24h   # how long an idle IP is remembered
     Example: a failed wp-login.php POST adds 20 points, so 3 failures
     before decay (60 points) reach THRESHOLD_TEMP_BAN.
+    Only login attempts count: lost-password, reset and register requests
+    to wp-login.php do not. A confirmed successful login (WordPress, SSH,
+    DirectAdmin, Roundcube, Dovecot) clears that IP's score, at most once
+    per TEMP_BAN_DURATION; it never lifts an existing ban.
     The per-signal *_SCORE keys in scorer.conf are parsed but not applied;
     the detectors use fixed scores (see the comments in scorer.conf).
 
