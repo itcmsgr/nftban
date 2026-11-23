@@ -313,9 +313,12 @@ sed 's/\[\[ \$EUID -ne 0 \]\]/[[ 0 -ne 0 ]]/' "$ROOT/cli/lib/nftban/cli/cmd_logi
 _b3_h0="$(_b3_tree "$_b3_lg")"
 _b3_r="$(_b3_run "$_b3_sb/lib/cli/cmd_login.sh" "$_b3_lg" nftban_login_cmd_enable service)"
 _b3_h1="$(_b3_tree "$_b3_lg")"
-{ [[ "$_b3_r" -eq 0 ]] && [[ "$_b3_h0" != "$_b3_h1" ]] \
+# v1.238 (login enable verifies the daemon, BUG-LOGIN-RELOAD-HINT-DOES-NOT-APPLY-MODULE-CHANGES): in
+# this sandbox nftband is not running, so enable now returns non-zero (not active, not claimed);
+# the defect this control reproduces is the unguarded MUTATION, which still happens.
+{ [[ "$_b3_h0" != "$_b3_h1" ]] \
   && [[ -f "$_b3_lg/conf.d/login/main.conf.local" ]]; } \
-    && ok "B3-16 pre-B3 behaviour reproduced: rc=0, tree mutated, override file created" \
+    && ok "B3-16 pre-B3 behaviour reproduced: tree mutated, override file created (rc=$_b3_r)" \
     || bad "B3-16 login negative control did not hit the defect (rc=$_b3_r)"
 rm -rf "$_b3_sb"
 

@@ -318,6 +318,84 @@ nftban_login_cmd_install() {
     echo "Configuration: /etc/nftban/conf.d/login/main.conf"
 }
 
+# v1.238 (BUG-LOGIN-DISABLE-REPORTS-SUCCESS-WITHOUT-LOCAL-FILE, BUG-LOGIN-RELOAD-HINT-DOES-NOT-APPLY-
+# MODULE-CHANGES; owner GO 2026-11-23). Path: command -> LOGIN_ENABLED in conf.d/login/main.conf.local
+# -> nftband loginmon reads it at daemon START (internal/loginmon/module.go loadConfig; Start() gate),
+# SIGHUP does not reconfigure running modules -> applied only by an nftband restart -> verified by the
+# daemon's own `modules` IPC (loginmon .enabled / .running). Success is reported only when verified.
+#
+# _nftban_login_effective_enabled — LOGIN_ENABLED as nftband resolves it: main.conf, then
+# main.conf.local, then the central nftban.conf.local (last wins; scorer*.conf never carry it).
+# Sets _NFTBAN_LOGIN_EFFECTIVE_VAL and _NFTBAN_LOGIN_EFFECTIVE_SRC (call it directly, not in $()).
+_nftban_login_effective_enabled() {
+    local cfg="${NFTBAN_CONFIG_DIR:-/etc/nftban}" f line val=""
+    _NFTBAN_LOGIN_EFFECTIVE_SRC=""
+    for f in "$cfg/conf.d/login/main.conf" "$cfg/conf.d/login/main.conf.local" "$cfg/nftban.conf.local"; do
+        [[ -r "$f" ]] || continue
+        line=$(grep -E '^[[:space:]]*LOGIN_ENABLED=' "$f" 2>/dev/null | tail -n 1) || line=""
+        [[ -n "$line" ]] || continue
+        line="${line#*=}"; line="${line%%#*}"; line="${line//\"/}"; line="${line//\'/}"
+        val="${line//[[:space:]]/}"
+        _NFTBAN_LOGIN_EFFECTIVE_SRC="$f"
+    done
+    _NFTBAN_LOGIN_EFFECTIVE_VAL="$val"
+}
+
+# _nftban_login_apply_daemon_state <true|false> — set, apply and verify LoginMon's daemon state.
+# rc 0 only when nftband reports the module in the wanted state (or, for "false", nftband is not
+# running at all, so nothing is detecting); rc 1 with the observed state otherwise.
+_nftban_login_apply_daemon_state() {
+    local want="$1" cfg="${NFTBAN_CONFIG_DIR:-/etc/nftban}" main_local eff
+    main_local="$cfg/conf.d/login/main.conf.local"
+    if [[ ! -f "$main_local" ]]; then
+        mkdir -p "$(dirname "$main_local")" || return 1
+        echo "# NFTBan Login Monitor - User Overrides" > "$main_local" || return 1
+        chmod 640 "$main_local"
+        chown root:nftban "$main_local" 2>/dev/null || true
+    fi
+    _nftban_login_set_config "LOGIN_ENABLED" "$want" "$main_local" || {
+        echo "ERROR: could not write LOGIN_ENABLED to $main_local — nothing changed in nftband" >&2
+        return 1
+    }
+    _nftban_login_effective_enabled
+    eff="$_NFTBAN_LOGIN_EFFECTIVE_VAL"
+    if [[ "$eff" != "$want" ]]; then
+        echo "ERROR: LOGIN_ENABLED=\"$eff\" in ${_NFTBAN_LOGIN_EFFECTIVE_SRC:-a later config file} overrides $main_local;" >&2
+        echo "       login monitoring is NOT $([[ "$want" == true ]] && echo enabled || echo disabled). Change it there." >&2
+        return 1
+    fi
+    if ! systemctl is-active --quiet nftband.service 2>/dev/null; then
+        if [[ "$want" == "false" ]]; then
+            echo "✅ Login monitoring disabled (saved; nftband is not running, so nothing is detecting)"
+            return 0
+        fi
+        echo "ERROR: saved LOGIN_ENABLED=\"true\", but nftband is not running — login monitoring is NOT active." >&2
+        echo "       Start it: systemctl start nftband" >&2
+        return 1
+    fi
+    # nftband reads LOGIN_ENABLED only at start (a reload does not reconfigure running modules).
+    echo "  Restarting nftband to apply (existing bans stay in the kernel sets)..."
+    if declare -F nftban_daemon_restart >/dev/null 2>&1; then
+        nftban_daemon_restart || { echo "ERROR: nftband restart failed — state not applied" >&2; return 1; }
+    else
+        systemctl restart nftband.service || { echo "ERROR: nftband restart failed — state not applied" >&2; return 1; }
+    fi
+    local i raw st=""
+    for (( i = 0; i < 30; i++ )); do
+        if raw=$(_loginmon_ipc_call 2>/dev/null) && command -v jq >/dev/null 2>&1; then
+            st=$(jq -r '.data[]? | select(.name=="loginmon") | "\(.enabled) \(.running)"' <<<"$raw" 2>/dev/null) || st=""
+            [[ "$st" == "$want $want" ]] && break
+        fi
+        sleep 1
+    done
+    if [[ "$st" == "$want $want" ]]; then
+        echo "✅ Login monitoring $([[ "$want" == true ]] && echo enabled || echo disabled) — verified: nftband reports loginmon enabled=$want running=$want"
+        return 0
+    fi
+    echo "ERROR: nftband did not confirm the change (loginmon enabled/running: ${st:-no answer}) — check: journalctl -u nftband -n 50" >&2
+    return 1
+}
+
 nftban_login_cmd_enable() {
     # Enable monitoring for specific type or service
     # Usage: nftban login enable [ssh|su|sudo|console|service|all]
@@ -382,15 +460,8 @@ nftban_login_cmd_enable() {
             # loginmon module (mirrors the service/default branch). Previously
             # `enable all` set only the alert keys, so detection stayed at the
             # daemon default — `login enable all` over-claimed.
-            local login_main_local="${NFTBAN_CONFIG_DIR}/conf.d/login/main.conf.local"
-            if [[ ! -f "$login_main_local" ]]; then
-                mkdir -p "$(dirname "$login_main_local")" || true
-                echo "# NFTBan Login Monitor - User Overrides" > "$login_main_local"
-                chmod 640 "$login_main_local"
-                chown root:nftban "$login_main_local" 2>/dev/null || true
-            fi
-            _nftban_login_set_config "LOGIN_ENABLED" "true" "$login_main_local"
-            echo "✅ All login monitoring enabled (ssh, su, sudo)"
+            _nftban_login_apply_daemon_state true || return 1
+            echo "✅ Login alerts enabled (ssh, su, sudo)"
             ;;
         service|"")
             # v1.48.0: Login monitoring handled by nftband daemon loginmon module
@@ -398,33 +469,13 @@ nftban_login_cmd_enable() {
             _nftban_login_set_config "NFTBAN_LOGIN_ALERT_ENABLED" "true" "$config_local"
             _nftban_login_set_config "NFTBAN_LOGIN_ALERT_SSH" "true" "$config_local"
 
-            # Also set LOGIN_ENABLED=true for Go daemon loginmon module
-            local login_main_local="${NFTBAN_CONFIG_DIR}/conf.d/login/main.conf.local"
-            if [[ ! -f "$login_main_local" ]]; then
-                mkdir -p "$(dirname "$login_main_local")" || true
-                echo "# NFTBan Login Monitor - User Overrides" > "$login_main_local"
-                chmod 640 "$login_main_local"
-                chown root:nftban "$login_main_local" 2>/dev/null || true
-            fi
-            _nftban_login_set_config "LOGIN_ENABLED" "true" "$login_main_local"
-
-            # Check if nftband daemon is running (it contains the loginmon module)
-            if systemctl is-active --quiet nftband.service 2>/dev/null; then
-                echo "✅ Login monitoring enabled (nftband daemon loginmon module active)"
-                echo ""
-                echo "  Detected services are monitored automatically:"
-                echo "  - SSH (journalctl)"
-                echo "  - DirectAdmin, cPanel, Plesk (file watchers)"
-                echo "  - Dovecot, Postfix, Exim (journalctl)"
-                echo ""
-                echo "  Reload daemon to pick up config changes:"
-                echo "    systemctl reload nftband 2>/dev/null || systemctl restart nftband"
-            else
-                echo "⚠️  Login monitoring configured but nftband daemon is not running"
-                echo ""
-                echo "  Start the daemon:"
-                echo "    systemctl start nftband"
-            fi
+            # v1.238: apply to the nftband loginmon module and verify it (restart, modules IPC).
+            _nftban_login_apply_daemon_state true || return 1
+            echo ""
+            echo "  Detected services are monitored automatically:"
+            echo "  - SSH (journalctl)"
+            echo "  - DirectAdmin, cPanel, Plesk (file watchers)"
+            echo "  - Dovecot, Postfix, Exim (journalctl)"
             ;;
         *)
             echo "ERROR: Unknown target: $target" >&2
@@ -479,28 +530,22 @@ nftban_login_cmd_disable() {
             # v1.150 (MOD-06): mirror the enable-all LOGIN_ENABLED write — flip
             # the Go daemon loginmon switch off too (only if the override file
             # exists; no need to create it just to disable).
-            local login_main_local="${NFTBAN_CONFIG_DIR}/conf.d/login/main.conf.local"
-            if [[ -f "$login_main_local" ]]; then
-                _nftban_login_set_config "LOGIN_ENABLED" "false" "$login_main_local"
-            fi
-            echo "✅ All login monitoring disabled"
+            # v1.238: always applied and verified (was skipped when main.conf.local was absent).
+            _nftban_login_apply_daemon_state false || return 1
             ;;
         service|"")
-            # v1.48.0: Disable login monitoring in config (daemon picks up on reload)
+            # v1.48.0: Disable login alerts in config (the daemon module is applied below)
             _nftban_login_set_config "NFTBAN_LOGIN_ALERT_ENABLED" "false" "$config_local"
             _nftban_login_set_config "NFTBAN_LOGIN_ALERT_SSH" "false" "$config_local"
 
-            # Also disable in Go daemon loginmon config
-            local login_main_local="${NFTBAN_CONFIG_DIR}/conf.d/login/main.conf.local"
-            if [[ -f "$login_main_local" ]]; then
-                _nftban_login_set_config "LOGIN_ENABLED" "false" "$login_main_local"
-            fi
+            # v1.238: apply to the nftband loginmon module and verify (was skipped when
+            # main.conf.local was absent, and never applied without a restart).
+            _nftban_login_apply_daemon_state false || return 1
 
             # Clean up legacy service if still present
             local service_name="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
             systemctl stop "${service_name}" 2>/dev/null || true
             systemctl disable "${service_name}" 2>/dev/null || true
-            echo "✅ Login monitoring disabled"
             ;;
         *)
             echo "ERROR: Unknown target: $target" >&2
