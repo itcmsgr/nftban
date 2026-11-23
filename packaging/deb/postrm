@@ -868,8 +868,8 @@ case "$1" in
             BACKUP_OK=1
         fi
         if [ "$BACKUP_OK" -ne 1 ]; then
-            echo "nftban: ERROR: the configuration backup FAILED. /etc/nftban and /var/lib/nftban will NOT be deleted." >&2
-            logger -t nftban "purge: configuration backup failed; /etc/nftban and /var/lib/nftban kept" 2>/dev/null || true
+            echo "nftban: ERROR: the configuration backup FAILED. NFTBan will not delete /etc/nftban or /var/lib/nftban." >&2
+            logger -t nftban "purge: configuration backup failed; NFTBan kept /etc/nftban and /var/lib/nftban" 2>/dev/null || true
         fi
 
         # -----------------------------------------------------------------
@@ -1024,8 +1024,13 @@ case "$1" in
             echo "nftban: Complete purge finished."
             if [ -n "$BACKUP_DIR" ]; then _nftban_backup_report "$BACKUP_DIR"; fi
         else
-            echo "nftban: Purge finished EXCEPT configuration: /etc/nftban and /var/lib/nftban were kept because no backup could be written." >&2
-            echo "nftban: Make space or fix /var/tmp, then copy them yourself, or delete them deliberately." >&2
+            # Owner 2026-11-23: name exactly what NFTBan kept and where — dpkg itself has already
+            # removed the package files and the shipped config files before this script ran.
+            echo "nftban: Purge finished, but no configuration backup could be written. NFTBan kept, in place:" >&2
+            [ -d /etc/nftban ] && echo "nftban:   /etc/nftban        — your remaining configuration (*.local files, white/blacklists, tokens; the shipped config files were already removed by dpkg)" >&2
+            [ -d /var/lib/nftban/state ] && echo "nftban:   /var/lib/nftban/state — runtime state" >&2
+            [ -d /var/lib/nftban ] && echo "nftban:   /var/lib/nftban    — other NFTBan data (feeds, GeoIP data, records)" >&2
+            echo "nftban: Make space or fix /var/tmp, then copy what you need, or delete these directories deliberately." >&2
         fi
         echo "nftban: User accounts/groups preserved (manual: userdel nftban; groupdel nftban)."
         ;;
@@ -1040,7 +1045,7 @@ case "$1" in
             _nftban_backup_report "$_nftban_rm_backup"
             echo "nftban:   Note: if you purge later, changes to *.local files and lists are kept by the purge; edits made now to shipped config files (non-.local) are deleted by dpkg before the purge runs — put them in .local files."
         elif [ -d /etc/nftban ]; then
-            echo "nftban: WARNING: could not copy /etc/nftban. Configuration is still in place; copy it before purging (a purge will keep it if no backup exists)." >&2
+            echo "nftban: WARNING: could not back up /etc/nftban. It is still in place (including the shipped config files until a purge); copy it before purging. A purge without a backup keeps the remaining /etc/nftban and /var/lib/nftban." >&2
         fi
         unset _nftban_rm_backup
 
