@@ -372,14 +372,14 @@ nftban_geoban_stats() {
     echo ""
     echo "  GeoIP Enabled:      $geoip_enabled"
     echo "  Banned Countries:   $banned_count"
-    echo "  Whitelisted:        $whitelisted_count"
+    echo "  Exceptions:         $whitelisted_count"
     echo "  Total Blocked IPs:  $total_blocked_ips"
     echo ""
     if [[ $banned_count -gt 0 ]]; then
         echo "  Countries Banned:   ${banned_countries[*]}"
     fi
     if [[ $whitelisted_count -gt 0 ]]; then
-        echo "  Countries Allowed:  ${whitelisted_countries[*]}"
+        echo "  GeoBan exceptions:  ${whitelisted_countries[*]} (GeoBan blocking only)"
     fi
 }
 
@@ -505,7 +505,7 @@ nftban_geoban_config() {
     echo ""
     echo "Countries:"
     echo "  Banned:         $banned_count"
-    echo "  Whitelisted:    $whitelisted_count"
+    echo "  Exceptions:     $whitelisted_count"
     echo ""
     echo "To override settings, create/edit: $config_local"
 }
@@ -591,8 +591,8 @@ Usage:
   nftban geoban disable                    # Disable GeoBan module
   nftban geoban ban <CC> [CC...]           # Ban country traffic
   nftban geoban unban <CC> [CC...]         # Remove country ban
-  nftban geoban whitelist <CC> [CC...]     # Whitelist country (allow)
-  nftban geoban unwhitelist <CC> [CC...]   # Remove country whitelist
+  nftban geoban whitelist <CC> [CC...]     # GeoBan exception: never GeoBan-block this country
+  nftban geoban unwhitelist <CC> [CC...]   # Remove a GeoBan exception
   nftban geoban list                       # List active country blocks
   nftban geoban status                     # Show GeoBan status
   nftban geoban update                     # Update all active countries
@@ -602,13 +602,19 @@ Usage:
   nftban geoban test                       # Test GeoBan config/connectivity
   nftban geoban help                       # Show this help
 
+GeoBan exceptions ("whitelist"):
+  An exception removes a country's addresses from GeoBan blocking only. It is not a
+  global whitelist: feeds, detection modules (LoginMon, DDoS, PortScan, BotGuard) and
+  manual bans keep blocking those addresses. A country cannot be both blocked and excepted.
+  Country data is IPv4 only (IPv6 is not downloaded).
+
 Country Codes:
   Use ISO 3166-1 alpha-2 codes (2 letters, uppercase)
   Examples: CN (China), RU (Russia), US (United States), GB (United Kingdom)
 
 Examples:
   nftban geoban ban CN RU              # Block China and Russia
-  nftban geoban whitelist US GB        # Allow USA and UK
+  nftban geoban whitelist US GB        # Exempt USA and UK from GeoBan blocking only
   nftban geoban list                   # Show active blocks
   nftban geoban unban CN               # Remove China block
   nftban geoban status                 # Check GeoBan status
