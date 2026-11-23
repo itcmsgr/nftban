@@ -1002,7 +1002,7 @@
         "mode": "0700",
         "owner": "root",
         "group": "root",
-        "description": "nft write boundary (v1.236): nft_writers.lock and nft_writers.intent. nftband holds the lock SHARED for each kernel transaction; every other nft writer (root shell paths, the boot helper) holds it EXCLUSIVE. Root only.",
+        "description": "nft write boundary (v1.236): nft_writers.lock and nft_writers.intent. nftband holds the lock SHARED for each kernel transaction; every other nft writer (root shell paths, the boot helper) holds it EXCLUSIVE. v1.238: also the root locks nft_operations.lock (the OUTER nft lock, taken before nft_writers.lock), session_whitelist.lock and maintenance.lock (moved from /run/nftban). Root only.",
         "created_by": "tmpfiles"
       }
     ],

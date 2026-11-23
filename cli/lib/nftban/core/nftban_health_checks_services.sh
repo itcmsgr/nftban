@@ -627,59 +627,35 @@ nftban_health_check_timers() {
 # =============================================================================
 
 nftban_health_check_maintenance_lock() {
-    # Check for stale maintenance lock files
-    # Bug found: Dual locking (flock + script) causes permanent lock state
-    # Returns: 0=OK, 1=Warning (stale lock found or auto-fixed)
-    # Args: $1 = auto_heal (0=check only, 1=auto-fix)
-
-    local auto_heal="${1:-0}"
+    # v1.238 (SEC-WRITE-BOUNDARY-LEGACY-ROOT-LOCKS-IN-NFTBAN-OWNED-RUN-DIR, owner 2026-11-23):
+    # maintenance is reported from systemd, never from the lock file. The lock is a kernel
+    # flock held by the unit's flock(1) wrapper (released when it exits), so a "stale lock" cannot
+    # exist; the old check read a PID from the file and, with auto-heal, deleted it, which this
+    # check runs as the nftban service account (nftban-health.service) — removing a root lock is
+    # exactly what splits two holders onto different inodes. The lock also now lives in the
+    # root-only /run/nftban-writers, which this account cannot read.
+    # Returns: 0=OK, 1=Warning. Args: $1 = auto_heal (ignored: nothing here is auto-fixed).
     local status=$HEALTH_OK
     local lock_issues=()
-    local lockfile="${NFTBAN_RUN_DIR:-/run/nftban}/maintenance.lock"
+    local unit="nftban-maintenance.service" state result since now age
 
-    if [[ -f "$lockfile" ]]; then
-        local lock_age lock_pid
-        # Use shared library function if available, fallback to inline calculation
-        if declare -f nftban_file_age >/dev/null 2>&1; then
-            lock_age=$(nftban_file_age "$lockfile")
-        else
-            lock_age=$(( $(date +%s) - $(stat -c %Y "$lockfile" 2>/dev/null || echo 0) ))
-        fi
-        lock_pid=$(cat "$lockfile" 2>/dev/null | head -1)
-
-        # Check if lock is stale (>30min AND PID not running)
-        if [[ $lock_age -gt 1800 ]]; then
-            local is_stale=0
-
-            if [[ -n "$lock_pid" ]] && [[ "$lock_pid" =~ ^[0-9]+$ ]]; then
-                if ! kill -0 "$lock_pid" 2>/dev/null; then
-                    lock_issues+=("Stale maintenance lock: ${lock_age}s old, PID $lock_pid not running")
-                    is_stale=1
-                fi
-            else
-                # Invalid PID in lock file
-                lock_issues+=("Invalid maintenance lock file (no valid PID)")
-                is_stale=1
-            fi
-
-            if [[ $is_stale -eq 1 ]]; then
-                # Auto-heal: Remove stale lock
-                if [[ $auto_heal -eq 1 ]] || [[ "${NFTBAN_HEALTH_AUTO_HEAL:-false}" == "true" ]]; then
-                    if rm -f "$lockfile" 2>/dev/null; then
-                        lock_issues+=("AUTO-FIXED: Removed stale lock file")
-                        status=$HEALTH_WARNING  # Fixed, but note it happened
-                    else
-                        lock_issues+=("FAILED to remove stale lock (need root)")
-                        lock_issues+=("FIX: sudo rm -f \"$lockfile\"")
-                        status=$HEALTH_WARNING
-                        NFTBAN_HEALTH_WARNINGS+=("Stale maintenance lock blocking scheduled maintenance")
-                    fi
-                else
-                    lock_issues+=("FIX: sudo rm -f \"$lockfile\"")
+    if command -v systemctl >/dev/null 2>&1; then
+        state=$(systemctl show "$unit" -p ActiveState --value 2>/dev/null) || state=""
+        result=$(systemctl show "$unit" -p Result --value 2>/dev/null) || result=""
+        if [[ "$state" == "active" || "$state" == "activating" ]]; then
+            since=$(systemctl show "$unit" -p ActiveEnterTimestamp --value 2>/dev/null) || since=""
+            if [[ -n "$since" ]] && since=$(date -d "$since" +%s 2>/dev/null); then
+                now=$(date +%s); age=$(( now - since ))
+                if (( age > 1800 )); then
+                    lock_issues+=("Maintenance running for ${age}s (${unit}); check: journalctl -u ${unit}")
                     status=$HEALTH_WARNING
-                    NFTBAN_HEALTH_WARNINGS+=("Stale maintenance lock blocking scheduled maintenance")
+                    NFTBAN_HEALTH_WARNINGS+=("Maintenance run longer than 30 min")
                 fi
             fi
+        elif [[ "$state" == "failed" || ( -n "$result" && "$result" != "success" ) ]]; then
+            lock_issues+=("Last maintenance run did not succeed (${unit}: ${state:-unknown}/${result:-unknown}); check: journalctl -u ${unit}")
+            status=$HEALTH_WARNING
+            NFTBAN_HEALTH_WARNINGS+=("Last scheduled maintenance did not succeed")
         fi
     fi
 

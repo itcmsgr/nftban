@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -44,6 +45,11 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	sessionWhitelistLockPath = filepath.Join(d, "session_whitelist.lock")
+	// v1.238: the legacy compatibility lock is redirected too (never the real /run/nftban).
+	if err := os.MkdirAll(filepath.Join(d, "legacy"), 0o700); err != nil {
+		panic(err)
+	}
+	sessionWhitelistLegacyLockPath = filepath.Join(d, "legacy", "session_whitelist.lock")
 	code := m.Run()
 	_ = os.RemoveAll(d)
 	os.Exit(code)
@@ -389,5 +395,44 @@ func TestExtractIPField_Basics(t *testing.T) {
 		if got := extractIPField(c.line); got != c.want {
 			t.Errorf("extractIPField(%q) = %q, want %q", c.line, got, c.want)
 		}
+	}
+}
+
+// v1.238 legacy root locks: a process of the previous version holds only the LEGACY lock; the
+// new code must still wait for it (it takes the canonical lock, then the legacy one).
+func TestSessionWhitelistLockWaitsForLegacyHolder(t *testing.T) {
+	old, err := os.OpenFile(sessionWhitelistLegacyLockPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer old.Close()
+	if err := syscall.Flock(int(old.Fd()), syscall.LOCK_EX); err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan func(), 1)
+	go func() {
+		unlock, err := lockSessionWhitelist()
+		if err != nil {
+			t.Error(err)
+			got <- func() {}
+			return
+		}
+		got <- unlock
+	}()
+	select {
+	case <-got:
+		t.Fatal("acquired while a v1.237 process held the legacy lock")
+	case <-time.After(300 * time.Millisecond):
+	}
+	_ = syscall.Flock(int(old.Fd()), syscall.LOCK_UN)
+	select {
+	case unlock := <-got:
+		unlock()
+	case <-time.After(5 * time.Second):
+		t.Fatal("not acquired after the legacy holder released")
+	}
+	// the legacy file is never unlinked or replaced by the new code
+	if _, err := os.Stat(sessionWhitelistLegacyLockPath); err != nil {
+		t.Fatalf("legacy lock file removed: %v", err)
 	}
 }
