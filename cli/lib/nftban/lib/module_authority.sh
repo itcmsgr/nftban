@@ -64,13 +64,21 @@ nftban_bool_is_true() {
 #    authority location and a new shipped conffile (upgrade risk) without
 #    resolving the semantic split. Read what the project already ships.
 # -----------------------------------------------------------------------------
+#
+# v1.238 (owner 2026-11-23, with D-1 / #1499): ONE effective-config contract for the feeds
+# MASTER switch. The daemon and every Go reader resolve NFTBAN_FEEDS_ENABLED through the
+# canonical loader (internal/nftbanconf: nftban.conf, then the central override
+# nftban.conf.local); this shell reader now reads the SAME two files in the SAME order with the
+# same vocabulary (util.ParseBool == nftban_bool_is_true). It used to read conf.d/feeds.conf
+# instead of nftban.conf, so a value set in one base file was seen by only one side
+# (BUG-FEEDS-MASTER-SWITCH-TWO-READERS-CLI-FEEDS-CONF-VS-DAEMON-NFTBAN-CONF). conf.d/feeds.conf
+# keeps the per-feed keys; its NFTBAN_FEEDS_ENABLED line is not read for the master switch.
 _nftban_module_feeds_enabled() {
     local cfg="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
     local val="" v
-    v="$(_nftban_module_read_key "${cfg}/conf.d/feeds.conf" NFTBAN_FEEDS_ENABLED)"
+    v="$(_nftban_module_read_key "${cfg}/nftban.conf" NFTBAN_FEEDS_ENABLED)"
     [[ -n "$v" ]] && val="$v"
-    # nftban.conf.local OVERRIDES the shipped default — same precedence as the
-    # per-feed reader, so master and per-feed answers come from one model.
+    # nftban.conf.local OVERRIDES the shipped default (where `nftban feeds enable` writes).
     v="$(_nftban_module_read_key "${cfg}/nftban.conf.local" NFTBAN_FEEDS_ENABLED)"
     [[ -n "$v" ]] && val="$v"
     nftban_bool_is_true "$val"
@@ -84,9 +92,8 @@ _nftban_module_enable_var() {
         portscan) echo "PORTSCAN_ENABLED" ;;
         botguard) echo "HTTP_BOTGUARD_ENABLED" ;;
         geoban)   echo "GEOBAN_ENABLED" ;;
-        # feeds ships NFTBAN_FEEDS_ENABLED in conf.d/feeds.conf, not
-        # FEEDS_ENABLED in conf.d/feeds/main.conf. See
-        # _nftban_module_feeds_enabled, which owns the feeds lookup.
+        # feeds' master switch is NFTBAN_FEEDS_ENABLED in nftban.conf / nftban.conf.local
+        # (v1.238: the canonical loader's sources). See _nftban_module_feeds_enabled.
         feeds)    echo "NFTBAN_FEEDS_ENABLED" ;;
         *)        return 1 ;;
     esac
