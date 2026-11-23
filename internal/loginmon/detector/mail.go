@@ -121,7 +121,43 @@ func (d *MailDetector) Detect(line []byte) (Verdict, bool) {
 		return d.detectExim(line)
 	}
 
-	return Verdict{}, false
+	// Stage 5 (v1.238): dovecot confirmed success, after every failure stage.
+	return d.detectDovecotLogin(line)
+}
+
+// detectDovecotLogin reports "dovecot[pid]: <proto>-login: Login: user=<u>, ..., rip=<ip>" as a
+// Success verdict. The message after the dovecot tag must START with "<proto>-login: Login:
+// user=<" and rip= is read only after the user=<...> field closes, so neither the username
+// nor anything after it can forge the success or its IP. A webmail-proxied login carries
+// rip=127.0.0.1, which the scorer never tracked, so it changes nothing.
+func (d *MailDetector) detectDovecotLogin(line []byte) (Verdict, bool) {
+	tag, msg, ok := messageAfterTag(line)
+	if !ok || !bytes.Contains(tag, d.sigDovecot) {
+		return Verdict{}, false
+	}
+	k := bytes.Index(msg, []byte("-login: Login: user=<"))
+	if k <= 0 || bytes.IndexByte(msg[:k], ' ') >= 0 {
+		return Verdict{}, false // "<proto>" must be the single first token
+	}
+	rest := msg[k+len("-login: Login: user=<"):]
+	gt := bytes.Index(rest, []byte(">, "))
+	if gt < 0 {
+		return Verdict{}, false
+	}
+	rest = rest[gt:]
+	ri := bytes.Index(rest, d.markerRip)
+	if ri < 0 {
+		return Verdict{}, false
+	}
+	ipb := rest[ri+len(d.markerRip):]
+	if end := bytes.IndexAny(ipb, ", \n\r\t"); end >= 0 {
+		ipb = ipb[:end]
+	}
+	addr, err := netip.ParseAddr(string(ipb))
+	if err != nil {
+		return Verdict{}, false
+	}
+	return Verdict{IP: addr, Reason: ReasonDovecotAuthFail, Service: "dovecot", Success: true}, true
 }
 
 // detectDovecot handles "dovecot: ... auth failed, rip=<ip>"

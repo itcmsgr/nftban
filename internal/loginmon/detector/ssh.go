@@ -138,7 +138,33 @@ func (d *SSHDetector) Detect(line []byte) (Verdict, bool) {
 		return d.detectAuthUserPreauth(line, ReasonSSHPreauth, 20)
 	}
 
-	return Verdict{}, false
+	// Stage 7 (v1.238): confirmed success, checked only after every failure stage.
+	return d.detectAccepted(line)
+}
+
+// detectAccepted reports "sshd[pid]: Accepted <method> for <user> from <ip> port <n> ..." as
+// a Success verdict. The message must START with "Accepted " right after an sshd tag
+// (sshd or sshd-session); a username containing "Accepted ..." can only appear later in a
+// line and never at that position.
+func (d *SSHDetector) detectAccepted(line []byte) (Verdict, bool) {
+	tag, msg, ok := messageAfterTag(line)
+	if !ok || !bytes.Contains(tag, d.sigSshd) || !bytes.HasSuffix(tag, []byte("]")) ||
+		!bytes.HasPrefix(msg, []byte("Accepted ")) {
+		return Verdict{}, false
+	}
+	fi := bytes.LastIndex(msg, []byte(" from "))
+	if fi < 0 || !bytes.Contains(msg[:fi], []byte(" for ")) {
+		return Verdict{}, false
+	}
+	rest := msg[fi+len(" from "):]
+	if end := bytes.IndexByte(rest, ' '); end >= 0 {
+		rest = rest[:end]
+	}
+	addr, err := netip.ParseAddr(string(rest))
+	if err != nil {
+		return Verdict{}, false
+	}
+	return Verdict{IP: addr, Reason: ReasonSSHFailedPassword, Service: "ssh", Success: true}, true
 }
 
 // detectFailedPassword handles "Failed password for [invalid user] <user> from <ip>"
