@@ -93,7 +93,8 @@ func (d *Daemon) Run() error {
 	}
 
 	// v1.34.0: Pre-create nft lock file for early operations (LIVE-BUG-1 fix)
-	if _, err := os.OpenFile(nftlock.LockPath, os.O_CREATE|os.O_RDWR, 0640); err != nil { // #nosec G302
+	// v1.238: 0600, root only (the lock lives in the root-only /run/nftban-writers).
+	if _, err := os.OpenFile(nftlock.LockPath, os.O_CREATE|os.O_RDWR, 0600); err != nil {
 		log.Printf("Warning: could not pre-create nft lock file: %v", err)
 	}
 

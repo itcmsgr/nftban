@@ -1302,7 +1302,7 @@ directories:
       mode: "0700"
       owner: root
       group: root
-      description: "nft write boundary (v1.236): nft_writers.lock and nft_writers.intent. nftband holds the lock SHARED for each kernel transaction; every other nft writer (root shell paths, the boot helper) holds it EXCLUSIVE. Root only."
+      description: "nft write boundary (v1.236): nft_writers.lock and nft_writers.intent. nftband holds the lock SHARED for each kernel transaction; every other nft writer (root shell paths, the boot helper) holds it EXCLUSIVE. v1.238: also the root locks nft_operations.lock (the OUTER nft lock, taken before nft_writers.lock), session_whitelist.lock and maintenance.lock (moved from /run/nftban). Root only."
       created_by: tmpfiles
       tmpfiles_reconcile: "z"
       note: |
@@ -1314,6 +1314,17 @@ directories:
         account owns; the parent is the root-owned /run. tmpfiles is the single creator (boot and
         package install, before any service starts), so units listing it in ReadWritePaths always
         find it. v1.235.1 had no write boundary, so no released version used the old location.
+        v1.238 (owner 2026-11-23, SEC-WRITE-BOUNDARY-LEGACY-ROOT-LOCKS-IN-NFTBAN-OWNED-RUN-DIR):
+        nft_operations.lock, session_whitelist.lock and maintenance.lock moved here from
+        /run/nftban for the same reason. Lock order unchanged: nft_operations.lock (outer) before
+        nft_writers.lock (inner). For ONE release every holder also takes the old path in
+        /run/nftban AFTER the one here (Go internal/nftlock, internal/installer/safety; shell
+        lib/nft_writers.sh nftban_legacy_lock_take; the maintenance unit's inner flock), so a
+        v1.237 process still running during the package upgrade stays excluded. The old files are
+        never unlinked or replaced; a symlink there is not followed (Go O_NOFOLLOW, shell -L).
+        LIMITATION until v1.239 removes that compatibility acquisition: /run/nftban stays owned by
+        the nftban service account, which can still swap the legacy inode; the exclusion between
+        v1.238 processes comes from the files here.
   # ---------------------------------------------------------------------------
   # Shared Data (root:root, 755) - Read-only application data
   # ---------------------------------------------------------------------------

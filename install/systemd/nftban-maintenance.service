@@ -56,7 +56,11 @@ Group=root
 # Run maintenance script with flock to prevent overlap
 # v1.235: skipped (not failed) without firewall authority — a repair never grants itself authority.
 ExecCondition=+/usr/lib/nftban/bin/nftband --authority-check
-ExecStart=/usr/bin/flock -n /run/nftban/maintenance.lock /usr/lib/nftban/cron/maintenance.sh
+# v1.238 (SEC-WRITE-BOUNDARY-LEGACY-ROOT-LOCKS-IN-NFTBAN-OWNED-RUN-DIR): the lock lives in the
+# root-only /run/nftban-writers (fhs-spec). For ONE release the v1.237 path is also taken (inner
+# flock), so a maintenance run of the previous version still running during the upgrade
+# excludes this one. flock(1) never unlinks either file; v1.239 drops the inner flock.
+ExecStart=/usr/bin/flock -n /run/nftban-writers/maintenance.lock /usr/bin/flock -n /run/nftban/maintenance.lock /usr/lib/nftban/cron/maintenance.sh
 
 # =============================================================================
 # SECURITY HARDENING (strict sandboxing for root service)

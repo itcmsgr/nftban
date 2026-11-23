@@ -144,6 +144,12 @@ call_firewall_whitelist_session() {
         # open, so add/remove/cleanup's `9>"$_NFTBAN_SESSION_WL_LOCK"` (and the
         # v1.226.0 in-subshell `exec 9>`) would fail. (Product v1.173 §4.1 lock.)
         _NFTBAN_SESSION_WL_LOCK="${SESSION_FILE}.lock"
+        # v1.238: the one-release legacy lock (nftban_legacy_lock_take, lib/nft_writers.sh)
+        # resolves under NFTBAN_RUN_DIR; keep it in the sandbox too, never the real /run/nftban.
+        NFTBAN_RUN_DIR="${SESSION_FILE%/*}/legacy-run"
+        mkdir -p "$NFTBAN_RUN_DIR"
+        # shellcheck source=/dev/null
+        source "$NFTBAN_LIB_DIR/lib/nft_writers.sh"
         # Suppress chmod/chown failures (sandbox path likely fails ownership).
         firewall_whitelist_session "$@"
     )

@@ -65,6 +65,74 @@ nftban_writers_release() {
     _nftban_writers_drop_intent "${NFTBAN_WRITERS_DIR:-/run/nftban-writers}"
 }
 
+# =============================================================================
+# v1.238 root locks (SEC-WRITE-BOUNDARY-LEGACY-ROOT-LOCKS-IN-NFTBAN-OWNED-RUN-DIR)
+# nft_operations.lock (the OUTER nft lock), session_whitelist.lock and maintenance.lock live in
+# this root-only directory (build/fhs-spec.yaml /run/nftban-writers), not in /run/nftban, which
+# the nftban service account owns (it could unlink and recreate a lock there, so two root
+# holders would lock different inodes). Lock order is unchanged: nft_operations.lock (outer)
+# before nft_writers.lock (inner).
+# For ONE release (v1.238) every holder also takes the LEGACY path in /run/nftban, AFTER the
+# canonical one, so a v1.237 process still running during the package upgrade stays excluded.
+# The legacy file is never unlinked or replaced and a symlink there is not used. Known
+# limitation until v1.239 removes the compatibility acquisition: the legacy directory stays
+# owned by the service account, which can still swap that inode; the exclusion between v1.238
+# processes comes from the canonical lock.
+# =============================================================================
+
+# nftban_root_lock_path <name> — canonical path of a root lock file.
+nftban_root_lock_path() { printf '%s/%s' "${NFTBAN_WRITERS_DIR:-/run/nftban-writers}" "$1"; }
+
+# nftban_legacy_lock_path <name> — v1.237 path of the same lock.
+nftban_legacy_lock_path() { printf '%s/%s' "${NFTBAN_RUN_DIR:-/run/nftban}" "$1"; }
+
+# nftban_root_lock_dir_ready — the canonical directory exists (tmpfiles creates it; created
+# 0700 here only when absent, e.g. a test sandbox).
+nftban_root_lock_dir_ready() {
+    local dir="${NFTBAN_WRITERS_DIR:-/run/nftban-writers}"
+    [[ -d "$dir" ]] || mkdir -m 0700 -- "$dir" 2>/dev/null || true
+}
+
+# shellcheck disable=SC2034  # NFTBAN_LEGACY_LOCK_FD is the result, read by the callers
+# nftban_legacy_lock_take <name> <-n | -w SECONDS | -b> [-s]   (-b = block, like plain flock)
+# Takes the compatibility lock with the SAME wait policy as the caller's canonical lock.
+# Sets NFTBAN_LEGACY_LOCK_FD (empty when nothing was taken). rc 0 = held, or skipped because the
+# legacy directory is absent (nothing older can hold it) or a symlink sits at the name (not
+# followed); rc 1 = busy or cannot be opened (the caller must release its canonical lock and
+# refuse, exactly as for a busy canonical lock).
+nftban_legacy_lock_take() {
+    local name="$1" mode="$2" secs="" shared="" path dir fd=""
+    [[ "$mode" == "-w" ]] && { secs="$3"; shift; }
+    [[ "${3:-}" == "-s" ]] && shared="-s"
+    NFTBAN_LEGACY_LOCK_FD=""
+    path="$(nftban_legacy_lock_path "$name")"
+    dir="${path%/*}"
+    [[ -d "$dir" ]] || return 0
+    # Same file as the canonical lock (both directories point at one place, e.g. a sandbox):
+    # it is already held through the canonical descriptor; a second flock would conflict with it.
+    [[ "$path" == "$(nftban_root_lock_path "$name")" ]] && return 0
+    if [[ -L "$path" ]]; then
+        echo "nftban: $path is a symlink; compatibility lock not taken" >&2
+        return 0
+    fi
+    { exec {fd}>>"$path"; } 2>/dev/null || return 1
+    if [[ "$mode" == "-w" ]]; then
+        flock $shared -w "$secs" "$fd" || { exec {fd}>&-; return 1; }
+    elif [[ "$mode" == "-b" ]]; then
+        flock $shared "$fd" || { exec {fd}>&-; return 1; }
+    else
+        flock $shared -n "$fd" || { exec {fd}>&-; return 1; }
+    fi
+    NFTBAN_LEGACY_LOCK_FD="$fd"
+    return 0
+}
+
+# nftban_legacy_lock_drop <fd-or-empty> — release a compatibility lock (no-op when empty).
+nftban_legacy_lock_drop() {
+    [[ -n "${1:-}" ]] || return 0
+    eval "exec ${1}>&-" 2>/dev/null || true
+}
+
 # Remove the intent only if it is still ours (a later waiter may have replaced it).
 _nftban_writers_drop_intent() {
     local ipath="$1/nft_writers.intent" own

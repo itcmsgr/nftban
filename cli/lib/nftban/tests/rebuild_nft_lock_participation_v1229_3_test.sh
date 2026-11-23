@@ -69,7 +69,21 @@ else
         fail "SUBJECT_NOT_FOUND: LockPath const not parsed from internal/nftlock/lock.go"
     else
         # the shell default must resolve to exactly the Go constant
-        SHELL_DEFAULT="$(sed -n 's/.*_nftlock_path="\${NFTBAN_RUN_DIR:-\([^}]*\)}\(.*\)".*/\1\2/p' <<<"$WRAPPER" | head -1)"
+        # v1.238: the wrapper resolves the path through lib/nft_writers.sh
+        # (nftban_root_lock_path); resolve it the same way with the defaults (no env).
+        WRITERS_LIB="$SCRIPT_DIR/../lib/nft_writers.sh"
+        if grep -q 'nftban_root_lock_path nft_operations.lock' <<<"$WRAPPER"; then
+            SHELL_DEFAULT="$(env -u NFTBAN_WRITERS_DIR -u NFTBAN_RUN_DIR bash -c 'source "$1"; nftban_root_lock_path nft_operations.lock' _ "$WRITERS_LIB")"
+        else
+            SHELL_DEFAULT=""
+        fi
+        GO_LEGACY="$(sed -n 's/^const LegacyLockPath = "\(.*\)"$/\1/p' "$NFTLOCK_GO" | head -1)"
+        SHELL_LEGACY="$(env -u NFTBAN_WRITERS_DIR -u NFTBAN_RUN_DIR bash -c 'source "$1"; nftban_legacy_lock_path nft_operations.lock' _ "$WRITERS_LIB")"
+        if [[ -n "$GO_LEGACY" && "$SHELL_LEGACY" == "$GO_LEGACY" ]]; then
+            pass "one-release legacy lock path: shell == Go ($GO_LEGACY)"
+        else
+            fail "LEGACY LOCK PATH DRIFT: shell '$SHELL_LEGACY', Go '$GO_LEGACY'"
+        fi
         if [[ "$SHELL_DEFAULT" == "$GO_PATH" ]]; then
             pass "rebuild lock path == internal/nftlock canonical const ($GO_PATH)"
         else
@@ -92,7 +106,7 @@ else
                 fail "SUBJECT_NOT_FOUND: canonical-lock consumer $cfile"
                 continue
             fi
-            cpath="$(sed -n "s|^${cvar}=\"\${NFTBAN_RUN_DIR:-\([^}]*\)}\(.*\)\"|\1\2|p" "$cfile" | head -1)"
+            cpath="$(sed -n "s|^${cvar}=\"\${NFTBAN_WRITERS_DIR:-\([^}]*\)}\(.*\)\"|\1\2|p" "$cfile" | head -1)"
             if [[ -z "$cpath" ]]; then
                 fail "SUBJECT_NOT_FOUND: $cvar not parsed from $(basename "$cfile") — drift would be invisible"
             elif [[ "$cpath" == "$GO_PATH" ]]; then
@@ -111,12 +125,15 @@ else
 fi
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-export NFTBAN_RUN_DIR="$TMP/run"
+export NFTBAN_RUN_DIR="$TMP/run" NFTBAN_WRITERS_DIR="$TMP/run"
 mkdir -p "$NFTBAN_RUN_DIR"
 LOCK="$NFTBAN_RUN_DIR/nft_operations.lock"
 
 # stub inner core: records that it ran, and whether it saw the lock held
 CORE_RAN="$TMP/core_ran"
+# v1.238: the wrapper resolves its lock paths through lib/nft_writers.sh (root lock helpers).
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/../lib/nft_writers.sh"
 eval "$WRAPPER"
 _firewall_rebuild_core() { echo "ran" > "$CORE_RAN"; return "${STUB_RC:-0}"; }
 

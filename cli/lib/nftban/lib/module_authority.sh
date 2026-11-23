@@ -760,12 +760,20 @@ nftban_plan_txn_required_modules() {
 # — two owners opened the same transaction concurrently while the code "held" a
 # lock that had already evaporated.
 #     A LOCK ACQUIRED IN A SUBSHELL IS RELEASED WHEN THAT SUBSHELL EXITS.
+# v1.238: the root-lock path helpers (canonical + one-release legacy) live with the write
+# boundary; loaded relative to this file, like env.sh and cmd_firewall.sh do.
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+declare -F nftban_legacy_lock_take >/dev/null 2>&1 || source "${BASH_SOURCE[0]%/*}/nft_writers.sh"
+
 _nftban_plan_lock_acquire() {
     NFTBAN_PLAN_TXN_LOCKFD=""
     if [[ -n "${NFTBAN_NFTLOCK_HELD:-}" ]]; then
         return 0             # an ancestor holds it; do NOT re-acquire
     fi
-    local path="${NFTBAN_RUN_DIR:-/run/nftban}/nft_operations.lock"
+    # v1.238: canonical path in the root-only writers dir (+ one-release legacy lock below).
+    local path
+    path="$(nftban_root_lock_path nft_operations.lock)"
+    nftban_root_lock_dir_ready
     # ⛔ FAIL-FAST IS THE DEFAULT. A bounded wait serializes correctly but LIES TO
     # THE OPERATOR: two administrators each run a mutation, both are told it
     # succeeded, and neither learns they collided. Measured on lab2 before this
@@ -794,6 +802,17 @@ _nftban_plan_lock_acquire() {
     else
         flock -n "$fd" && _got=1                # default: refuse immediately
     fi
+    # v1.238: then the legacy lock with the same policy (a v1.237 holder during the upgrade
+    # still excludes this transaction). Busy there = busy here.
+    NFTBAN_PLAN_TXN_LEGACY_LOCKFD=""
+    if (( _got == 1 )); then
+        if [[ -n "$wait" ]]; then
+            nftban_legacy_lock_take nft_operations.lock -w "$wait" || _got=0
+        else
+            nftban_legacy_lock_take nft_operations.lock -n || _got=0
+        fi
+        NFTBAN_PLAN_TXN_LEGACY_LOCKFD="${NFTBAN_LEGACY_LOCK_FD:-}"
+    fi
     if (( _got == 0 )); then
         # ⛔ THIS IS ITS OWN VERDICT CLASS. It is not "the convergence failed" —
         # it is "the convergence never began". Nothing has been mutated.
@@ -814,6 +833,8 @@ _nftban_plan_lock_acquire() {
 _nftban_plan_lock_release() {
     local fd="${1:-}"
     [[ -n "$fd" ]] || return 0        # we did not acquire it; not ours to release
+    nftban_legacy_lock_drop "${NFTBAN_PLAN_TXN_LEGACY_LOCKFD:-}"   # reverse order: legacy first
+    NFTBAN_PLAN_TXN_LEGACY_LOCKFD=""
     eval "exec ${fd}>&-" 2>/dev/null || true
     unset NFTBAN_NFTLOCK_HELD
     return 0
