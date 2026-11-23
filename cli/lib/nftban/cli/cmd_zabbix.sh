@@ -352,13 +352,12 @@ _cmd_zabbix_setup() {
         [[ "$ipv6_answer" =~ ^[Yy] ]] && ipv6="true"
 
         echo ""
-        read -rp "Enable TLS encryption? [y/N]: " tls_answer
-        [[ "$tls_answer" =~ ^[Yy] ]] && tls="true"
-
-        if [[ "$tls" != "true" ]]; then
-            read -rp "Enable PSK authentication? [y/N]: " psk_answer
-            [[ "$psk_answer" =~ ^[Yy] ]] && psk="true" || true
-        fi
+        # v1.238 (CONFIG-DEAD-KEYS-001 / SEC-ZABBIX-TLS-NOT-IMPLEMENTED): no TLS/PSK prompt; the
+        # sender never applied them, so offering them claimed an encryption that did not happen.
+        _zabbix_print_info "TLS/PSK is not implemented as of v1.238: metrics are sent unencrypted over the Zabbix trapper protocol (send them over a private network or VPN)"
+    fi
+    if [[ "$tls" == "true" || "$psk" == "true" ]]; then
+        _zabbix_print_info "--tls/--psk recorded but NOT applied: TLS/PSK is not implemented as of v1.238: metrics are sent unencrypted over the Zabbix trapper protocol (send them over a private network or VPN)"
     fi
 
     # Validate
@@ -524,7 +523,9 @@ _cmd_zabbix_status() {
   "hostname": "$actual_hostname",
   "interval": $interval,
   "tls_enabled": $tls,
-  "psk_enabled": $psk
+  "psk_enabled": $psk,
+  "transport_encrypted": false,
+  "transport_note": "TLS/PSK is not implemented as of v1.238: metrics are sent unencrypted over the Zabbix trapper protocol (send them over a private network or VPN)"
 }
 EOF
         return 0
@@ -546,8 +547,9 @@ EOF
     echo ""
     echo "Options:"
     echo "  Interval:     ${interval}s"
-    echo "  TLS:          $tls"
-    echo "  PSK:          $psk"
+    echo "  TLS:          $tls (not applied)"
+    echo "  PSK:          $psk (not applied)"
+    echo "  Transport:    unencrypted (Zabbix trapper protocol; TLS/PSK not implemented as of v1.238)"
     echo ""
 
     # Check exporter timer status
@@ -1295,8 +1297,8 @@ SETUP OPTIONS:
     --ipv6              Enable IPv6 rules
     --no-ipv4           Disable IPv4 rules
     --no-ipv6           Disable IPv6 rules
-    --tls               Enable TLS encryption
-    --psk               Enable PSK authentication
+    --tls               Recorded only: TLS is not implemented as of v1.238 (sent unencrypted)
+    --psk               Recorded only: PSK is not implemented as of v1.238 (sent unencrypted)
     --non-interactive   Non-interactive mode (require --server)
 
 STATUS OPTIONS:

@@ -707,6 +707,10 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 
 	// Feeds: per M81-3 contract, feeds configured + data available = LOADED
 	// (not ACTIVE — feeds are data pipeline, not traffic processing).
+	// v1.238 (owner 2026-11-21): "loaded" here means a recent SNAPSHOT FILE is available; it is
+	// a file-age check and does NOT verify kernel loading. The state value and the verdict are
+	// kept; operator text says "snapshot available" (cmd_health.sh, validator cli.go). The
+	// per-feed refresh state and the one stale policy are `nftban feeds status`.
 	// Feeds share blacklist_ipv4 with geoban so element count is shared.
 	// v1.229.11 FEEDS-HEALTH-TRUTH: enablement, not config presence, and the
 	// feed data dir under DataDir instead of a hardcoded /var/lib/nftban.

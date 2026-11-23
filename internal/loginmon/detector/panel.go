@@ -116,7 +116,27 @@ func (d *PanelDetector) Detect(line []byte) (Verdict, bool) {
 		}
 	}
 
-	return Verdict{}, false
+	// Stage 4 (v1.238): DirectAdmin confirmed success, after every failure stage.
+	return d.detectDASuccess(line)
+}
+
+// detectDASuccess reports DA's native "<date>: '<ip>' successful login to '<user>'" as a
+// Success verdict. The message must START with the quoted IP followed by
+// "' successful login to '"; the username comes after it and cannot forge that position.
+func (d *PanelDetector) detectDASuccess(line []byte) (Verdict, bool) {
+	_, msg, ok := messageAfterTag(line)
+	if !ok || len(msg) < 2 || msg[0] != '\'' {
+		return Verdict{}, false
+	}
+	q := bytes.IndexByte(msg[1:], '\'')
+	if q <= 0 || !bytes.HasPrefix(msg[1+q:], []byte("' successful login to '")) {
+		return Verdict{}, false
+	}
+	addr, err := netip.ParseAddr(string(msg[1 : 1+q]))
+	if err != nil {
+		return Verdict{}, false
+	}
+	return Verdict{IP: addr, Reason: ReasonDirectAdminLogin, Service: "directadmin", Success: true}, true
 }
 
 // detectDirectAdmin handles DirectAdmin login failures
@@ -314,7 +334,10 @@ func (d *PanelDetector) detectCPanel(line, lineLower []byte) (Verdict, bool) {
 func (d *PanelDetector) detectPlesk(line, lineLower []byte) (Verdict, bool) {
 	// Must contain failure indicator
 	hasFailure := bytes.Contains(lineLower, []byte("failed")) ||
-		bytes.Contains(lineLower, []byte("authentication")) ||
+		// v1.238: not bare "authentication" (an "Authentication succeeded" line would have
+		// scored as a failure); only an explicit authentication failure phrase.
+		bytes.Contains(lineLower, []byte("authentication failed")) ||
+		bytes.Contains(lineLower, []byte("authentication failure")) ||
 		bytes.Contains(lineLower, []byte("invalid")) ||
 		bytes.Contains(lineLower, []byte("incorrect"))
 

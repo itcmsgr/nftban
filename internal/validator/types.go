@@ -270,7 +270,7 @@ type BlacklistHealth struct {
 
 // BlacklistSubHealth represents a blacklist sub-source state.
 type BlacklistSubHealth struct {
-	State   string `json:"state"`             // enforcing|primed|idle|loaded|stale|disabled
+	State   string `json:"state"`             // enforcing|primed|idle|loaded|stale|disabled (feeds "loaded" = a recent snapshot file, not a kernel check)
 	Entries int    `json:"entries,omitempty"` // element count (manual/feeds)
 	Drops   int64  `json:"drops,omitempty"`   // counter value (manual only — attributable)
 }

@@ -478,17 +478,12 @@ nftban_health_check_zabbix() {
         [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
     fi
 
-    # Check TLS/PSK configuration if enabled
-    if [[ "${NFTBAN_ZABBIX_TLS_ENABLED:-false}" == "true" ]]; then
-        if [[ -z "${NFTBAN_ZABBIX_TLS_PSK_FILE:-}" ]]; then
-            zabbix_issues+=("⚠ TLS enabled but PSK file not configured")
-            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
-        elif [[ ! -f "${NFTBAN_ZABBIX_TLS_PSK_FILE}" ]]; then
-            zabbix_issues+=("⚠ TLS PSK file not found: ${NFTBAN_ZABBIX_TLS_PSK_FILE}")
-            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
-        else
-            zabbix_issues+=("✓ TLS/PSK: Configured")
-        fi
+    # v1.238 (SEC-ZABBIX-TLS-NOT-IMPLEMENTED): the sender speaks the plain Zabbix trapper protocol
+    # (exporters/nftban_unified_exporter_export.sh); TLS/PSK settings are never applied. The old
+    # check reported "✓ TLS/PSK: Configured" when a PSK file existed, which claimed encryption.
+    if [[ "${NFTBAN_ZABBIX_TLS_ENABLED:-false}" == "true" || "${NFTBAN_ZABBIX_PSK_ENABLED:-false}" == "true" ]]; then
+        zabbix_issues+=("⚠ TLS/PSK is not implemented as of v1.238: metrics are sent unencrypted over the Zabbix trapper protocol (send them over a private network or VPN)")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
     fi
 
     # Store results

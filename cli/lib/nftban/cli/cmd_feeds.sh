@@ -410,6 +410,10 @@ nftban_feeds_list() {
     echo "Status: $stats"
     echo ""
 
+    # v1.238: per-feed last/next update from the one reader (nftban-core feeds status)
+    local _fs_json
+    _fs_json=$(_nftban_feeds_status_json)
+
     # Get all categories
     local categories
     categories=$(nftban_feeds_get_categories)
@@ -455,6 +459,14 @@ nftban_feeds_list() {
             fi
 
             printf "│ %-4s %-25s %-15s %-10s │\n" "$status_icon" "${feed:0:25}" "$status_text" "${interval:-DAILY}"
+            # v1.238: when it was last updated and when the next update is due (one reader).
+            if [[ "$enabled" == "true" && -n "$_fs_json" ]]; then
+                local _fs_short
+                _fs_short=$(_nftban_feeds_refresh_short "$_fs_json" "${feed,,}")
+                if [[ -n "$_fs_short" ]]; then
+                    printf "│      %-52s │\n" "$_fs_short"
+                fi
+            fi
         done
 
         echo "└──────────────────────────────────────────────────────────────────┘"
@@ -645,6 +657,8 @@ nftban_feeds_status() {
     echo ""
 
     # Enabled feeds detail
+    local _fs_json
+    _fs_json=$(_nftban_feeds_status_json)
     echo "Enabled Feeds:"
     local all_feeds
     all_feeds=$(nftban_feeds_discover_all)
@@ -669,6 +683,14 @@ nftban_feeds_status() {
             else
                 printf "  • %-30s %s\n" "$feed" "not yet downloaded"
             fi
+            # v1.238: last successful update and next update (one reader)
+            if [[ -n "$_fs_json" ]]; then
+                local _fs_long
+                _fs_long=$(_nftban_feeds_refresh_long "$_fs_json" "$feed_lowercase")
+                if [[ -n "$_fs_long" ]]; then
+                    printf "%s\n" "$_fs_long"
+                fi
+            fi
         fi
     done
 
@@ -677,6 +699,13 @@ nftban_feeds_status() {
     fi
 
     echo ""
+    # v1.238 part B: per-feed refresh state from the one reader (nftban-core feeds status):
+    # last successful refresh, last attempt, snapshot state, enforcement, next request/refresh.
+    local _core="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core}"
+    if [[ -x "$_core" ]]; then
+        echo "Refresh state:"
+        "$_core" feeds status 2>&1 | sed 's/^/  /' || true
+    fi
     echo "Log file: ${NFTBAN_LOG_DIR:-/var/log/nftban}/feeds.log"
     echo "Storage: ${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds/"
     echo ""
@@ -888,6 +917,9 @@ nftban_cmd_feeds() {
         test)
             nftban_feeds_test "$json_mode" "$@"
             ;;
+        abuseipdb)
+            nftban_feeds_abuseipdb "$@"
+            ;;
         help|-h|--help)
             _nftban_feeds_help
             ;;
@@ -898,9 +930,252 @@ nftban_cmd_feeds() {
             # renders the full help block.
             _v144_error_with_hint \
                 "Unknown feeds action: $action" \
-                "Valid: list, enable, disable, status, select, enable-category, refresh, count" \
+                "Valid: list, enable, disable, update, status, select, enable-category, config, stats, test, abuseipdb" \
                 "nftban feeds help"
             return $?
+            ;;
+    esac
+}
+
+# =============================================================================
+# ABUSEIPDB PROVIDER MENU (v1.238 part B2)
+# =============================================================================
+# `nftban feeds abuseipdb <command>`: the provider's management view. Thin: every command
+# delegates to nftban-core (key, test, status, update: the one downloader and the one status
+# reader) or to the generic feed handlers (enable/disable, property overrides). No logic of its own.
+# The key is never printed and never passed on a command line.
+
+_NFTBAN_ABUSEIPDB_FEED="ABUSEIPDB"
+# Properties `config set` may change (validated again by nftban-core when the feed is read).
+_NFTBAN_ABUSEIPDB_SETTABLE=(CONFIDENCE_MINIMUM LIMIT MAX_AGE MIN_INTERVAL)
+
+_nftban_abuseipdb_core() {
+    local core="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core}"
+    if [[ ! -x "$core" ]]; then
+        echo "nftban feeds abuseipdb needs nftban-core ($core)" >&2
+        return 1
+    fi
+    "$core" "$@"
+}
+
+# _nftban_abuseipdb_confirm PROMPT ARGS... -> 0 when confirmed (--yes, or "y" on a terminal)
+_nftban_abuseipdb_confirm() {
+    local prompt="$1" a ans=""
+    shift
+    for a in "$@"; do [[ "$a" == "--yes" || "$a" == "-y" ]] && return 0; done
+    if [[ ! -t 0 ]]; then
+        echo "$prompt: no terminal to ask on; repeat with --yes to confirm" >&2
+        return 1
+    fi
+    read -r -p "$prompt [y/N] " ans || return 1
+    [[ "$ans" == "y" || "$ans" == "Y" || "$ans" == "yes" ]]
+}
+
+_nftban_abuseipdb_key_set() {
+    local key=""
+    if [[ -t 0 ]]; then
+        read -r -s -p "AbuseIPDB API key (input hidden): " key || { echo; return 1; }
+        echo
+        [[ -n "$key" ]] || { echo "No key entered; nothing changed." >&2; return 1; }
+        printf '%s\n' "$key" | _nftban_abuseipdb_core feeds abuseipdb-key set
+        local rc=$?
+        key=""
+        return $rc
+    fi
+    # not a terminal: the key comes on stdin (e.g. from a root-only file), never as an argument
+    _nftban_abuseipdb_core feeds abuseipdb-key set
+}
+
+_nftban_abuseipdb_list() {
+    local n=50 a prev=""
+    for a in "$@"; do
+        [[ "$prev" == "--limit" ]] && n="$a"
+        prev="$a"
+    done
+    [[ "$n" =~ ^[0-9]+$ ]] || { echo "--limit needs a number" >&2; return 1; }
+    local f="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds/abuseipdb.txt"
+    if [[ ! -r "$f" ]]; then
+        echo "No AbuseIPDB snapshot readable at $f (status: nftban feeds abuseipdb status)"
+        return 1
+    fi
+    local total
+    total=$(wc -l < "$f")
+    echo "AbuseIPDB snapshot: $total accepted entries (showing up to $n; --limit N)"
+    head -n "$n" -- "$f"
+}
+
+_nftban_abuseipdb_config() {
+    local sub="${1:-show}"
+    shift || true
+    case "$sub" in
+        show)
+            local prop val
+            echo "AbuseIPDB feed settings (effective; overrides go to nftban.conf.local):"
+            for prop in ENABLED URL FORMAT "${_NFTBAN_ABUSEIPDB_SETTABLE[@]}"; do
+                val=$(nftban_feeds_get_property "$_NFTBAN_ABUSEIPDB_FEED" "$prop")
+                printf '  FEED_%s_%-20s %s\n' "$_NFTBAN_ABUSEIPDB_FEED" "$prop" "${val:-(unset)}"
+            done
+            echo "  API key file: ${NFTBAN_CONFIG_DIR:-/etc/nftban}/abuseipdb.key (nftban feeds abuseipdb key status)"
+            ;;
+        set)
+            local prop="${1:-}" val="${2:-}" p known=false
+            prop="${prop^^}"
+            for p in "${_NFTBAN_ABUSEIPDB_SETTABLE[@]}"; do [[ "$p" == "$prop" ]] && known=true; done
+            if [[ -z "$val" || "$known" != true ]]; then
+                echo "usage: nftban feeds abuseipdb config set <CONFIDENCE_MINIMUM|LIMIT|MAX_AGE|MIN_INTERVAL> <value>" >&2
+                return 1
+            fi
+            case "$prop" in
+                CONFIDENCE_MINIMUM) [[ "$val" =~ ^[0-9]+$ ]] && (( val >= 25 && val <= 100 )) || { echo "CONFIDENCE_MINIMUM: 25-100" >&2; return 1; } ;;
+                LIMIT) [[ "$val" =~ ^[0-9]+$ ]] && (( val >= 1 && val <= 500000 )) || { echo "LIMIT: 1-500000" >&2; return 1; } ;;
+                MAX_AGE|MIN_INTERVAL) [[ "$val" == "0" || "$val" =~ ^([0-9]+(h|m|s))+$ ]] || { echo "$prop: a duration such as 72h, 6h or 90m (0 = off)" >&2; return 1; } ;;
+            esac
+            nftban_feeds_set_property "$_NFTBAN_ABUSEIPDB_FEED" "$prop" "$val" || return 1
+            echo "FEED_${_NFTBAN_ABUSEIPDB_FEED}_${prop}=\"$val\" (nftban.conf.local). Takes effect at the next refresh or full sync."
+            ;;
+        *)
+            echo "usage: nftban feeds abuseipdb config [show | set <property> <value>]" >&2
+            return 1
+            ;;
+    esac
+}
+
+_nftban_abuseipdb_help() {
+    cat <<'HELP'
+nftban feeds abuseipdb <command>   AbuseIPDB blacklist feed (needs your own AbuseIPDB API key)
+
+  (no command) | status       Health: enabled, API key present (never shown), last successful
+                              refresh, last attempt and reason, snapshot state, enforcement,
+                              next permitted request, next scheduled refresh, quota if stated
+  setup                       Store the key, test it, then ask before enabling
+  key set | status | remove   The API key (set: hidden prompt, or stdin; never an argument)
+  test [--json]               One request to the check endpoint: proves the key is accepted.
+                              Costs a check request, not a blacklist download (each endpoint has
+                              its own daily limit; status shows the blacklist quota the provider
+                              last stated). Never changes the snapshot or its refresh time.
+  enable | disable            The generic feed switch. Disable removes only AbuseIPDB's
+                              contribution; a ban held for another reason stays.
+  update                      Refresh AbuseIPDB only (respects the provider back-off and
+                              MIN_INTERVAL), then the daemon full sync
+  list [--limit N]            Accepted entries of the current snapshot
+  stats                       Requested vs received/accepted/rejected, score range, provider time
+  logs [--lines N]            AbuseIPDB lines of the feeds log
+  config [show]               Effective FEED_ABUSEIPDB_* settings
+  config set <prop> <value>   CONFIDENCE_MINIMUM, LIMIT, MAX_AGE, MIN_INTERVAL (nftban.conf.local)
+
+Expiry: past MAX_AGE (default 72h) the snapshot is excluded by the feed authority; its
+contribution leaves the kernel sets at the next successful full sync (addresses also listed by
+another feed or banned for another reason stay banned). The file stays on disk.
+Mutating commands ask first; without a terminal add --yes.
+Remote lookup and reporting: not available (pending a separate decision).
+HELP
+}
+
+nftban_feeds_abuseipdb() {
+    local sub="${1:-}"
+    shift || true
+    case "$sub" in
+        ""|status)
+            _nftban_abuseipdb_core feeds status --feed abuseipdb "$@" || return $?
+            if [[ -z "$sub" ]]; then
+                echo "Commands: setup, key set|status|remove, test, enable, disable, update, list, stats, logs, config (nftban feeds help)"
+                echo "Remote lookup and reporting: not available (pending a separate decision)."
+            fi
+            ;;
+        setup)
+            if declare -F nftban_require_net_admin_or_exit >/dev/null 2>&1; then
+                nftban_require_net_admin_or_exit
+            fi
+            local kst
+            kst=$(_nftban_abuseipdb_core feeds abuseipdb-key status) || return 1
+            echo "$kst"
+            if [[ "$kst" != *": ok" ]] || _nftban_abuseipdb_confirm "Replace the stored API key?" "$@"; then
+                [[ "$kst" == *": ok" ]] || echo "Step 1: store the API key"
+                _nftban_abuseipdb_key_set || return 1
+            fi
+            echo "Step 2: test the key"
+            _nftban_abuseipdb_core feeds abuseipdb-test || { echo "The key test failed; the feed was not enabled." >&2; return 1; }
+            echo "Step 3: enable"
+            if _nftban_abuseipdb_confirm "Enable the AbuseIPDB feed now (downloads the list, then a full sync)?" "$@"; then
+                nftban_feeds_enable_json "$_NFTBAN_ABUSEIPDB_FEED" false
+            else
+                echo "Not enabled. Later: nftban feeds abuseipdb enable"
+            fi
+            ;;
+        enable)
+            if declare -F nftban_require_net_admin_or_exit >/dev/null 2>&1; then
+                nftban_require_net_admin_or_exit
+            fi
+            nftban_feeds_enable_json "$_NFTBAN_ABUSEIPDB_FEED" false
+            ;;
+        disable)
+            if declare -F nftban_require_net_admin_or_exit >/dev/null 2>&1; then
+                nftban_require_net_admin_or_exit
+            fi
+            _nftban_abuseipdb_confirm "Disable the AbuseIPDB feed (removes only its contribution)?" "$@" || return 1
+            nftban_feeds_disable_json "$_NFTBAN_ABUSEIPDB_FEED" false || return $?
+            echo "Only AbuseIPDB's contribution is removed; an address banned for another reason (another feed, a manual or module ban) stays."
+            ;;
+        update)
+            if declare -F nftban_require_net_admin_or_exit >/dev/null 2>&1; then
+                nftban_require_net_admin_or_exit
+            fi
+            _nftban_abuseipdb_core feeds update "$_NFTBAN_ABUSEIPDB_FEED"
+            ;;
+        list)
+            _nftban_abuseipdb_list "$@"
+            ;;
+        stats)
+            local js
+            js=$(_nftban_abuseipdb_core feeds status --feed abuseipdb --json) || return $?
+            if command -v jq >/dev/null 2>&1; then
+                jq '.feeds[0] | {feed, state, last_success_at, provider_generated_at, entries, provider,
+                    last_attempt, consecutive_failures, enforcement: .enforcement_text}' <<<"$js"
+            else
+                printf '%s\n' "$js"
+            fi
+            ;;
+        logs)
+            local n=50 a prev=""
+            for a in "$@"; do
+                [[ "$prev" == "--lines" ]] && n="$a"
+                prev="$a"
+            done
+            [[ "$n" =~ ^[0-9]+$ ]] || { echo "--lines needs a number" >&2; return 1; }
+            local lf="${NFTBAN_LOG_DIR:-/var/log/nftban}/feeds.log" out=""
+            [[ -r "$lf" ]] || { echo "Feeds log not readable: $lf" >&2; return 1; }
+            out=$(grep -i -e 'abuseipdb' -e 'FEED-TRANSITION' -- "$lf" || true)
+            if [[ -z "$out" ]]; then
+                echo "No AbuseIPDB lines in $lf"
+            else
+                tail -n "$n" <<<"$out"
+            fi
+            ;;
+        config)
+            _nftban_abuseipdb_config "$@"
+            ;;
+        key)
+            local ksub="${1:-status}"
+            shift || true
+            case "$ksub" in
+                status) _nftban_abuseipdb_core feeds abuseipdb-key status ;;
+                set) _nftban_abuseipdb_key_set ;;
+                remove)
+                    _nftban_abuseipdb_confirm "Remove the stored AbuseIPDB API key?" "$@" || return 1
+                    _nftban_abuseipdb_core feeds abuseipdb-key remove
+                    ;;
+                *) echo "usage: nftban feeds abuseipdb key <set|status|remove>" >&2; return 1 ;;
+            esac
+            ;;
+        test)
+            _nftban_abuseipdb_core feeds abuseipdb-test "$@"
+            ;;
+        help|-h|--help)
+            _nftban_abuseipdb_help
+            ;;
+        *)
+            echo "Unknown abuseipdb command: $sub (nftban feeds help)" >&2
+            return 1
             ;;
     esac
 }
@@ -1235,6 +1510,30 @@ nftban_feeds_update_json() {
 # =============================================================================
 
 
+# v1.238 (owner 2026-11-21): per-feed "last updated / next update" for list and status. Both
+# format the one reader (nftban-core feeds status --json); no times are computed here.
+_nftban_feeds_status_json() {
+    local core="${NFTBAN_LIB_DIR}/bin/nftban-core"
+    [[ -x "$core" ]] || return 0
+    "$core" feeds status --json 2>/dev/null || true
+}
+
+# _nftban_feeds_refresh_short <json> <feed_lower>: "last MM-DD HH:MM - next MM-DD HH:MM UTC"
+_nftban_feeds_refresh_short() {
+    jq -r --arg f "$2" '.feeds[]? | select(.feed == $f)
+        | def t: if . == null then "never" else (.[5:16] | sub("T"; " ")) end;
+        "last \(.last_success_at | t) - next \(if .next_update_at then (.next_update_at | t) else "none" end) UTC\(if .next_permitted_retry then " (deferred)" else "" end)"' \
+        <<<"$1" 2>/dev/null || true
+}
+
+# _nftban_feeds_refresh_long <json> <feed_lower>: two indented lines for nftban feeds status
+_nftban_feeds_refresh_long() {
+    jq -r --arg f "$2" '.feeds[]? | select(.feed == $f)
+        | def t: if . == null then "never" else (.[0:16] | sub("T"; " ")) + " UTC" end;
+        "      Last update: \(.last_success_at | t)\(if .last_attempt and (.last_attempt.ok | not) then " (last attempt failed: " + .last_attempt.reason + ")" else "" end)\n      Next update: \(.next_update_text // "none (feed or feeds switched off)")"' \
+        <<<"$1" 2>/dev/null || true
+}
+
 _nftban_feeds_help() {
     # Source output module for banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
@@ -1258,6 +1557,8 @@ COMMANDS:
     config              Show feeds configuration
     stats               Show feeds statistics
     test                Test feed connectivity/configuration
+    abuseipdb <cmd>     AbuseIPDB feed: setup, key, test, status, update, ...
+                        (commands listed below)
 
     help                Show this help message
 
@@ -1305,6 +1606,8 @@ NOTES:
     • Feeds are updated automatically if FEEDS_AUTO_UPDATE=true
 
 HELP
+    echo ""
+    _nftban_abuseipdb_help
 }
 
 # Export function

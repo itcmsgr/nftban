@@ -34,6 +34,7 @@
 package detector
 
 import (
+	"bytes"
 	"net/netip"
 )
 
@@ -86,6 +87,27 @@ type Verdict struct {
 	ScoreDelta int16      // Points to add to the IP's risk score (scaled by 100)
 	User       string     // Optional: username involved (empty if not extracted)
 	Service    string     // Service name (ssh, dovecot, etc.)
+
+	// Success marks a CONFIRMED successful login (v1.238, owner 2026-11-21: a good login must
+	// be heard, so one later typo cannot escalate). A success verdict carries no score; the
+	// scorer clears the IP's accumulated score (at most once per IP per window) and NEVER
+	// lifts an existing ban. Detectors emit it only from a line whose MESSAGE START is the
+	// service's success phrase (attacker-chosen usernames appear later in the line), and only
+	// after every failure check of that detector has not matched.
+	Success bool
+}
+
+// messageAfterTag splits a log line at its FIRST ": " into the header/tag and the message:
+// syslog "Nov 21 10:01:00 host sshd[1]: <msg>", journal short-iso "2026-...+0200 host
+// sshd[1]: <msg>", DirectAdmin "2026:04:04-13:00:00: <msg>", Roundcube "[date]: <msg>". The
+// header is written by the logger, never by the client, so a phrase required at the START
+// of the message cannot be forged through a username (which always comes later).
+func messageAfterTag(line []byte) (tag, msg []byte, ok bool) {
+	i := bytes.Index(line, []byte(": "))
+	if i < 0 {
+		return nil, nil, false
+	}
+	return line[:i], line[i+2:], true
 }
 
 // Detector is the interface for all login failure detectors

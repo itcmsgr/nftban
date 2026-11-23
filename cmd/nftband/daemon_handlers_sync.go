@@ -25,6 +25,7 @@ import (
 	"log"
 	"net/netip"
 	"os"
+	"path/filepath"
 	goruntime "runtime"
 	"strings"
 	"time"
@@ -53,9 +54,53 @@ import (
 // respData["effect"]: "applied", "partial" (with "partial_reasons") or, when the
 // firewall authority refuses every write, "refused" with Success=false.
 func (d *Daemon) runSync(quickMode bool) SocketResponse {
-	// Prevent concurrent sync operations from racing
+	// Prevent concurrent sync operations from racing (the full-sync record is written under
+	// the same lock, so records follow the order of the syncs).
 	syncMutex.Lock()
 	defer syncMutex.Unlock()
+	resp := d.runSyncLocked(quickMode)
+	if !quickMode {
+		_, _, dataDir, _ := getDaemonPaths()
+		recordFullSync(filepath.Join(dataDir, "feeds"), resp, time.Now())
+	}
+	return resp
+}
+
+// recordFullSync writes the daemon's full-sync record (v1.238 part B): the outcome of THIS sync
+// for the feed sets, kept apart from the download outcomes. The feed sets count as applied when
+// the sync succeeded and feeds were not skipped (a partial sync for other reasons still applied
+// them; its reasons are recorded). Newly expired feeds are logged once.
+func recordFullSync(feedsDir string, resp SocketResponse, now time.Time) {
+	rec := feeds.SyncRecord{At: now, Effect: "failed", Reason: resp.Error}
+	if data, ok := resp.Data.(map[string]any); ok {
+		if e, ok := data[ipc.KeyEffect].(string); ok && e != "" {
+			rec.Effect = e
+		}
+		rec.Enforced, _ = data["feeds_enforced"].([]string)
+		rec.Expired, _ = data["feeds_expired"].([]string)
+		rec.FeedsSkipped, _ = data["feeds_skipped"].(bool)
+		if pr, ok := data["partial_reasons"].([]string); ok && rec.Reason == "" {
+			rec.Reason = strings.Join(pr, ",")
+		}
+	}
+	rec.OK = resp.Success && !rec.FeedsSkipped && (rec.Effect == string(ipc.EffectApplied) || rec.Effect == string(ipc.EffectPartial))
+	if rec.FeedsSkipped && rec.Reason == "" {
+		rec.Reason = "feeds_skipped_memory"
+	}
+	newly, err := feeds.WriteSync(feedsDir, rec)
+	if err != nil {
+		log.Printf("[SYNC] feeds: could not write the full-sync record: %v", err)
+	}
+	for _, f := range newly {
+		if rec.OK {
+			log.Printf("[FEEDS] FEED-TRANSITION feed=%s state=expired: past its MAX_AGE, excluded by the feed authority; contribution excluded from this successful full sync (snapshot kept)", f)
+		} else {
+			log.Printf("[FEEDS] FEED-TRANSITION feed=%s state=expired: past its MAX_AGE, excluded by the feed authority; this full sync did not complete: expired; removal has not yet been confirmed by a successful full sync", f)
+		}
+	}
+}
+
+func (d *Daemon) runSyncLocked(quickMode bool) SocketResponse {
 
 	// No authority, no write: refused before any work (completed, no effect), instead
 	// of failing halfway at the first kernel write.
@@ -662,6 +707,9 @@ func (d *Daemon) runSync(quickMode bool) SocketResponse {
 	if feedDecision.State != "" {
 		respData["feed_authority"] = feedDecision.State
 		respData["feeds_enforced"] = feedDecision.Enforced
+		if len(feedDecision.Expired) > 0 {
+			respData["feeds_expired"] = feedDecision.Expired
+		}
 		if len(feedDecision.Reasons) > 0 {
 			respData["feed_authority_reasons"] = feedDecision.Reasons
 			respData["feed_authority_texts"] = feedDecision.Texts
@@ -716,9 +764,18 @@ func (d *Daemon) handleLoadCIDRsRequest(params map[string]any) SocketResponse {
 		var ipv4CIDRs, ipv6CIDRs []string
 
 		if setType == "blacklist" {
-			// Load feeds
+			// Load feeds: only those the ONE feed authority enforces (v1.238 D5-2, owner GO
+			// 2026-11-20). Never a disabled, not-enabled or expired feed; additive as before.
 			feedsDir := dataDir + "/feeds"
-			ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet, _, err := feeds.LoadAllFeeds(feedsDir)
+			fcfg := nftbanconf.MustLoad()
+			fd, ferr := feeds.Evaluate(fcfg.ConfigDir, fcfg.DataDir, fcfg.FeedsEnabled)
+			if ferr != nil {
+				return SocketResponse{Success: false, Error: "feed authority undecidable, nothing loaded: " + ferr.Error()}
+			}
+			if len(fd.Enforced) == 0 {
+				return SocketResponse{Success: true, Data: map[string]any{"loaded": 0, "note": "no enforced feeds"}}
+			}
+			ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet, err := feeds.LoadEnforcedFeeds(feedsDir, fd.Enforced)
 			if err != nil {
 				return SocketResponse{Success: false, Error: "failed to load feeds: " + err.Error()}
 			}

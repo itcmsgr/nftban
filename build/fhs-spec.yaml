@@ -1560,6 +1560,32 @@ file_permissions:
     group: nftban
     glob: true
     type: file
+  # v1.238 part B: the refresh records next to the snapshots, same owner and mode. <feed>.status is
+  # written only by the downloader (nftban-core feeds update, root), full-sync.status only by the
+  # daemon (nftband, User=root), both through the one feed-directory writer (os.Root, exclusive
+  # 0600 temp file owned through its descriptor, widened to 0640, renamed). They report; the feed
+  # authority decides enforcement.
+  - path: /var/lib/nftban/feeds
+    artifact_class: state
+    pattern: "*.status"
+    mode: "0640"
+    owner: root
+    group: nftban
+    glob: true
+    type: file
+
+  # v1.238 part B: the AbuseIPDB API key. Root only (no nftban group read: only root nftban-core
+  # sends the request). Written by `nftban feeds abuseipdb key set` (never via argv); read by
+  # nftban-core, which refuses it unless it is a regular root-owned file without group/other
+  # access. Not matched by the *.conf / *.local rules above.
+  - path: /etc/nftban
+    artifact_class: config
+    pattern: "abuseipdb.key"
+    mode: "0600"
+    owner: root
+    group: root
+    exact: true
+    type: file
 
   # /var/lib/nftban/reports/auditors - auditor access
   - path: /var/lib/nftban/reports/auditors
