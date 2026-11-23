@@ -245,18 +245,24 @@ nftban_pro_cmd_enroll() {
     # v1.19.0: Use mktemp instead of predictable PID-based temp files (R17)
     local http_code
     local response_file
+    # v1.238 BUG/OBS-PORTAL-API-KEY-IN-ARGV (owner GO 2026-11-23): the bearer token is passed in a
+    # 0600 header file (curl -H @file), never on the command line (/proc/<pid>/cmdline is readable
+    # by every local user). Same rule as the GeoIP licence key (curl -K, nftban_geoip_download.sh).
+    local auth_hdr
     response_file=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_pro_XXXXXX")
-    trap 'rm -f "${response_file:-}"' RETURN
+    auth_hdr=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_pro_hdr_XXXXXX") || { rm -f "$response_file"; return 1; }
+    trap 'rm -f "${response_file:-}" "${auth_hdr:-}"' RETURN
+    printf 'Authorization: Bearer %s\n' "$token" > "$auth_hdr"
 
     http_code=$(curl -sf --connect-timeout "$NFTBAN_PRO_TIMEOUT" \
-        -H "Authorization: Bearer $token" \
+        -H @"$auth_hdr" \
         -w "%{http_code}" \
         -o "$response_file" \
         "${NFTBAN_PRO_STATUS_URL}?server_id=${server_id}" 2>/dev/null || echo "000")
 
     local response=""
     [[ -f "$response_file" ]] && response=$(cat "$response_file")
-    rm -f "$response_file"
+    rm -f "$response_file" "$auth_hdr"
 
     echo ""
     case "$http_code" in

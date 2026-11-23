@@ -358,14 +358,20 @@ EOF
     # Submit to Pro endpoint
     # v1.19.0: Use mktemp instead of predictable PID-based temp files (R17)
     local _pro_tmp_response
+    # v1.238 BUG/OBS-PORTAL-API-KEY-IN-ARGV (owner GO 2026-11-23): the bearer token is passed in a
+    # 0600 header file (curl -H @file), never on the command line (/proc/<pid>/cmdline is readable
+    # by every local user). Same rule as the GeoIP licence key (curl -K, nftban_geoip_download.sh).
+    local _pro_auth_hdr
     _pro_tmp_response=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_pro_XXXXXX")
-    trap 'rm -f "${_pro_tmp_response:-}"' RETURN
+    _pro_auth_hdr=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_pro_hdr_XXXXXX") || { rm -f "$_pro_tmp_response"; return 1; }
+    trap 'rm -f "${_pro_tmp_response:-}" "${_pro_auth_hdr:-}"' RETURN
+    printf 'Authorization: Bearer %s\n' "$token" > "$_pro_auth_hdr"
 
     local response
     local http_code
     http_code=$(curl -sf --connect-timeout "$NFTBAN_PRO_TIMEOUT" \
         -X POST \
-        -H "Authorization: Bearer $token" \
+        -H @"$_pro_auth_hdr" \
         -H "Content-Type: application/json" \
         -d "$payload" \
         -w "%{http_code}" \
@@ -373,7 +379,7 @@ EOF
         "$NFTBAN_PRO_INVENTORY_URL" 2>/dev/null || echo "000")
 
     response=$(cat "$_pro_tmp_response" 2>/dev/null || echo "")
-    rm -f "$_pro_tmp_response"
+    rm -f "$_pro_tmp_response" "$_pro_auth_hdr"
 
     case "$http_code" in
         200|201|202)
@@ -439,19 +445,25 @@ nftban_pro_check_license() {
     # Query status endpoint
     # v1.19.0: Use mktemp instead of predictable PID-based temp files (R17)
     local _pro_tmp_license
+    # v1.238 BUG/OBS-PORTAL-API-KEY-IN-ARGV (owner GO 2026-11-23): the bearer token is passed in a
+    # 0600 header file (curl -H @file), never on the command line (/proc/<pid>/cmdline is readable
+    # by every local user). Same rule as the GeoIP licence key (curl -K, nftban_geoip_download.sh).
+    local _pro_lic_hdr
     _pro_tmp_license=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_pro_XXXXXX")
-    trap 'rm -f "${_pro_tmp_license:-}"' RETURN
+    _pro_lic_hdr=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_pro_hdr_XXXXXX") || { rm -f "$_pro_tmp_license"; return 1; }
+    trap 'rm -f "${_pro_tmp_license:-}" "${_pro_lic_hdr:-}"' RETURN
+    printf 'Authorization: Bearer %s\n' "$token" > "$_pro_lic_hdr"
 
     local http_code
     http_code=$(curl -sf --connect-timeout "$NFTBAN_PRO_TIMEOUT" \
-        -H "Authorization: Bearer $token" \
+        -H @"$_pro_lic_hdr" \
         -w "%{http_code}" \
         -o "$_pro_tmp_license" \
         "${NFTBAN_PRO_STATUS_URL}?server_id=${server_id}" 2>/dev/null || echo "000")
 
     local response
     response=$(cat "$_pro_tmp_license" 2>/dev/null || echo "")
-    rm -f "$_pro_tmp_license"
+    rm -f "$_pro_tmp_license" "$_pro_lic_hdr"
 
     case "$http_code" in
         200)
