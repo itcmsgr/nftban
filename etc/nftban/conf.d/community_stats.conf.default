@@ -27,9 +27,13 @@
 # Master switch — DISABLED by default (user must opt in)
 COMMUNITY_STATS_ENABLED=no
 
-# Unique anonymous installation ID (auto-generated on first enable)
-# This is a random UUID, NOT tied to any identifying information
+# Random installation ID (auto-generated on first enable). Pseudonymous: a random UUID, not
+# derived from this machine, but stable — it lets the receiver recognise the same installation.
 COMMUNITY_STATS_ID=""
+
+# v1.238: install-result anonymisation (only relevant when COMMUNITY_STATS_ENABLED=yes).
+# yes (default) = the install result carries no id; no = it carries COMMUNITY_STATS_ID.
+COMMUNITY_STATS_ANONYMIZE=yes
 
 # API endpoint for stats submission
 COMMUNITY_STATS_URL="https://stats.nftban.com/api/v1/community"
