@@ -12,9 +12,9 @@
 # meta:description="v1.238 part B2 (owner 2026-11-20). The nftban feeds abuseipdb menu is thin: key set hands the key to nftban-core on STDIN, never as an argument; key remove and disable ask and refuse without a terminal unless --yes; config set accepts only CONFIDENCE_MINIMUM/LIMIT/MAX_AGE/MIN_INTERVAL with valid values and writes through the generic property writer; test/update/status delegate to nftban-core (test = abuseipdb-test, update = the single-feed update). A provider feed is never downloaded by the shell curl fallback, and enabling it downloads through nftban-core. nftban feeds help is no longer a two-line dispatcher stub and includes the abuseipdb commands. Behavioural, stubbed (fake nftban-core records argv and stdin); no network, no firewall change; the key is a test fixture."
 # meta:input="None (repo source read-only; temp dirs)"
 # meta:output="Pass/fail assertions; exit 0 on all-pass, 1 on any failure"
-# meta:depends="bash,grep,awk"
+# meta:depends="bash,grep,awk,jq"
 # meta:inventory.files="cli/lib/nftban/cli/cmd_feeds.sh,cli/lib/nftban/core/nftban_feeds.sh,cli/sbin/nftban"
-# meta:inventory.binaries="bash,grep,awk"
+# meta:inventory.binaries="bash,grep,awk,jq"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -142,6 +142,18 @@ else
 fi
 en2=$(awk '/^nftban_feeds_enable\(\) \{/ {f=1} f {print} f && /^\}/ {exit}' "$FEEDS_SH")
 grep -qF 'if [[ -n "$feed_format" || -x "$core" ]]; then' <<<"$en2" && ok "enable downloads every feed through nftban-core when installed" || no "enable delegation"
+
+echo "=== per-feed last/next update lines (format the one reader) ==="
+hl=$(awk '/^_nftban_feeds_refresh_(short|long)\(\) \{/ {f=1} f {print} f && /^\}/ {f=0}' "$CMD_FEEDS")
+J='{"feeds":[{"feed":"abuseipdb","last_success_at":"2026-11-21T03:22:10Z","next_update_at":"2026-11-23T03:20:00Z","next_update_text":"2026-11-23 03:20 + up to 15 min (host time; daily feeds timer); earlier runs skip it until 2026-11-22 05:00 UTC (back-off or minimum interval)","next_permitted_retry":"2026-11-22T05:00:00Z","last_attempt":{"ok":false,"reason":"abuseipdb: rate_limited (HTTP 429)"}},{"feed":"spamhaus_drop","last_success_at":null,"next_update_at":"2026-11-22T03:20:00Z","next_update_text":"Sun 2026-11-22 03:27:41 UTC (daily feeds timer)"}]}'
+short=$(bash -c 'eval "$1"; _nftban_feeds_refresh_short "$2" abuseipdb' _ "$hl" "$J")
+[[ "$short" == "last 11-21 03:22 - next 11-23 03:20 UTC (deferred)" && ${#short} -le 52 ]] && ok "list line: last and next update, deferral marked, fits the box" || no "list line" "$short"
+long=$(bash -c 'eval "$1"; _nftban_feeds_refresh_long "$2" abuseipdb' _ "$hl" "$J")
+[[ "$long" == *"Last update: 2026-11-21 03:22 UTC (last attempt failed: abuseipdb: rate_limited (HTTP 429))"* && "$long" == *"Next update: 2026-11-23 03:20"*"earlier runs skip it"* ]] && ok "status lines: last update (with a failed attempt) and the next update with its reason" || no "status lines" "$long"
+never=$(bash -c 'eval "$1"; _nftban_feeds_refresh_short "$2" spamhaus_drop' _ "$hl" "$J")
+[[ "$never" == "last never - next 11-22 03:20 UTC" ]] && ok "never-updated feed shows 'never'" || no "never" "$never"
+none=$(bash -c 'eval "$1"; _nftban_feeds_refresh_short "$2" nosuchfeed' _ "$hl" "$J")
+[[ -z "$none" ]] && ok "unknown feed prints nothing" || no "unknown feed" "$none"
 
 echo ""
 echo "RESULTS: PASS=$PASS FAIL=$FAIL"

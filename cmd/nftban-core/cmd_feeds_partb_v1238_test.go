@@ -363,3 +363,73 @@ func TestFeedsUpdateHonoursMasterSwitch(t *testing.T) {
 		t.Fatalf("a download was attempted with feeds switched off (%d)", called)
 	}
 }
+
+// v1.238 (owner 2026-11-21): each enabled feed shows when it was last updated and when its next
+// update is due. The next update is the first daily timer run not blocked by the feed's back-off
+// or minimum interval; the schedule constants must match the shipped timer unit.
+func TestFeedsNextUpdate(t *testing.T) {
+	unit, err := os.ReadFile(filepath.Join("..", "..", "install", "systemd", "nftban-core-feeds.timer"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"OnCalendar=*-*-* 03:20:00", "RandomizedDelaySec=15m"} {
+		if !strings.Contains(string(unit), want) || feedsTimerHour != 3 || feedsTimerMinute != 20 || feedsTimerMaxDelay != 15*time.Minute {
+			t.Fatalf("timer unit and the status constants disagree (%q)", want)
+		}
+	}
+	at := func(s string) time.Time {
+		v, err := time.Parse("2006-01-02 15:04", s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	if got := nextTimerRun(at("2026-11-21 16:00")); !got.Equal(at("2026-11-22 03:20")) {
+		t.Fatalf("after today's run: %s", got)
+	}
+	if got := nextTimerRun(at("2026-11-21 02:00")); !got.Equal(at("2026-11-21 03:20")) {
+		t.Fatalf("before today's run: %s", got)
+	}
+	// no deferral: the timer's own next elapse is shown
+	run, text := nextUpdate(at("2026-11-21 16:00"), time.Time{}, "Sun 2026-11-22 03:27:41 UTC")
+	if !run.Equal(at("2026-11-22 03:20")) || !strings.HasPrefix(text, "Sun 2026-11-22 03:27:41 UTC") {
+		t.Fatalf("plain: %s %q", run, text)
+	}
+	// AbuseIPDB-style deferral past the next run: the first run after it, and the reason
+	run, text = nextUpdate(at("2026-11-21 16:00"), at("2026-11-22 05:00"), "Sun 2026-11-22 03:27:41 UTC")
+	if !run.Equal(at("2026-11-23 03:20")) || !strings.Contains(text, "earlier runs skip it until 2026-11-22 05:00 UTC") {
+		t.Fatalf("deferred: %s %q", run, text)
+	}
+
+	cfg, data, fd := partBSandbox(t, partBConf)
+	now := time.Now().UTC().Truncate(time.Second)
+	if _, err := feeds.RecordFailure(fd, "spamhaus_drop", "http 503", now.Add(30*time.Hour), feeds.RateLimitInfo{}, now); err != nil {
+		t.Fatal(err)
+	}
+	configs, err := parseFeedsConfig(filepath.Join(cfg, "conf.d", "feeds.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, master := range []bool{true, false} {
+		rep, err := buildFeedsStatus(cfg, data, master, configs, now, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, v := range rep.Feeds {
+			switch {
+			case !v.Enabled || !master:
+				if v.NextUpdateAt != nil {
+					t.Fatalf("%s (enabled=%v master=%v) must have no next update: %+v", v.Feed, v.Enabled, master, v)
+				}
+			case v.Feed == "spamhaus_drop":
+				if v.NextUpdateAt == nil || v.NextUpdateAt.Before(now.Add(30*time.Hour)) || !strings.Contains(v.NextUpdateText, "earlier runs skip it") {
+					t.Fatalf("back-off must move the next update: %+v", v)
+				}
+			default:
+				if v.NextUpdateAt == nil || v.NextUpdateAt.After(now.Add(24*time.Hour)) {
+					t.Fatalf("%s: next update must be the next daily run: %+v", v.Feed, v)
+				}
+			}
+		}
+	}
+}
