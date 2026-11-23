@@ -146,7 +146,7 @@ func TestWriteFeedDirFileStaysInDir(t *testing.T) {
 func TestWriteFeedDirFileSetgidDirNeedsNoChown(t *testing.T) {
 	dir := os.Getenv("NFTBAN_TEST_FEEDS_DIR")
 	if dir == "" || os.Geteuid() != 0 {
-		t.Skip("set NFTBAN_TEST_FEEDS_DIR to a root:nftban setgid directory and run as root")
+		t.Skip("set NFTBAN_TEST_FEEDS_DIR to a root:nftban setgid directory (needs root privileges to prepare it)")
 	}
 	grp, err := user.LookupGroup("nftban")
 	if err != nil {
