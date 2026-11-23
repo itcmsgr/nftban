@@ -708,6 +708,9 @@ case "$1" in
         nftban_immut_relock_owned | while read -r _st _p; do log_info "immutable flag $_st: $_p"; done
         ;;
     configure)
+        # v1.238: an installed package has no pending purge — forget the remove-step backup record
+        # (the backup itself is kept for the operator, R1).
+        rm -f /var/lib/nftban/.purge-config-backup 2>/dev/null || true
 
         # =================================================================
         # PRE-GO BOOTSTRAP (must run before any nftban binary)
