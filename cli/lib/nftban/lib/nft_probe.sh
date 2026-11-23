@@ -86,6 +86,11 @@ NFTBAN_NFT_PROBE_CANNOT_READ="CANNOT_READ"
 # addresses, ports, set members — so it is capped and redacted before it is ever
 # logged or surfaced. The machine-readable signal is the CLASS, not the text.
 : "${NFTBAN_NFT_PROBE_STDERR_MAX:=512}"
+# v1.238 (owner GO 2026-11-23): the functions below are exported (export -f, end of file), so a
+# child nftban started by the rebuild inherits them. Their constants must travel with them:
+# unexported, the child failed under set -u ("environment: line N: NFTBAN_NFT_PROBE_PRESENT:
+# unbound variable") — lab4: PortScan reload on 1.237.0, BotGuard re-apply inside the rebuild.
+export NFTBAN_NFT_PROBE_PRESENT NFTBAN_NFT_PROBE_ABSENT NFTBAN_NFT_PROBE_CANNOT_READ NFTBAN_NFT_PROBE_STDERR_MAX
 
 # -----------------------------------------------------------------------------
 # nftban_nft_probe_error_class <stderr-text> <rc>

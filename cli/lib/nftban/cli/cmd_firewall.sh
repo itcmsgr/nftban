@@ -5207,6 +5207,17 @@ _firewall_rebuild_core() {
                 echo "  could not be published; this operation cannot be reported as complete." >&2
                 return 2
             fi
+            # v1.238 (owner GO 2026-11-23, option "runtime only"): a BotGuard re-apply that failed
+            # is a failed rebuild for the operator — name it and return non-zero. Scope: runtime
+            # context WITHOUT a result-file consumer only. Installer and `update apply` read the
+            # record, where COMPLETE must pair with rc 0 (switchop ContradictsExitCode); they keep
+            # rc 0 and the step-10 warning. Generation and record above are unchanged.
+            if [[ -z "${_NFTBAN_REBUILD_RESULT_FILE:-}" && "${_NFTBAN_REBUILD_CONTEXT:-runtime-required}" == "runtime-required" \
+                  && "${_REBUILD_MODULE_BOTGUARD:-}" == "${MR_FAILED:-RESTORE_FAILED}" ]]; then
+                echo "REBUILD INCOMPLETE: BotGuard rules were NOT re-applied (re-apply failed)." >&2
+                echo "  The firewall schema and the other modules are applied. Run: nftban botguard enable" >&2
+                return 1
+            fi
             return 0
             ;;
         degraded)
