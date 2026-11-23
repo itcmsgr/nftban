@@ -79,6 +79,15 @@ func PersistSSHPort(exec executor.Executor, sshPort int, log *logging.Logger) {
 		log.Debug("persisted SSH port %d to %s", sshPort, sshStateFile)
 	}
 
+	// v1.238 D4 (owner 2026-11-23): the operator's declared SSH_PORT and the detected port are
+	// different facts. The write below keeps the detected (running) port so the shell reload path
+	// keeps admitting SSH (lockout prevention, unchanged); when the declared value differs, say so.
+	if declared := confLocalValue(exec, "SSH_PORT"); declared != "" && declared != portStr {
+		log.Warn("nftban.conf.local declared SSH_PORT=%s, but the SSH port detected on this host is %s "+
+			"(running sshd / sshd_config); SSH_PORT is set to the detected port so the firewall keeps "+
+			"admitting SSH. Check which port sshd uses: ss -ltnp | grep sshd", declared, portStr)
+	}
+
 	// Update conf.local: SSH_PORT=
 	updateConfLocal(exec, "SSH_PORT", portStr, log)
 
@@ -162,6 +171,22 @@ func ensureTCPPortsIncludes(exec executor.Executor, sshPort int, log *logging.Lo
 }
 
 // updateConfLocal creates or updates a key=value in nftban.conf.local.
+// confLocalValue returns KEY's value from conf.local (last definition, quotes stripped), or "".
+func confLocalValue(exec executor.Executor, key string) string {
+	data, err := exec.ReadFile(confLocal)
+	if err != nil {
+		return ""
+	}
+	val := ""
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, key+"=") {
+			val = strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, key+"=")), "\"'")
+		}
+	}
+	return val
+}
+
 func updateConfLocal(exec executor.Executor, key, value string, log *logging.Logger) {
 	prefix := key + "="
 	data, err := exec.ReadFile(confLocal)
