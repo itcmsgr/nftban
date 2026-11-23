@@ -30,6 +30,7 @@ _config_local_inventory() {
     shopt -s nullglob
     for f in "$cd"/nftban.conf.local \
              "$cd"/conf.d/*.conf.local \
+             "$cd"/conf.d/*/*.conf.local \
              "$cd"/whitelist.d/*.conf.local \
              "$cd"/blacklist.d/*.conf.local; do
         if [[ -f "$f" ]]; then printf '%s\n' "$f"; fi
@@ -119,7 +120,10 @@ _config_local_classify_kv() {
     prop=$(nftban_schema_get_property "$key" 2>/dev/null) || true
     if [[ -n "$prop" ]]; then
         dep=$(printf '%s' "$prop" | jq -r '.deprecated // false' 2>/dev/null) || true
-        if [[ "$dep" == "true" ]]; then printf 'DEPRECATED_KEY\t%s' "deprecated in schema"; return 0; fi
+        if [[ "$dep" == "true" ]]; then
+            printf 'DEPRECATED_KEY\t%s' "$(printf '%s' "$prop" | jq -r '.deprecation_notice // .description // "deprecated in schema"' 2>/dev/null)"
+            return 0
+        fi
     fi
     msg=$(nftban_config_validate_value "$key" "$val" 2>/dev/null) && rc=0 || rc=$?
     if [[ $rc -eq 0 ]]; then cls="OK"; msg=""
@@ -135,14 +139,15 @@ _config_local_classify_kv() {
 nftban_cmd_config_local_doctor() {
     local json=0 a; for a in "$@"; do case "$a" in --json) json=1;; --dry-run) :;; esac; done
     local files; files=$(_config_local_inventory)
-    local rc=0 f line key val cls msg arr="[]" farr synstat
+    local rc=0 f line key val cls msg arr="[]" farr synstat ln
     while IFS= read -r f; do
         if [[ -z "$f" ]]; then continue; fi
         if _config_local_bashn "$f" >/dev/null; then synstat="OK"; else synstat="SYNTAX_ERROR"; rc=1; fi
         if [[ $json -eq 0 ]]; then printf '  %s  [syntax:%s]\n' "$f" "$synstat"; fi
-        farr="[]"
+        farr="[]"; ln=0
         # parse ONLY simple KEY=VALUE assignments — never source/execute
-        while IFS= read -r line; do
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            ln=$((ln + 1))
             if [[ ! "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then continue; fi
             key="${BASH_REMATCH[1]}"; val="${BASH_REMATCH[2]}"
             val="${val%%#*}"; val="${val%"${val##*[![:space:]]}"}"   # strip trailing comment/space
@@ -150,10 +155,11 @@ nftban_cmd_config_local_doctor() {
             IFS=$'\t' read -r cls msg <<<"$(_config_local_classify_kv "$key" "$val")"
             if [[ "$cls" != "OK" ]]; then rc=1; fi
             if [[ $json -eq 1 ]]; then
-                farr=$(jq -c --arg k "$key" --arg c "$cls" --arg m "$msg" \
-                    '. + [{key:$k,class:$c,message:$m}]' <<<"$farr")
+                farr=$(jq -c --arg k "$key" --arg c "$cls" --arg m "$msg" --argjson l "$ln" \
+                    '. + [{key:$k,line:$l,class:$c,message:$m}]' <<<"$farr")
             else
-                printf '    %-14s %s%s\n' "$cls" "$key" "${msg:+  ($msg)}"
+                # v1.238: file:line so the operator finds the exact line (values never printed)
+                printf '    %-14s %s  [%s:%s]%s\n' "$cls" "$key" "$f" "$ln" "${msg:+  ($msg)}"
             fi
         done < "$f"
         if [[ $json -eq 1 ]]; then

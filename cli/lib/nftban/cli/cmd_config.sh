@@ -87,8 +87,18 @@ show_usage() {
     cat <<'EOF'
 Usage: nftban config <command> [module] [options]
 
+WHICH COMMAND ANSWERS WHICH QUESTION:
+  config local doctor    Which of MY settings (*.conf.local) has a problem? file:line, key, class
+                         (UNKNOWN_KEY / DEPRECATED_KEY / BAD_VALUE); values are never printed
+  config validate        Does the whole effective configuration pass the schema? (rc 0 / 1)
+  config show            What values are in effect? (all sources merged; the source file of
+                         each value is not shown)
+  config status          Is what the services loaded the same as what is on disk? (reload state)
+
 INTEGRITY COMMANDS:
-  validate [--verbose] [--json]    Validate config values against schema
+  validate [--verbose] [--json] [--quiet]
+                                   Validate config values against schema (--quiet: no output,
+                                   same exit code)
   audit [--json]                   Semantic override analysis (dead/stale/unapplied)
   diff [--kernel] [--json]         Value-level diff (base<>local, config<>kernel)
   doctor [--module M] [--json]     Full system integrity audit (config+kernel+runtime)
@@ -215,11 +225,15 @@ nftban_cmd_config_test() {
     # Validate configuration against schema
     local verbose=0
     local json_mode=0
+    local quiet=0
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --verbose|-v) verbose=1 ;;
             --json) json_mode=1 ;;
+            # v1.238: --quiet was accepted and ignored (nftban update preflight passes it).
+            # It now suppresses the report; the exit code is the same for the same result.
+            --quiet|-q) quiet=1 ;;
             *) ;;
         esac
         shift
@@ -231,6 +245,10 @@ nftban_cmd_config_test() {
         return 1
     fi
 
+    if [[ $quiet -eq 1 ]]; then
+        nftban_configtest 0 0 >/dev/null 2>&1
+        return $?
+    fi
     nftban_configtest "$verbose" "$json_mode"
 }
 
