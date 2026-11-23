@@ -608,6 +608,11 @@ GeoBan exceptions ("whitelist"):
   manual bans keep blocking those addresses. A country cannot be both blocked and excepted.
   Country data is IPv4 only (IPv6 is not downloaded).
 
+GeoBan health (nftban health / validator, contract M81-3):
+  The GeoBan health state currently reflects the GeoIP lookup database
+  (dbip-country-lite.mmdb), not the country files GeoBan blocks from. A missing
+  country file is not reported there; check it with: nftban geoban list
+
 Country Codes:
   Use ISO 3166-1 alpha-2 codes (2 letters, uppercase)
   Examples: CN (China), RU (Russia), US (United States), GB (United Kingdom)
