@@ -65,6 +65,7 @@ USAGE:
 COMMANDS:
     enable              Enable HTTP Bot Guard protection
     disable             Disable HTTP Bot Guard protection
+    apply               Load the BotGuard rules if enabled (never changes the setting)
     status              Show bot guard status and statistics
     config              Show bot guard configuration
     stats               Show bot guard set statistics
