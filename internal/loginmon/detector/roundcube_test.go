@@ -56,12 +56,31 @@ func TestRoundcube_IPv6Public_Match(t *testing.T) {
 	}
 }
 
-// HARD STOP: a "Successful login" line must NEVER produce a verdict.
+// HARD STOP: a "Successful login" line must NEVER produce a FAILURE (scoring) verdict.
+// v1.238: it is reported as a Success verdict (clears the score, never a ban).
 func TestRoundcube_SuccessfulLogin_NoVerdict(t *testing.T) {
 	d := NewRoundcubeDetector()
 	line := `[14-Jun-2026 10:55:01 +0000]: <s> Successful login for user@example.gr (ID: 1) from 192.0.2.122 in session deadbeef`
-	if _, ok := d.Detect([]byte(line)); ok {
-		t.Fatal("HARD STOP VIOLATION: success line produced a verdict")
+	v, ok := d.Detect([]byte(line))
+	if ok && (!v.Success || v.ScoreDelta != 0) {
+		t.Fatal("HARD STOP VIOLATION: success line produced a scoring verdict")
+	}
+	if !ok || v.IP.String() != "192.0.2.122" {
+		t.Fatalf("v1.238: a success line must be reported as Success: ok=%v %+v", ok, v)
+	}
+}
+
+// v1.238: classification is by position. A client-chosen username containing the other
+// phrase can neither evade a failure nor forge a success.
+func TestRoundcube_PhraseByPositionNotSubstring(t *testing.T) {
+	d := NewRoundcubeDetector()
+	evade := `[14-Jun-2026 10:55:01 +0000]: <s> Failed login for Successful login for x from 192.0.2.122 in session deadbeef`
+	if v, ok := d.Detect([]byte(evade)); !ok || v.Success || v.ScoreDelta == 0 {
+		t.Fatalf("a failure whose username contains 'Successful login' must still score: ok=%v %+v", ok, v)
+	}
+	forge := `[14-Jun-2026 10:55:01 +0000]: <s> Failed login for a: Successful login for b from 192.0.2.122 in session deadbeef`
+	if v, ok := d.Detect([]byte(forge)); !ok || v.Success {
+		t.Fatalf("a username must not forge a success: ok=%v %+v", ok, v)
 	}
 }
 
