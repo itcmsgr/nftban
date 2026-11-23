@@ -431,8 +431,12 @@ _nftban_botguard_disable() {
 
 _nftban_botguard_status() {
     local json_mode="${1:-false}"
-    local enabled
+    local enabled enabled_json
     enabled=$(_botguard_config_get "HTTP_BOTGUARD_ENABLED" "false")
+    # v1.238 (BUG-BOTGUARD-STATUS-JSON-INVALID-WITH-YES, lab4 2026-11-23): the raw value was printed into
+    # JSON ("enabled":yes = invalid JSON). JSON gets a boolean with the module-gate truth table
+    # (nftban_bool_is_true: true|yes|1|on|enabled).
+    case "${enabled,,}" in true|yes|1|on|enabled) enabled_json=true ;; *) enabled_json=false ;; esac
 
     local loop_interval
     loop_interval=$(_botguard_config_get "HTTP_BOT_FAST_LOOP_INTERVAL" "60")
@@ -520,7 +524,7 @@ _nftban_botguard_status() {
         # a longer route. freshness_at is likewise `null` (not "") when nothing
         # was measured — an empty string is still a claim that a read happened.
         printf '{"enabled":%s,"daemon_running":%s,"loop_interval":%s,"pressure_interval":%s,"suspect_rate":"%s","source":"%s","freshness_at":%s,"structural_present":%s,"sets":{"suspect":{"v4":%s,"v6":%s},"pending":{"v4":%s,"v6":%s},"allow":{"v4":%s,"v6":%s},"grey":{"v4":%s,"v6":%s},"ban":{"v4":%s,"v6":%s},"emergency":{"v4":%s,"v6":%s}}}\n' \
-            "$enabled" "$daemon_running" "$loop_interval" "$pressure_interval" \
+            "$enabled_json" "$daemon_running" "$loop_interval" "$pressure_interval" \
             "$suspect_rate" "$source" "$freshness_json" "$structural_present" \
             "$(nftban_count_json "$ipv4_suspects")" "$(nftban_count_json "$ipv6_suspects")" \
             "$(nftban_count_json "$ipv4_pending")" "$(nftban_count_json "$ipv6_pending")" \
@@ -762,8 +766,12 @@ _nftban_botguard_config() {
     local config_file="$_BOTGUARD_CONF"
     local config_local="$_BOTGUARD_CONF_LOCAL"
 
-    local enabled
+    local enabled enabled_json
     enabled=$(_botguard_config_get "HTTP_BOTGUARD_ENABLED" "false")
+    # v1.238 (BUG-BOTGUARD-STATUS-JSON-INVALID-WITH-YES, lab4 2026-11-23): the raw value was printed into
+    # JSON ("enabled":yes = invalid JSON). JSON gets a boolean with the module-gate truth table
+    # (nftban_bool_is_true: true|yes|1|on|enabled).
+    case "${enabled,,}" in true|yes|1|on|enabled) enabled_json=true ;; *) enabled_json=false ;; esac
     local suspect_rate
     suspect_rate=$(_botguard_config_get "HTTP_BOT_SUSPECT_RATE" "30/second")
     local loop_interval
@@ -779,7 +787,7 @@ _nftban_botguard_config() {
         printf '{"config_file":"%s","config_local":"%s","local_exists":%s,"settings":{"enabled":%s,"suspect_rate":"%s","loop_interval":%s,"pressure_interval":%s,"batch_interval":%s,"suspect_timeout":%s}}\n' \
             "$config_file" "$config_local" \
             "$([[ -f "$config_local" ]] && echo "true" || echo "false")" \
-            "$enabled" "$suspect_rate" "$loop_interval" "$pressure_interval" \
+            "$enabled_json" "$suspect_rate" "$loop_interval" "$pressure_interval" \
             "$batch_interval" "$suspect_timeout"
     else
         echo "Bot Guard Configuration"
