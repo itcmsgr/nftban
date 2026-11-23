@@ -172,24 +172,45 @@ nftban_feeds_discover_all() {
 }
 
 # Get feed property dynamically
-# Uses config architecture: check .conf.local override first, fallback to feeds.conf default
+# v1.238 (BUG-FEEDS-SHELL-PROPERTY-IGNORES-FEEDS-CONF-LOCAL): same sources and order as the Go
+# reader (cmd/nftban-core parseFeedsConfig): feeds.conf -> feeds.conf.local -> nftban.conf.local,
+# the last definition wins; the value is read like internal/feeds configValue (quoted value up to
+# the closing quote, otherwise up to a '#' comment, trimmed). No pipes (EPIPE rule).
+_nftban_feeds_conf_value() {
+    local file="$1" key="$2" line v found=1 out="" lines
+    [[ -f "$file" ]] || return 1
+    # only the lines that can define the key (one grep, no pipe); none -> not defined here
+    lines=$(grep -E "^[[:space:]]*${key}=" "$file" 2>/dev/null) || return 1
+    while IFS= read -r line; do
+        line="${line#"${line%%[![:space:]]*}"}"
+        [[ "$line" == "${key}="* ]] || continue
+        v="${line#*=}"
+        v="${v#"${v%%[![:space:]]*}"}"
+        if [[ "$v" == \"* && "${v:1}" == *\"* ]]; then
+            v="${v:1}"; v="${v%%\"*}"
+        elif [[ "$v" == \'* && "${v:1}" == *\'* ]]; then
+            v="${v:1}"; v="${v%%\'*}"
+        else
+            v="${v%%#*}"
+            v="${v%"${v##*[![:space:]]}"}"
+        fi
+        out="$v"; found=0
+    done <<<"$lines"
+    [[ $found -eq 0 ]] || return 1
+    printf '%s' "$out"
+}
+
 nftban_feeds_get_property() {
     local feed_name="$1"
     local property="$2"  # URL, ENABLED, CATEGORY, DESCRIPTION, etc.
 
     local var_name="FEED_${feed_name}_${property}"
-    local value=""
-    local local_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
-
-    # 1. Check .conf.local override first (user customizations)
-    if [[ -f "$local_conf" ]]; then
-        value=$(grep "^${var_name}=" "$local_conf" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"' || true)
-    fi
-
-    # 2. Fallback to feeds.conf default if not overridden
-    if [[ -z "$value" ]] && [[ -f "$NFTBAN_FEEDS_CONFIG" ]]; then
-        value=$(grep "^${var_name}=" "$NFTBAN_FEEDS_CONFIG" 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '"' || true)
-    fi
+    local value="" v f
+    for f in "$NFTBAN_FEEDS_CONFIG" "${NFTBAN_FEEDS_CONFIG}.local" "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"; do
+        if v=$(_nftban_feeds_conf_value "$f" "$var_name"); then
+            value="$v"
+        fi
+    done
 
     echo "$value"
 }
@@ -350,10 +371,14 @@ nftban_feeds_enable() {
     # v1.238 part B2: a provider feed (FEED_<NAME>_FORMAT) is downloaded only by nftban-core: the one
     # downloader that reads the key, records the outcome and ends with the daemon full sync. Its exit
     # status is the update's (a failed or deferred download is reported, the feed stays enabled).
+    # v1.238 (BUG-FEEDS-ENABLE-ROOT-WRITES-INTO-SERVICE-ACCOUNT-OWNED-CACHE): every feed, not only
+    # provider feeds, is downloaded by nftban-core when it is installed (always, in a package):
+    # one downloader, writing only into the root-owned feeds/ directory. The shell curl below is
+    # the fallback for a host without nftban-core.
     local feed_format
     feed_format=$(nftban_feeds_get_property "$feed_name" "FORMAT")
-    if [[ -n "$feed_format" ]]; then
-        local core="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core}"
+    local core="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core}"
+    if [[ -n "$feed_format" || -x "$core" ]]; then
         if [[ ! -x "$core" ]]; then
             echo "❌ Feed $feed_name (format $feed_format) needs nftban-core to download; it is enabled but not downloaded" >&2
             return 1
@@ -486,6 +511,19 @@ nftban_feeds_update_single() {
         return 0
     fi
 
+    # v1.238 (BUG-FEEDS-ENABLE-ROOT-WRITES-INTO-SERVICE-ACCOUNT-OWNED-CACHE): with nftban-core
+    # installed, the one Go downloader refreshes the feed (root-owned feeds/ only, refresh record,
+    # ends with the daemon full sync, so no_sync does not apply). The curl path below runs only
+    # on a host without nftban-core.
+    local _core="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core}"
+    if [[ -x "$_core" ]]; then
+        if "$_core" feeds update "$feed_name"; then
+            return 0
+        fi
+        nftban_feeds_log ERROR "Feed update failed: $feed_name (nftban-core feeds update)"
+        return 1
+    fi
+
     # v1.238: a provider feed (FEED_<NAME>_FORMAT, e.g. abuseipdb) needs its API key and the
     # provider's response format: only nftban-core handles it, never this curl fallback.
     local feed_format
@@ -496,7 +534,7 @@ nftban_feeds_update_single() {
     fi
 
     # Ensure directories exist
-    mkdir -p "$NFTBAN_FEEDS_STORAGE_DIR" "$NFTBAN_FEEDS_CACHE_DIR" || return 1
+    mkdir -p "$NFTBAN_FEEDS_STORAGE_DIR" || return 1
 
     # TLS enforcement (v1.19.0): reject plaintext HTTP feed URLs
     if [[ "$feed_url" =~ ^http:// ]]; then
@@ -506,14 +544,18 @@ nftban_feeds_update_single() {
 
     # Download feed with configurable timeout (v1.19.0)
     local feed_timeout="${FEEDS_DOWNLOAD_TIMEOUT:-30}"
-    local temp_file="${NFTBAN_FEEDS_CACHE_DIR}/${feed_name}.tmp"
+    # v1.238: never write as root into /var/cache/nftban/feeds (owned by the nftban service
+    # account, which could plant a symlink at the name): a private mktemp directory (0700, root).
+    local _dl_dir
+    _dl_dir=$(mktemp -d "${TMPDIR:-/tmp}/nftban-feed.XXXXXXXX") || return 1
+    local temp_file="${_dl_dir}/${feed_name}.tmp"
     nftban_feeds_log DEBUG "Downloading: $feed_url (timeout: ${feed_timeout}s)"
 
     # v1.19.0: Add max download size limit to prevent DoS (R05)
     local max_size="${FEEDS_MAX_DOWNLOAD_SIZE:-52428800}"  # 50MB default
     if ! curl -sSL --connect-timeout "$feed_timeout" --max-time "$feed_timeout" --max-filesize "$max_size" "$feed_url" > "$temp_file" 2>/dev/null; then
         nftban_feeds_log ERROR "Download failed: $feed_name"
-        rm -f "$temp_file"
+        rm -rf -- "$_dl_dir"
         return 1
     fi
 
@@ -572,7 +614,7 @@ nftban_feeds_update_single() {
     # Final validation — on failure, keep last-known-good parsed_file intact
     if [[ $ip_count -lt $min_entries ]]; then
         nftban_feeds_log ERROR "Feed has only $ip_count entries (minimum: $min_entries), rejecting: $feed_name"
-        rm -f "$temp_file" "$staging_file"
+        rm -f "$staging_file"; rm -rf -- "$_dl_dir"
         return 1
     fi
 
@@ -593,7 +635,7 @@ nftban_feeds_update_single() {
     nftban_feeds_log INFO "Feed updated: $feed_name ($ip_count IPs)"
 
     # Cleanup
-    rm -f "$temp_file"
+    rm -rf -- "$_dl_dir"
 
     # Sync to nftables (unless told to skip for batch updates)
     if [[ "$no_sync" != "true" ]]; then

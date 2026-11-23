@@ -330,7 +330,6 @@ product	cli/lib/nftban/core/nftban_emulate.sh	4fafaf30863f9b01	1	grep-q	E	n/a	UN
 product	cli/lib/nftban/core/nftban_emulate.sh	892f6b748064278a	1	grep-q	E	n/a	UNVERIFIED	fn=_hex_to_bin; needs a producer-size probe on a representative host
 product	cli/lib/nftban/core/nftban_emulate.sh	c67a148f2330fd83	1	head	E	n/a	UNVERIFIED	fn=_hex_to_bin; needs a producer-size probe on a representative host
 product	cli/lib/nftban/core/nftban_emulate.sh	f48d2a0c6948d511	1	head	E	n/a	UNVERIFIED	fn=_hex_to_bin; needs a producer-size probe on a representative host
-product	cli/lib/nftban/core/nftban_feeds.sh	0cd3cb7825638bb3	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	1a54887afabda790	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	1d16d682ddc877b2	1	head	E	n/a	UNVERIFIED	fn=nftban_detect_conflicting_tables; needs a producer-size probe on a representative host
 product	cli/lib/nftban/core/nftban_firewall_conflicts.sh	4728157d7a7b6271	1	head	B	n/a	UNVERIFIED	-
