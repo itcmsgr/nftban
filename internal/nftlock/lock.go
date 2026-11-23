@@ -116,8 +116,8 @@ func openLockFile() (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0700); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", filepath.Dir(lockPath), err)
 	}
-	// 0640: root-rw, group-r — lock file only needs owner write + group read
-	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0640) // #nosec G302 G304 -- fixed path
+	// 0600: only root holders take it (the directory itself is root-only 0700).
+	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600) // #nosec G304 -- fixed path (var only for tests)
 	if err != nil {
 		return nil, fmt.Errorf("open lock file %s: %w", lockPath, err)
 	}
@@ -135,7 +135,7 @@ func openLegacyLockFile() (*os.File, error) {
 	if _, err := os.Stat(filepath.Dir(legacyLockPath)); os.IsNotExist(err) {
 		return nil, nil
 	}
-	f, err := os.OpenFile(legacyLockPath, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0640) // #nosec G302 G304 -- fixed path
+	f, err := os.OpenFile(legacyLockPath, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0600) // #nosec G304 -- fixed path (var only for tests)
 	if err != nil {
 		if errors.Is(err, syscall.ELOOP) {
 			log.Printf("[nftlock] %s is a symlink; compatibility lock not taken (canonical %s is held)", legacyLockPath, lockPath)
