@@ -1,0 +1,8 @@
+{
+  "name": "nftban-ci-markdownlint",
+  "private": true,
+  "description": "Pinned markdownlint-cli2 for .github/ci/health_check.sh (installed with npm ci --ignore-scripts; Scorecard PinnedDependencies).",
+  "dependencies": {
+    "markdownlint-cli2": "0.17.2"
+  }
+}

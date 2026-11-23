@@ -52,7 +52,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck shfmt yamllint jq devscripts nftables
-          npm i -g markdownlint-cli2@0.17.2
+          # v1.238 (#1486, Scorecard PinnedDependencies): markdownlint-cli2 0.17.2 from a committed
+          # lockfile (integrity hashes), install scripts off, outside the checkout; rules unchanged.
+          mkdir -p "$RUNNER_TEMP/markdownlint"
+          cp .github/ci/markdownlint/package.json .github/ci/markdownlint/package-lock.json "$RUNNER_TEMP/markdownlint/"
+          npm ci --prefix "$RUNNER_TEMP/markdownlint" --ignore-scripts --no-audit --no-fund
+          echo "$RUNNER_TEMP/markdownlint/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Run health check
         run: .github/ci/health_check.sh
