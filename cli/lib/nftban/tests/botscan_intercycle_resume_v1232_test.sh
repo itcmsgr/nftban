@@ -83,7 +83,26 @@ n1=$(printf '%s\n' "$M1"|grep -c .); res=$(comm -12 <(printf '%s\n' "$M1") <(pri
 if [[ "$n1" -eq 0 ]]; then ne "3 cycle 1 advanced nothing — no conclusion"
 elif [[ "$res" -gt 0 ]]; then ok "3 RESUMED: $(printf '%s' "$M1"|tr '\n' ' ')advanced in both cycles"
 else no "3 NOT RESUMED: cycle2 advanced a disjoint set ($(printf '%s' "$M2"|tr '\n' ' ')) — rotation abandoned the pinned object"; fi
-[[ -f "$PIN" ]] && ok "3b a pin record exists while the object is unfinished" || no "3b no pin record written"
+# 3b — the pin contract, independent of runner speed (TEST-BOTSCAN-INTERCYCLE-RESUME-3B-FAILS-ON-
+# CI-RUNNER-TIMING): the scanner pins ONLY when the cycle stopped mid-object, and clears the pin
+# when the object it was on reached EOF. A fast runner can finish an object exactly at the 2 s
+# budget; then "no pin" is the correct outcome. So: a pin, or else every object cycle 2 advanced
+# must be at EOF. An object left part-read with no pin is the real failure.
+if [[ -f "$PIN" ]]; then
+    ok "3b a pin record exists while the object is unfinished"
+else
+    _3b_open=""
+    while IFS= read -r _3b_o; do
+        [[ -n "$_3b_o" ]] || continue
+        _3b_sz=$(stat -c%s "$SPOOL/$_3b_o" 2>/dev/null || echo 0)
+        [[ "$(offof "$_3b_o")" -lt "$_3b_sz" ]] && _3b_open+="$_3b_o "
+    done <<<"$M2"
+    if [[ -z "$_3b_open" && -n "$M2" ]]; then
+        ok "3b no pin, correctly: cycle 2 ended at the EOF of the object it was on ($(printf '%s' "$M2"|tr '\n' ' '))"
+    else
+        no "3b no pin record written although cycle 2 left an object unfinished (${_3b_open:-nothing advanced})"
+    fi
+fi
 
 echo "=== NEGATIVE — a FRESH object must not steal priority from a pinned one ==="
 fresh="$SPOOL/_var_log_zfresh.log"; mk "$fresh" $(( CAP*2 ))   # brand new, no cursor
