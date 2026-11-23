@@ -118,7 +118,9 @@ nftban_cmd_geoban() {
 
     # Load geoip command handler
     if ! declare -f nftban_cmd_geoip >/dev/null 2>&1; then
-        source /usr/lib/nftban/cli/cmd_geoip.sh || {
+        # v1.238: NFTBAN_LIB_DIR, not a hard-coded /usr/lib path (with geoban out of the dispatcher
+        # help stub, 'nftban geoban --help' must work from any lib dir; CI help-inertness sweep).
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/cli/cmd_geoip.sh" || {
             echo "ERROR: Failed to load geoip command handler" >&2
             return 1
         }
