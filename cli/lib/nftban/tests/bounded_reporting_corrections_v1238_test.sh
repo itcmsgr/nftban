@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-11-23"
-# meta:description="v1.238 (owner 2026-11-23: incorrect status values, nonexistent command hints, GeoIP keys that do not reach their consumer). P: BUG-PORTAL-PAYLOAD-INVALID-JSON + BUG-PORTAL-MODULE-STATUS-READS-NONEXISTENT-MODULES-DIR — drives the REAL export_portal with a fake curl that captures the payload (stdin or -d argument): the payload is valid JSON, metric lines without a timestamp give ts null, string metrics are skipped, module status follows conf.d/<module>/main.conf(.local) (1/0) and unresolvable modules are null, never 0. G: BUG-GEOIP-CONFIG-SHOW-IGNORES-LOCAL — the REAL `nftban geoip config show` reports the effective source from main.conf.local and accepts the shipped key name GEOIP_PROVIDER. R: BUG-REGISTRY-LISTS-DDOS-CONFIG-NOT-DISPATCHED — commands.registry.yml lists no ddos verb that cmd_ddos.sh does not dispatch. Sandbox only; no network, no firewall change."
+# meta:description="v1.238 (owner 2026-11-23: incorrect status values, nonexistent command hints, GeoIP keys that do not reach their consumer). P: BUG-PORTAL-PAYLOAD-INVALID-JSON + BUG-PORTAL-MODULE-STATUS-READS-NONEXISTENT-MODULES-DIR — drives the REAL export_portal with a fake curl that captures the payload (stdin or -d argument): the payload is valid JSON, metric lines without a timestamp give ts null, string metrics are skipped, module status follows conf.d/<module>/main.conf(.local) (1/0) and unresolvable modules are null, never 0. G: BUG-GEOIP-CONFIG-SHOW-IGNORES-LOCAL — the REAL `nftban geoip config show` reports the effective source from main.conf.local and accepts the shipped key name GEOIP_PROVIDER. R: BUG-REGISTRY-LISTS-DDOS-CONFIG-NOT-DISPATCHED — commands.registry.yml lists no ddos verb that cmd_ddos.sh does not dispatch. F: BUG-FEEDS-STATUS-IGNORES-FEEDS-CONF-LOCAL-DEFINITIONS — discovery reads feeds.conf, feeds.conf.local and nftban.conf.local like the daemon; commented lines ignored. M: BUG-PROMETHEUS-MODULE-STATUS-READS-NONEXISTENT-MODULES-DIR — nftban_module_login_status from nftband modules answer (1/0/-1, unknown omitted / JSON null). S: BUG-STATS-JSON-TEMPORARY-COUNTS-PERMANENT — breakdown.temporary = timed elements only; active bans unchanged. Sandbox only; no network, no firewall change."
 # meta:input="None (repo source read-only; temp dirs)"
 # meta:output="Pass/fail assertions; exit 0 on all-pass, 1 on any failure"
 # meta:depends="bash,jq,awk,grep"
@@ -86,6 +86,40 @@ missing=""
 for v in $verbs; do grep -qE "^[[:space:]]+(\"?)${v}(\"?)[|)]|[|]${v}[|)]" "$LIB/cli/cmd_ddos.sh" || missing+=" $v"; done
 [[ -z "$missing" ]] && ok "every registry ddos verb is dispatched ($(echo $verbs | tr '\n' ' '))" || no "registry lists undispatched ddos verb(s):$missing"
 grep -q 'nftban ddos config' "$ROOT/commands.registry.yml" && no "registry example still names 'nftban ddos config'" || ok "no 'nftban ddos config' example"
+
+echo "=== F: feeds status discovers feeds.conf.local definitions (VM pass 2026-11-23) ==="
+mkdir -p "$W/fc"
+printf 'FEED_SHIPPED_URL="https://a.example.invalid/x"\n# FEED_COMMENTED_URL="https://c.example.invalid/x"\n' > "$W/fc/feeds.conf"
+printf 'FEED_LOCALONLY_URL="https://b.example.invalid/x"\nFEED_LOCALONLY_ENABLED="true"\n' > "$W/fc/feeds.conf.local"
+dfn=$(awk '/^nftban_feeds_discover_all\(\) \{/ {f=1} f {print} f && /^\}/ {f=0}' "$LIB/core/nftban_feeds.sh")
+found=$(NFTBAN_FEEDS_CONFIG="$W/fc/feeds.conf" NFTBAN_CONFIG_DIR="$W/fc" bash -c 'nftban_feeds_log(){ :; }; eval "$1"; nftban_feeds_discover_all' _ "$dfn" | tr '\n' ' ')
+[[ "$found" == *LOCALONLY* ]] && ok "feed defined only in feeds.conf.local is discovered (was enforced but shown as 0)" || no "local-only feed not discovered" "$found"
+[[ "$found" == *SHIPPED* && "$found" != *COMMENTED* ]] && ok "shipped feed discovered; commented-out definition ignored (as the daemon reader)" || no "discovery" "$found"
+
+echo "=== M: Prometheus nftban_module_login_status from nftband (active / disabled / failed / unknown) ==="
+lfn=$(awk '/^_nftban_exporter_loginmon_status\(\) \{/ {f=1} f {print} f && /^\}/ {f=0}' "$LIB/exporters/nftban_unified_exporter_collect.sh")
+mkdir -p "$W/mrun" "$W/mbin"
+printf '#!/usr/bin/env bash\ncat >/dev/null; cat "%s/modans"\n' "$W" > "$W/mbin/socat"; chmod 755 "$W/mbin/socat"
+ml(){ printf '{"success":true,"data":[{"name":"loginmon","enabled":%s,"running":%s,"last_error":"%s"}]}' "$1" "$2" "$3" > "$W/modans"
+      PATH="$W/mbin:$PATH" NFTBAN_RUN_DIR="$W/mrun" bash -c 'eval "$1"; _nftban_exporter_loginmon_status' _ "$lfn"; }
+[[ "$(ml true true '')" == 1 ]] && ok "LoginMon running -> 1 (was always 0)" || no "active -> $(ml true true '')"
+[[ "$(ml false false '')" == 0 ]] && ok "LoginMon disabled -> 0" || no "disabled -> $(ml false false '')"
+[[ "$(ml true false 'watcher failed')" == "-1" ]] && ok "enabled, not running, with error -> -1" || no "failed -> $(ml true false x)"
+: > "$W/modans"; [[ -z "$(PATH="$W/mbin:$PATH" NFTBAN_RUN_DIR="$W/mrun" bash -c 'eval "$1"; _nftban_exporter_loginmon_status' _ "$lfn")" ]] \
+  && ok "no answer -> empty (metric omitted, JSON null), never 0" || no "unknown published as a value"
+grep -q '"login": ${module_login_status:-null},' "$LIB/exporters/nftban_unified_exporter_collect.sh" && ok "JSON cache renders unknown login status as null" || no "JSON default"
+
+echo "=== S: stats --json temporary = timed elements only (1 permanent + 1 temporary) ==="
+tfn=$(awk '/^_nftban_stats_temporary_counts\(\) \{/ {f=1} f {print} f && /^\}/ {f=0}' "$LIB/cli/cmd_stats.sh")
+sfn=$(awk '/^(nftban_count_sum|nftban_count_is_known)\(\) \{/ {f=1} f {print} f && /^\}/ {f=0}' "$LIB/lib/nft_schema.sh")
+out=$(bash -c 'eval "$1"; eval "$2"
+  # manual v4 set: one permanent + one timed element; everything else empty
+  nftban_nft_count_set_with_timeout(){ [[ "$3" == blacklist_manual_ipv4 ]] && echo 1 || echo 0; }
+  _nftban_stats_temporary_counts' _ "$sfn" "$tfn")
+[[ "$out" == "1 0 1" ]] && ok "manual set with 1 permanent + 1 temporary -> temporary ipv4=1 total=1 (was 2)" || no "temporary counts" "$out"
+out=$(bash -c 'eval "$1"; eval "$2"; nftban_nft_count_set_with_timeout(){ echo UNKNOWN; }; _nftban_stats_temporary_counts' _ "$sfn" "$tfn")
+[[ "$out" == "null null null" ]] && ok "unreadable sets -> null, not 0" || no "unknown temporary" "$out"
+grep -q 'active_bans=$((${manual_v4} + ${manual_v6} + ${total_black}' "$LIB/cli/cmd_stats.sh" && ok "active_bans still sums the set elements (manual + blacklist + ...)" || no "active_bans changed"
 
 echo ""
 echo "RESULTS: PASS=$PASS FAIL=$FAIL"
