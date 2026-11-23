@@ -42,19 +42,21 @@ const scoreRoundcubeAuthFail = 15
 // RoundcubeDetector detects webmail interactive auth failures in the Roundcube
 // userlogins.log. It owns ONLY the auth_failure event class on that log.
 type RoundcubeDetector struct {
-	sigFailed    []byte // "Failed login for " — the only line shape we match
-	sigSuccess   []byte // "Successful login" — explicit non-match (defense-in-depth)
-	sigFrom      []byte // " from " — precedes the client IP
-	sigInSession []byte // " in session" — the IP is the token immediately before this
+	sigFailed     []byte // "Failed login for " — the only line shape we match
+	sigSuccess    []byte // "Successful login" — prefilter only
+	sigSuccessFor []byte // "Successful login for " — v1.238 success phrase (position-checked)
+	sigFrom       []byte // " from " — precedes the client IP
+	sigInSession  []byte // " in session" — the IP is the token immediately before this
 }
 
 // NewRoundcubeDetector creates a new Roundcube webmail-auth detector.
 func NewRoundcubeDetector() *RoundcubeDetector {
 	return &RoundcubeDetector{
-		sigFailed:    []byte("Failed login for "),
-		sigSuccess:   []byte("Successful login"),
-		sigFrom:      []byte(" from "),
-		sigInSession: []byte(" in session"),
+		sigFailed:     []byte("Failed login for "),
+		sigSuccess:    []byte("Successful login"),
+		sigSuccessFor: []byte("Successful login for "),
+		sigFrom:       []byte(" from "),
+		sigInSession:  []byte(" in session"),
 	}
 }
 
@@ -107,15 +109,45 @@ func (d *RoundcubeDetector) roundcubeExtractIP(line []byte) (netip.Addr, bool) {
 	return addr, true
 }
 
-// Detect matches ONLY Roundcube failed-login events with a PUBLIC client IP.
+// roundcubePhrase returns the message from where the login phrase may start: after a
+// "[date]: " header (only a bracketed header counts, so a ": " inside a username is never
+// taken as one) and, when the message does not open with a phrase, after one leading token
+// (the session id, e.g. "<s>"). nil when neither position holds a phrase.
+func (d *RoundcubeDetector) roundcubePhrase(line []byte) []byte {
+	msg := line
+	if tag, m, ok := messageAfterTag(line); ok && len(tag) > 1 && tag[0] == '[' && tag[len(tag)-1] == ']' {
+		msg = m
+	}
+	if bytes.HasPrefix(msg, d.sigFailed) || bytes.HasPrefix(msg, d.sigSuccessFor) {
+		return msg
+	}
+	if sp := bytes.IndexByte(msg, ' '); sp > 0 {
+		return msg[sp+1:]
+	}
+	return nil
+}
+
+// Detect matches Roundcube failed-login events (and, v1.238, confirmed successful logins)
+// with a PUBLIC client IP.
 func (d *RoundcubeDetector) Detect(line []byte) (Verdict, bool) {
-	// Prefilter: only failed webmail logins. "Successful login for ..." does not
-	// contain "Failed login for "; the explicit success check is defense-in-depth so
-	// a success line can NEVER produce a verdict (hard stop).
-	if !bytes.Contains(line, d.sigFailed) {
+	// Prefilter: only lines that can be a login result.
+	if !bytes.Contains(line, d.sigFailed) && !bytes.Contains(line, d.sigSuccess) {
 		return Verdict{}, false
 	}
-	if bytes.Contains(line, d.sigSuccess) {
+	// v1.238: classify by POSITION, not by substring. The phrase must open the message
+	// (after the "[date]: " header and an optional session token). The username is
+	// client-chosen and comes after the phrase, so "Failed login for Successful login..."
+	// is a failure (the old substring hard stop let such a username evade detection) and a
+	// username can never turn a failure into a success.
+	phrase := d.roundcubePhrase(line)
+	if bytes.HasPrefix(phrase, d.sigSuccessFor) {
+		addr, ok := d.roundcubeExtractIP(line)
+		if !ok || !isPublicLoginIP(addr) {
+			return Verdict{}, false
+		}
+		return Verdict{IP: addr, Reason: ReasonRoundcubeAuthFail, Service: "roundcube", Success: true}, true
+	}
+	if !bytes.HasPrefix(phrase, d.sigFailed) {
 		return Verdict{}, false
 	}
 
