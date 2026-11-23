@@ -439,6 +439,7 @@ whitelist_reconcile_convergence_v1228_5_test	cli/lib/nftban/tests/whitelist_reco
 whitelist_set_timeout_flag_v168_test	cli/lib/nftban/tests/whitelist_set_timeout_flag_v168_test.sh	whitelist	test	whitelist-set-timeout-flag	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 whitelist_timeout_upgrade_activation_v168_test	cli/lib/nftban/tests/whitelist_timeout_upgrade_activation_v168_test.sh	packaging	test	whitelist-timeout-upgrade-activation	PACKAGE_BUILD	policy-gates	true	false	false	false	false	false			
 whitelist_verify_v163_test	cli/lib/nftban/tests/whitelist_verify_v163_test.sh	whitelist	test	whitelist-verify	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
+wizard_preserves_local_v1238_test	cli/lib/nftban/tests/wizard_preserves_local_v1238_test.sh	core	test	config	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 workflow_completeness_falsifiability_v1235_test	cli/lib/nftban/tests/workflow_completeness_falsifiability_v1235_test.sh	test-infra	test	ci	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 zabbix_lifecycle_verb_parity_v1229_10_test	cli/lib/nftban/tests/zabbix_lifecycle_verb_parity_v1229_10_test.sh	metrics	test	zabbix-lifecycle-verbs	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 zabbix_lld_population_authority_v1229_11_test	cli/lib/nftban/tests/zabbix_lld_population_authority_v1229_11_test.sh	metrics	test	zabbix-lld-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
