@@ -157,7 +157,11 @@ nftban_login_cmd_status() {
 
     # v1.48.0: Check nftband daemon (loginmon module), not removed bash service
     if systemctl is-active --quiet nftband.service 2>/dev/null; then
-        echo "✅ Daemon: nftband running (loginmon module active)"
+        case "$(_nftban_loginmon_module_state)" in
+            active)   echo "✅ Daemon: nftband running (loginmon module active)" ;;
+            disabled) echo "⚪ Daemon: nftband running — LoginMon is disabled (LOGIN_ENABLED=false). Enable: nftban login enable" ;;
+            *)        echo "⚠️  Daemon: nftband running — LoginMon state unknown (nftband did not answer the modules query)" ;;
+        esac
     else
         echo "⚠️  Daemon: nftband not running (login monitoring inactive)"
         echo "   Start with: systemctl start nftband"
@@ -212,6 +216,23 @@ nftban_login_cmd_status() {
 }
 
 # JSON-aware status function
+# v1.238 (module verification batch 1, BUG-LOGIN-STATUS-REPORTS-ACTIVE-AFTER-DISABLE): `login status`
+# said "loginmon module active" / service_status "running" from the systemd unit alone, also after a
+# verified disable. The module state now comes from nftband's own `modules` answer:
+# active | disabled | unknown (no answer) | not_running (nftband down). Used by text and --json.
+_nftban_loginmon_module_state() {
+    systemctl is-active --quiet nftband.service 2>/dev/null || { echo not_running; return 0; }
+    local raw="" st=""
+    if raw=$(_loginmon_ipc_call 2>/dev/null) && command -v jq >/dev/null 2>&1; then
+        st=$(jq -r '.data[]? | select(.name=="loginmon") | "\(.enabled) \(.running)"' <<<"$raw" 2>/dev/null) || st=""
+    fi
+    case "$st" in
+        "true true") echo active ;;
+        "false "*)   echo disabled ;;
+        *)           echo unknown ;;
+    esac
+}
+
 _nftban_login_cmd_status_json() {
     local json_mode="${1:-false}"
 
@@ -230,6 +251,8 @@ _nftban_login_cmd_status_json() {
         if systemctl is-active --quiet nftband.service 2>/dev/null; then
             service_status="running"
         fi
+        local loginmon_module
+        loginmon_module=$(_nftban_loginmon_module_state)
 
         if [[ -f "$NFTBAN_LOGIN_ALERT_LOG" ]]; then
             log_lines=$(wc -l < "$NFTBAN_LOGIN_ALERT_LOG" 2>/dev/null || echo "0")
@@ -242,6 +265,7 @@ _nftban_login_cmd_status_json() {
                 --arg config_exists "$config_exists" \
                 --arg module_exists "$module_exists" \
                 --arg service_status "$service_status" \
+                --arg loginmon_module "$loginmon_module" \
                 --arg enabled "${NFTBAN_LOGIN_ALERT_ENABLED:-false}" \
                 --arg email "${NFTBAN_LOGIN_ALERT_EMAIL:-}" \
                 --arg format "${NFTBAN_LOGIN_ALERT_FORMAT:-text}" \
@@ -258,6 +282,7 @@ _nftban_login_cmd_status_json() {
                     config_exists: ($config_exists == "true"),
                     module_exists: ($module_exists == "true"),
                     service_status: $service_status,
+                    loginmon_module: $loginmon_module,
                     config: {
                         enabled: ($enabled == "true"),
                         email: $email,
@@ -281,7 +306,7 @@ _nftban_login_cmd_status_json() {
             # Fallback for systems without jq - use default values
             local enabled="${NFTBAN_LOGIN_ALERT_ENABLED:-false}"
             local threshold="${NFTBAN_LOGIN_FAILED_THRESHOLD:-5}"
-            data="{\"config_exists\":$config_exists,\"module_exists\":$module_exists,\"service_status\":\"$service_status\",\"enabled\":$enabled,\"log_lines\":$log_lines,\"threshold\":$threshold}"
+            data="{\"config_exists\":$config_exists,\"module_exists\":$module_exists,\"service_status\":\"$service_status\",\"loginmon_module\":\"$loginmon_module\",\"enabled\":$enabled,\"log_lines\":$log_lines,\"threshold\":$threshold}"
         fi
 
         json_output "true" "$data"

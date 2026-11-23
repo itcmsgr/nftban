@@ -9,7 +9,7 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-11-23"
-# meta:description="v1.238 BUG-LOGIN-DISABLE-REPORTS-SUCCESS-WITHOUT-LOCAL-FILE + BUG-LOGIN-RELOAD-HINT-DOES-NOT-APPLY-MODULE-CHANGES (owner GO 2026-11-23). nftband reads LOGIN_ENABLED only at start and SIGHUP does not reconfigure modules, so enable/disable must write conf.d/login/main.conf.local (creating it 0640), check the value nftband will resolve (main.conf -> main.conf.local -> nftban.conf.local), restart nftband, and report success only when the daemon's modules IPC confirms loginmon enabled/running. Cases: disable without the override file (the reproduced defect) writes it and verifies; enable verifies; a contradicting central nftban.conf.local fails and names it; daemon stopped: disable succeeds (nothing detects), enable fails; a daemon that does not confirm fails; no reload hint remains. Stubs: systemctl (restart derives the fake daemon state from the config files like nftband does), socat (modules IPC); real jq. No firewall change."
+# meta:description="v1.238 BUG-LOGIN-DISABLE-REPORTS-SUCCESS-WITHOUT-LOCAL-FILE + BUG-LOGIN-RELOAD-HINT-DOES-NOT-APPLY-MODULE-CHANGES (owner GO 2026-11-23). nftband reads LOGIN_ENABLED only at start and SIGHUP does not reconfigure modules, so enable/disable must write conf.d/login/main.conf.local (creating it 0640), check the value nftband will resolve (main.conf -> main.conf.local -> nftban.conf.local), restart nftband, and report success only when the daemon's modules IPC confirms loginmon enabled/running. Cases: disable without the override file (the reproduced defect) writes it and verifies; enable verifies; a contradicting central nftban.conf.local fails and names it; daemon stopped: disable succeeds (nothing detects), enable fails; a daemon that does not confirm fails; no reload hint remains; login status text and --json report the LoginMon state from the daemon modules answer (active/disabled/unknown/not_running), not from the unit state. Stubs: systemctl (restart derives the fake daemon state from the config files like nftband does), socat (modules IPC); real jq. No firewall change."
 # meta:input="None (repo source read-only; temp dirs)"
 # meta:output="Pass/fail assertions; exit 0 on all-pass, 1 on any failure"
 # meta:depends="bash,grep,awk,jq,python3"
@@ -101,6 +101,16 @@ reset; touch "$W/daemon_lies"; rc=0; out=$( (export PATH="$W/bin:$PATH"; sleep()
 
 echo "=== no reload hint remains ==="
 if grep -nE 'systemctl reload nftband' "$CMD" >/dev/null; then no "a 'systemctl reload nftband' hint remains in cmd_login.sh"; else ok "no reload hint (reload does not reconfigure modules)"; fi
+
+echo "=== login status follows nftband's modules answer (batch 1: was the unit state only) ==="
+sfn=$(awk '/^(_nftban_loginmon_module_state|_loginmon_ipc_call)\(\) \{/ {f=1} f {print} f && /^\}/ {f=0}' "$CMD")
+mstate(){ PATH="$W/bin:$PATH" bash -c 'eval "$1"; _nftban_loginmon_module_state' _ "$sfn" 2>&1; }
+reset; echo false > "$W/daemon_state"; [[ "$(mstate)" == disabled ]] && ok "daemon reports loginmon disabled -> 'disabled'" || no "disabled state" "$(mstate)"
+echo true > "$W/daemon_state";  [[ "$(mstate)" == active ]] && ok "daemon reports loginmon running -> 'active'" || no "active state" "$(mstate)"
+mv "$W/run/nftband.sock" "$W/run/sock.off"; [[ "$(mstate)" == unknown ]] && ok "no modules answer -> 'unknown' (not 'active')" || no "unknown state" "$(mstate)"; mv "$W/run/sock.off" "$W/run/nftband.sock"
+echo no > "$W/active"; [[ "$(mstate)" == not_running ]] && ok "nftband stopped -> 'not_running'" || no "not_running state" "$(mstate)"
+if grep -q 'case "$(_nftban_loginmon_module_state)" in' "$CMD" && grep -q 'loginmon_module: $loginmon_module' "$CMD"; then
+    ok "status text and --json both use the daemon-derived state"; else no "status text/--json not wired to the daemon state"; fi
 
 echo ""
 echo "RESULTS: PASS=$PASS FAIL=$FAIL"
