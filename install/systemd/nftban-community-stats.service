@@ -55,7 +55,11 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
 # Resource limits
 MemoryMax=64M
-TasksMax=5
+# v1.238 (owner GO 2026-11-24): the submit now builds the anonymous schema v3 payload, which runs
+# nftban-validate and several short pipelines. With TasksMax=5 forks were rejected by the pids controller,
+# bash retried them (29 "fork: retry" lines) and the unit hit TimeoutStartSec before sending (lab4).
+# Measured: 8 = zero fork retries; 16 keeps a 2x margin and still bounds the unit.
+TasksMax=16
 TimeoutStartSec=60
 
 # Logging
