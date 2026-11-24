@@ -223,7 +223,7 @@ nftban health
 When the daemon cannot be started, NFTBan can talk to nftables directly. This is a break-glass path —
 every use logs a warning:
 
-- enable with `export NFTBAN_EMERGENCY_MODE=1`, **or** `touch /run/nftban/.emergency_unlock`,
+- enable with `export NFTBAN_EMERGENCY_MODE=1`, **or** `touch /run/nftban/.emergency_unlock` as root (as of v1.238 the gate is honoured only when it is a regular, non-symlink file owned by root; any other file there is ignored),
 - then `nftban ban <ip>` / `nftban unban <ip>` operate directly on the `blacklist_ipv4` /
   `blacklist_ipv6` sets.
 

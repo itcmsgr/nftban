@@ -935,7 +935,16 @@ nftban_ipc_check_or_emergency() {
     fi
 
     # 2. Check emergency unlock gate file
-    if [[ -f "$emergency_gate" ]]; then
+    # v1.238 (owner 2026-11-24, audit KERNEL_WRITER_AUDIT_d016f838 V3): /run/nftban is owned by the
+    # nftban service account (build/fhs-spec.yaml, tmpfiles.d), so that account could create this file
+    # and switch root commands to direct kernel writes while nftband is down. Trust only a regular,
+    # non-symlink file owned by root (an operator's `touch` as root still works); anything else is ignored.
+    if [[ -e "$emergency_gate" || -L "$emergency_gate" ]] \
+       && ! { [[ -f "$emergency_gate" && ! -L "$emergency_gate" ]] \
+              && [[ "$(stat -c %u -- "$emergency_gate" 2>/dev/null)" == "0" ]]; }; then
+        echo "WARNING: ignoring $emergency_gate: not a regular root-owned file (symlink or other owner)" >&2
+        logger -t nftban "EMERGENCY GATE IGNORED: $emergency_gate is not a regular root-owned file" 2>/dev/null || true
+    elif [[ -f "$emergency_gate" ]]; then
         echo "WARNING: Daemon not running. Using emergency direct access." >&2
         logger -t nftban "EMERGENCY GATE: Direct nft access via $emergency_gate"
         export NFTBAN_EMERGENCY_MODE=1
@@ -944,7 +953,7 @@ nftban_ipc_check_or_emergency() {
 
     # 3. No daemon, no emergency gate — fail
     echo "ERROR: nftband daemon is not running. Start with: systemctl start nftband" >&2
-    echo "       For emergency access: touch $emergency_gate" >&2
+    echo "       For emergency access (as root): touch $emergency_gate" >&2
     return 2
 }
 
