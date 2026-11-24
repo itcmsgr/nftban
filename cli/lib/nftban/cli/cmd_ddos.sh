@@ -202,9 +202,13 @@ _nftban_ddos_stats_json() {
     fi
 
     if [[ -f "$config_main" ]]; then
-        local enabled_val
-        enabled_val=$(grep "^DDOS_ENABLED=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | xargs)
-        [[ "$enabled_val" == "true" ]] && ddos_enabled="true"
+        # v1.238 (BUG-DDOS-STATS-JSON-READS-BASE-ONLY, lab4 2026-11-23): this read the shipped base
+        # file only and said false while DDoS was enforcing. Use the module decision the rest of the
+        # CLI and the rebuild use (nftban_module_effective_enabled).
+        if declare -F nftban_module_effective_enabled >/dev/null 2>&1 \
+           || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" 2>/dev/null; then
+            nftban_module_effective_enabled ddos >/dev/null 2>&1 && ddos_enabled="true"
+        fi
         # Get mode (auto, classic, suricata, hybrid)
         local mode_val
         mode_val=$(grep "^DDOS_MODE=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | xargs)
