@@ -218,17 +218,40 @@ nft list tables                # nftban tables present
 nftban health
 ```
 
-### Emergency mode (daemon down, you still need to ban/unban)
+### Emergency mode (daemon down)
 
-When the daemon cannot be started, NFTBan can talk to nftables directly. This is a break-glass path —
-every use logs a warning:
+As of v1.238. When the daemon cannot be started, a root-created marker lets a small set of commands
+write to nftables directly. This is a break-glass path; every use logs a warning.
 
-- enable with `export NFTBAN_EMERGENCY_MODE=1`, **or** `touch /run/nftban/.emergency_unlock` as root (as of v1.238 the gate is honoured only when it is a regular, non-symlink file owned by root; any other file there is ignored),
-- then `nftban ban <ip>` / `nftban unban <ip>` operate directly on the `blacklist_ipv4` /
-  `blacklist_ipv6` sets.
+The marker is read by `nftban_ipc_check_or_emergency` (`cli/lib/nftban/lib/nft_ipc.sh`). Only these
+commands call it:
 
-The normal ban path always tries the daemon IPC first and only falls back to the direct path when
-emergency mode is enabled.
+- `nftban whitelist add <ip>` and `nftban whitelist remove <ip>` (`cli/lib/nftban/cli/cmd_whitelist.sh`)
+- `nftban flush …` (`cli/lib/nftban/cli/cmd_flush.sh`, `_flush_check_daemon`)
+
+`nftban ban` and `nftban unban` are **not** in this list: they go through the daemon IPC
+(`nftban-core` → `ipcClient.Ban`) and report an error when the daemon is down. There is no direct
+fallback for them.
+
+Enable, as root:
+
+```bash
+touch /run/nftban-writers/.emergency_unlock
+```
+
+The marker is honoured only when `/run/nftban-writers` is a `root:root 0700` directory (as
+tmpfiles creates it) and the marker is a regular file owned by root, not a symlink. Anything else is
+ignored with a warning. The pre-v1.238 path `/run/nftban/.emergency_unlock` no longer enables
+anything. Setting `NFTBAN_EMERGENCY_MODE=1` in your shell does not enable the commands above either.
+
+Disable after recovery, as root (do this as soon as the daemon is running again):
+
+```bash
+rm -f /run/nftban-writers/.emergency_unlock
+```
+
+While the daemon is running the marker has no effect, because the daemon IPC path is always tried
+first. The marker also disappears at reboot, because `/run` is a tmpfs.
 
 ## 4. Emergency flush
 

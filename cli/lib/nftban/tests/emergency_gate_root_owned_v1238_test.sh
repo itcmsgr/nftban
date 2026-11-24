@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan - v1.238: the emergency gate is trusted only as a root-owned regular file
+# NFTBan - v1.238: the emergency gate lives in the root-only /run/nftban-writers
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
@@ -9,12 +9,12 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-11-24"
-# meta:description="v1.238 (owner 2026-11-24; audit KERNEL_WRITER_AUDIT_d016f838 V3). /run/nftban is owned by the nftban service account, so nftban_ipc_check_or_emergency (cli/lib/nftban/lib/nft_ipc.sh) must not trust any .emergency_unlock it finds there. Runs the REAL function with only the gate path redirected into a sandbox and the daemon probe stubbed down: a gate owned by a non-root user is ignored (rc 2), a symlink is ignored even when its target is root-owned (rc 2), a regular root-owned file is honoured (rc 1, NFTBAN_EMERGENCY_MODE=1), no gate gives rc 2. Non-vacuity: the pre-fix test (-f only) would have honoured the non-root gate. Sandbox only; no firewall change."
+# meta:description="v1.238 (owner 2026-11-24; audit KERNEL_WRITER_AUDIT_d016f838 V3). nftban_ipc_check_or_emergency (cli/lib/nftban/lib/nft_ipc.sh) honours only /run/nftban-writers/.emergency_unlock in a root:root 0700 directory, as a regular root-owned file, decided from one lstat; the old /run/nftban marker is ignored. Runs the REAL function (and the REAL cmd_flush.sh _flush_check_daemon caller) with the two paths redirected into a sandbox and the daemon probe stubbed down. As any user: directory not root:root 0700 -> ignored, legacy marker ignored, absent -> refused. As root with a real nftban account (lab): role split in a root:root 0700 sandbox dir - nftban cannot create, symlink or replace the marker; root creates it (honoured) and removes it (refused again); a root-owned symlink marker and a non-0700 dir are ignored. Sandbox only; no firewall change."
 # meta:input="None (repo source read-only; temp dir)"
 # meta:output="Pass/fail assertions; exit 0 on all-pass, 1 on any failure"
-# meta:depends="bash,sed,stat"
-# meta:inventory.files="cli/lib/nftban/lib/nft_ipc.sh"
-# meta:inventory.binaries="bash,sed,stat"
+# meta:depends="bash,stat,runuser"
+# meta:inventory.files="cli/lib/nftban/lib/nft_ipc.sh,cli/lib/nftban/cli/cmd_flush.sh"
+# meta:inventory.binaries="bash,stat,runuser"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -34,42 +34,78 @@
 # =============================================================================
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LIB="$(cd "$SCRIPT_DIR/.." && pwd)/lib/nft_ipc.sh"
-PASS=0; FAIL=0; ok(){ PASS=$((PASS+1)); echo "  ✓ $1"; }; no(){ FAIL=$((FAIL+1)); echo "  ✗ $1${2:+ — $2}"; }
+LIBROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+LIB="$LIBROOT/lib/nft_ipc.sh"; FLUSH="$LIBROOT/cli/cmd_flush.sh"
+PASS=0; FAIL=0; SKIP=0
+ok(){ PASS=$((PASS+1)); echo "  ✓ $1"; }; no(){ FAIL=$((FAIL+1)); echo "  ✗ $1${2:+ — $2}"; }
 W=$(mktemp -d); trap 'rm -rf "${W:?}"' EXIT
-ROOT_FILE=""
-for f in /etc/os-release /etc/hostname /etc/passwd; do
-    [[ -f "$f" && ! -L "$f" && "$(stat -c %u -- "$f")" == 0 ]] && { ROOT_FILE="$f"; break; }
-done
-[[ -n "$ROOT_FILE" ]] || { echo "SKIP: no root-owned regular file to stand in for an operator-created gate"; exit 0; }
-[[ "$(id -u)" != 0 ]] || { echo "SKIP: run as a non-root user (the non-root-owned case needs a non-root creator)"; exit 0; }
+chmod 0755 "$W"                                  # traversable, so a second account can try
 
-# The REAL function, with only its gate path replaced.
-fn=$(awk '/^nftban_ipc_check_or_emergency\(\) *\{/{c=1} c{print} c&&/^}/{exit}' "$LIB")
-[[ "$fn" == *'local emergency_gate="/run/nftban/.emergency_unlock"'* ]] || { echo "FATAL: gate path not found in $LIB"; exit 1; }
-run() { # $1 gate path -> "rc|mode"
-    local body="${fn//\/run\/nftban\/.emergency_unlock/$1}"
+extract(){ awk -v n="$1" '$0 ~ "^"n"\\(\\) *\\{" {c=1} c{print} c&&/^}/{exit}' "$2"; }
+fn=$(extract nftban_ipc_check_or_emergency "$LIB")
+caller=$(extract _flush_check_daemon "$FLUSH")
+[[ "$fn" == *'local gate_dir="/run/nftban-writers"'* && "$fn" == *'local legacy_gate="/run/nftban/.emergency_unlock"'* ]] \
+    || { echo "FATAL: gate paths not found in $LIB"; exit 1; }
+[[ -n "$caller" ]] || { echo "FATAL: _flush_check_daemon not found in $FLUSH"; exit 1; }
+SB_DIR="$W/writers"; SB_LEGACY="$W/legacy/.emergency_unlock"; mkdir -p "$W/legacy"
+body="${fn//\/run\/nftban-writers/$SB_DIR}"; body="${body//\/run\/nftban\/.emergency_unlock/$SB_LEGACY}"
+
+gate(){ # -> "rc|NFTBAN_EMERGENCY_MODE|caller_rc|_FLUSH_IPC_MODE"
     bash -c '
-        nft_ipc_is_daemon_running() { return 1; }   # daemon down: the gate decides
+        nft_ipc_is_daemon_running() { return 1; }   # daemon stopped: the marker decides
         logger() { :; }
-        eval "$1"
+        eval "$1"; eval "$2"
         unset NFTBAN_EMERGENCY_MODE
         rc=0; nftban_ipc_check_or_emergency >/dev/null 2>&1 || rc=$?
-        echo "$rc|${NFTBAN_EMERGENCY_MODE:-}"' _ "$body"
+        m="${NFTBAN_EMERGENCY_MODE:-}"; unset NFTBAN_EMERGENCY_MODE
+        crc=0; _flush_check_daemon >/dev/null 2>&1 || crc=$?
+        echo "$rc|$m|$crc|$_FLUSH_IPC_MODE"' _ "$body" "$caller"
 }
+HONOURED="1|1|0|1"; REFUSED="2||1|2"
 
-echo "=== gate ownership and type ==="
-touch "$W/gate_mine"
-r=$(run "$W/gate_mine"); [[ "$r" == "2|" ]] && ok "gate owned by a non-root user is ignored (rc 2)" || no "non-root gate" "$r"
-ln -s "$ROOT_FILE" "$W/gate_link"
-r=$(run "$W/gate_link"); [[ "$r" == "2|" ]] && ok "symlink gate is ignored even with a root-owned target (rc 2)" || no "symlink gate" "$r"
-r=$(run "$ROOT_FILE"); [[ "$r" == "1|1" ]] && ok "regular root-owned gate is honoured (rc 1, NFTBAN_EMERGENCY_MODE=1)" || no "root gate" "$r"
-r=$(run "$W/absent"); [[ "$r" == "2|" ]] && ok "no gate: daemon down is an error (rc 2)" || no "absent gate" "$r"
+echo "=== any user ==="
+r=$(gate); [[ "$r" == "$REFUSED" ]] && ok "daemon stopped + no marker: gate rc 2, flush caller refuses (rc 1)" || no "absent" "$r"
+touch "$SB_LEGACY"
+r=$(gate); [[ "$r" == "$REFUSED" ]] && ok "the old /run/nftban marker no longer enables the gate" || no "legacy marker" "$r"
+rm -f "$SB_LEGACY"
+mkdir -m 0700 "$SB_DIR"; touch "$SB_DIR/.emergency_unlock"
+if [[ "$(id -u)" != 0 ]]; then
+    r=$(gate); [[ "$r" == "$REFUSED" ]] && ok "marker in a directory not owned by root is ignored" || no "non-root dir" "$r"
+fi
+rm -rf "$SB_DIR"
 
-echo "=== non-vacuity ==="
-pre=$(bash -c 'g="$1"; [[ -f "$g" ]] && echo honoured || echo ignored' _ "$W/gate_mine")
-[[ "$pre" == honoured ]] && ok "the pre-fix check (-f only) would have honoured the non-root gate" || no "non-vacuity"
+echo "=== role split (root + real nftban account) ==="
+if [[ "$(id -u)" != 0 ]] || ! id nftban >/dev/null 2>&1; then
+    echo "  - SKIP: needs root and the nftban account (run on a lab host as root)"; SKIP=1
+else
+    as_nftban(){ runuser -u nftban -- "$@" 2>/dev/null; }
+    mkdir -m 0700 "$SB_DIR"                       # root:root 0700, as tmpfiles creates it
+    [[ "$(stat -c '%U:%G:%a' "$SB_DIR")" == "root:root:700" ]] || chown root:root "$SB_DIR"
+    # Control: the account really can write where it owns the directory (the old /run/nftban model).
+    chown nftban "$W/legacy"
+    as_nftban touch "$SB_LEGACY" && ok "control: nftban CAN create the old-path marker (service-owned dir)" || no "control: nftban could not write its own dir"
+    r=$(gate); [[ "$r" == "$REFUSED" ]] && ok "that nftban-created old-path marker enables nothing" || no "nftban legacy marker" "$r"
+    rm -f "$SB_LEGACY"
+    as_nftban touch "$SB_DIR/.emergency_unlock" && no "nftban created the marker" || ok "nftban cannot create the marker (permission denied)"
+    as_nftban ln -s /etc/passwd "$SB_DIR/.emergency_unlock" && no "nftban planted a symlink" || ok "nftban cannot plant a symlink marker"
+    r=$(gate); [[ "$r" == "$REFUSED" ]] && ok "no marker: refused" || no "no marker" "$r"
+    touch "$SB_DIR/.emergency_unlock"
+    r=$(gate); [[ "$r" == "$HONOURED" ]] && ok "root creates the marker: honoured (rc 1, NFTBAN_EMERGENCY_MODE=1, flush caller proceeds)" || no "root marker" "$r"
+    as_nftban rm -f "$SB_DIR/.emergency_unlock" || true; [[ -f "$SB_DIR/.emergency_unlock" ]] && ok "nftban cannot remove or replace the marker" || no "nftban removed the marker"
+    as_nftban mv -f /dev/null "$SB_DIR/.emergency_unlock" || true; [[ -f "$SB_DIR/.emergency_unlock" ]] && ok "nftban cannot rename over the marker" || no "nftban replaced the marker"
+    rm -f "$SB_DIR/.emergency_unlock"
+    r=$(gate); [[ "$r" == "$REFUSED" ]] && ok "root removes the marker: refused again" || no "after rm" "$r"
+    ln -s /etc/passwd "$SB_DIR/.emergency_unlock"
+    r=$(gate); [[ "$r" == "$REFUSED" ]] && ok "root-owned symlink marker (root-owned target) is ignored" || no "symlink" "$r"
+    rm -f "$SB_DIR/.emergency_unlock"; touch "$SB_DIR/.emergency_unlock"
+    chmod 0755 "$SB_DIR"
+    r=$(gate); [[ "$r" == "$REFUSED" ]] && ok "directory mode not 0700: ignored" || no "dir mode" "$r"
+    chmod 0700 "$SB_DIR"; chown nftban "$SB_DIR"
+    r=$(gate); [[ "$r" == "$REFUSED" ]] && ok "directory owned by nftban: ignored (even with a root marker)" || no "dir owner" "$r"
+    chown root "$SB_DIR"
+    r=$(gate); [[ "$r" == "$HONOURED" ]] && ok "control: restored root:root 0700 + root marker honoured" || no "control" "$r"
+fi
 
 echo ""
-echo "RESULTS: PASS=$PASS FAIL=$FAIL"
+echo "RESULTS: PASS=$PASS FAIL=$FAIL SKIP=$SKIP"
 [[ $FAIL -eq 0 ]]
