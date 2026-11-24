@@ -69,7 +69,11 @@
 # Canonical exclusive lock (internal/nftlock/lock.go). Same file the shell rebuild
 # takes since P0-J -- so acquiring it genuinely excludes a rebuild, rather than
 # merely looking like it does.
-_LBM_LOCK_PATH="${NFTBAN_RUN_DIR:-/run/nftban}/nft_operations.lock"
+# v1.238: canonical path in the root-only writers dir; the v1.237 path is taken after it for one
+# release (nftban_legacy_lock_take; SEC-WRITE-BOUNDARY-LEGACY-ROOT-LOCKS-IN-NFTBAN-OWNED-RUN-DIR).
+_LBM_LOCK_PATH="${NFTBAN_WRITERS_DIR:-/run/nftban-writers}/nft_operations.lock"
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+declare -F nftban_legacy_lock_take >/dev/null 2>&1 || source "${BASH_SOURCE[0]%/*}/../lib/nft_writers.sh"
 _LBM_LOCK_WAIT="${NFTBAN_TIMEOUT_NFT_LOCK:-30}"
 
 # Conservative floor for the migration itself. Deliberately 2, not 1: this is a
@@ -392,7 +396,7 @@ nftban_legacy_backup_migrate() {
     for (( _i = 0; _i < _batch_n; _i++ )); do _batch+=("${_LBM_S_LEGACY[$_i]}"); done
     for (( _i = _legacy - _LBM_LEGACY_FLOOR; _i < _legacy; _i++ )); do _floor+=("${_LBM_S_LEGACY[$_i]}"); done
 
-    mkdir -p "$(dirname "$_LBM_LOCK_PATH")" 2>/dev/null || true
+    [[ -d "${_LBM_LOCK_PATH%/*}" ]] || mkdir -m 0700 -- "${_LBM_LOCK_PATH%/*}" 2>/dev/null || true
     if ! exec 8>>"$_LBM_LOCK_PATH"; then
         _rc=1; _lbm_emit REFUSED_LOCK_OPEN; return 1
     fi
@@ -401,6 +405,11 @@ nftban_legacy_backup_migrate() {
         # optional work; it never preempts an in-flight transaction.
         exec 8>&-; _rc=1; _lbm_emit REFUSED_LOCK_BUSY; return 1
     fi
+    local _lbm_legacy_fd=""
+    if ! nftban_legacy_lock_take nft_operations.lock -w "$_LBM_LOCK_WAIT"; then
+        exec 8>&-; _rc=1; _lbm_emit REFUSED_LOCK_BUSY; return 1
+    fi
+    _lbm_legacy_fd="${NFTBAN_LEGACY_LOCK_FD:-}"
     _locks=1; _lbm_ms_into _t0
 
     # Re-verify the batch AND the protected floor under the lock: the pre-lock
@@ -411,13 +420,14 @@ nftban_legacy_backup_migrate() {
         fi
     done
     if (( _verify_ok == 0 )); then
-        exec 8>&-; _lbm_ms_into _t1; _lock_ms=$(( _t1 - _t0 )); _rc=1
+        nftban_legacy_lock_drop "$_lbm_legacy_fd"; exec 8>&-; _lbm_ms_into _t1; _lock_ms=$(( _t1 - _t0 )); _rc=1
         echo "LBM_TOCTOU changed_under_lock=${_bad%,}"
         _lbm_emit ABORTED_TOCTOU; return 1
     fi
     for _x in "${_batch[@]}"; do
         if rm -rf -- "$_x" 2>/dev/null; then _removed=$((_removed + 1)); else _rc=1; fi
     done
+    nftban_legacy_lock_drop "$_lbm_legacy_fd"
     exec 8>&-
     _lbm_ms_into _t1; _lock_ms=$(( _t1 - _t0 ))
     # No cache write after a mutation: the next run certifies from pure observation.

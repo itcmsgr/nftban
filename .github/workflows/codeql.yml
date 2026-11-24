@@ -27,8 +27,9 @@ on:
   schedule:
     - cron: '0 3 * * 0'  # Weekly: Sunday 3:00 AM UTC
 
+# v1.238 (Scorecard TokenPermissions, #1486): top level is read-only; the analyze job
+# holds the security-events write grant it needs to upload CodeQL results.
 permissions:
-  security-events: write
   contents: read
   actions: read
 
@@ -40,6 +41,10 @@ jobs:
   analyze:
     name: CodeQL Analysis (Go)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      security-events: write   # codeql-action/analyze uploads SARIF to code scanning
 
     steps:
       - name: Checkout

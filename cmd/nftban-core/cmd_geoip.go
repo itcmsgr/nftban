@@ -31,6 +31,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -263,7 +264,7 @@ func cmdGeoipUpdate(cfg *nftbanconf.Config) error {
 
 	var downloadErr error
 	if useMaxMind {
-		downloadErr = downloadMaxMindTarGz(dbURL, dbFile)
+		downloadErr = downloadMaxMindTarGz(dbURL, dbFile, geoipCfg.LicenseKey)
 	} else {
 		// v1.236: the new month can be unpublished for a while after it starts (measured
 		// 2026-11-01: 404); the previous month is the newest available file then.
@@ -680,8 +681,26 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// redactDownloadError returns err's text without the request URL (MaxMind's carries license_key=)
+// and with the key replaced, so no download failure can print the licence key to the terminal or
+// the nftban-core-geoip.service journal. Same rule as internal/feeds redactTransport (AbuseIPDB).
+//
+// v1.238 BUG-GEOIP-MAXMIND-LICENSE-KEY-IN-ERROR-OUTPUT (owner GO 2026-11-23): before this,
+// client.Get's *url.Error was wrapped with %w and printed the full URL including the key.
+func redactDownloadError(err error, key string) string {
+	var ue *neturl.Error
+	if errors.As(err, &ue) {
+		err = ue.Err
+	}
+	msg := err.Error()
+	if key != "" {
+		msg = strings.ReplaceAll(msg, key, "[REDACTED]")
+	}
+	return msg
+}
+
 // downloadMaxMindTarGz downloads and extracts MaxMind tar.gz format
-func downloadMaxMindTarGz(url, destPath string) error {
+func downloadMaxMindTarGz(url, destPath, licenseKey string) error {
 	tmpFile := destPath + ".tmp"
 
 	// Create HTTP client with timeout
@@ -691,7 +710,8 @@ func downloadMaxMindTarGz(url, destPath string) error {
 
 	resp, err := client.Get(url)
 	if err != nil {
-		return fmt.Errorf("download failed: %w", err)
+		// Never %w the *url.Error: its text is the full URL with license_key=.
+		return fmt.Errorf("download failed (download.maxmind.com): %s", redactDownloadError(err, licenseKey))
 	}
 	defer resp.Body.Close()
 

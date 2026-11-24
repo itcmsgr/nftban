@@ -376,7 +376,6 @@ product	cli/lib/nftban/core/nftban_health_checks_security.sh	e28b3bb970f23508	1	
 product	cli/lib/nftban/core/nftban_health_checks_security.sh	e3ab636f7ae43e72	1	grep-q	A	n/a	UNVERIFIED	fn=nftban_health_check_nftables_security; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
 product	cli/lib/nftban/core/nftban_health_checks_services.sh	521b5104190c1e11	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_health_checks_services.sh	5f113954e0d871fb	1	head	B	n/a	UNVERIFIED	-
-product	cli/lib/nftban/core/nftban_health_checks_services.sh	dd9432502d01d4fc	1	head	E	n/a	UNVERIFIED	fn=nftban_health_check_services; needs a producer-size probe on a representative host
 product	cli/lib/nftban/core/nftban_health_checks_services.sh	ee27cbe30bfebed8	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_health_fixes.sh	2fc534e10083ed54	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_health_fixes.sh	5f113954e0d871fb	1	head	B	n/a	UNVERIFIED	-

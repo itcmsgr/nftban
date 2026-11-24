@@ -7,8 +7,11 @@ package feeds
 
 import (
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -128,5 +131,38 @@ func TestWriteFeedDirFileStaysInDir(t *testing.T) {
 	}
 	if tr, err := RecordFailure(dir, "corrupt", "x", time.Time{}, RateLimitInfo{}, time.Now()); err != nil || tr != TransitionFailure {
 		t.Fatalf("a corrupt record is replaced by the next outcome: %q %v", tr, err)
+	}
+}
+
+// v1.238 D-2 (owner GO 2026-11-23): in the setgid root:nftban feeds directory a file root creates
+// already has the wanted group, so the writer needs no CAP_CHOWN (nftband has none and runs without
+// supplementary groups); it still sets the mode 0640 itself. Runs against a directory prepared
+// outside the test (NFTBAN_TEST_FEEDS_DIR, root:nftban, setgid), under nftband's capabilities, e.g.
+//
+//	systemd-run --wait --pipe -p CapabilityBoundingSet="CAP_NET_ADMIN CAP_DAC_OVERRIDE" \
+//	  -E NFTBAN_TEST_FEEDS_DIR=/tmp/x feeds.test -test.run TestWriteFeedDirFileSetgid
+//
+// The same run against a non-setgid 0750 directory fails with EPERM (the defect).
+func TestWriteFeedDirFileSetgidDirNeedsNoChown(t *testing.T) {
+	dir := os.Getenv("NFTBAN_TEST_FEEDS_DIR")
+	if dir == "" || os.Geteuid() != 0 {
+		t.Skip("set NFTBAN_TEST_FEEDS_DIR to a root:nftban setgid directory (needs root privileges to prepare it)")
+	}
+	grp, err := user.LookupGroup("nftban")
+	if err != nil {
+		t.Skip("no nftban group on this host")
+	}
+	gid, _ := strconv.Atoi(grp.Gid)
+	owner := func() (int, int, bool) { return 0, gid, true }
+	if err := WriteFeedDirFile(dir, "full-sync.status", []byte("{}\n"), owner); err != nil {
+		t.Fatalf("write in %s: %v", dir, err)
+	}
+	st, err := os.Stat(filepath.Join(dir, "full-sync.status"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sys, ok := st.Sys().(*syscall.Stat_t)
+	if !ok || sys.Uid != 0 || int(sys.Gid) != gid || st.Mode().Perm() != 0o640 {
+		t.Fatalf("want root:nftban 0640, got uid=%d gid=%d mode=%v", sys.Uid, sys.Gid, st.Mode().Perm())
 	}
 }

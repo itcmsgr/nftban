@@ -99,7 +99,7 @@ write_reconciliation_metrics() {
     timestamp=$(date +%s)
     local metrics=""
 
-    for target in prometheus zabbix portal elasticsearch kafka file; do
+    for target in prometheus zabbix portal elasticsearch kafka file syslog webhook; do
         local attempts="${EXPORT_ATTEMPTS["$target"]:-0}"
         local successes="${EXPORT_SUCCESSES["$target"]:-0}"
         local failures="${EXPORT_FAILURES["$target"]:-0}"
@@ -399,41 +399,115 @@ export_connectors() {
         }
     ' "$METRICS_CACHE")
 
-    # Process each connector
+    # Process each connector.
+    # v1.238 (owner GO 2026-11-23: count delivery only after the destination's acknowledgement;
+    # show skipped, failed and unverified outcomes). Each connector's result is recorded under its
+    # type; the function fails if any enabled connector did not deliver.
+    local any_failed=0 conf
     for conf in "$connectors_dir"/*.conf; do
         [[ -f "$conf" ]] || continue
+        # No value may leak from the previous connector (e.g. another connector's credentials).
+        unset CONNECTOR_NAME CONNECTOR_TYPE CONNECTOR_ENABLED CONNECTOR_ES_URL CONNECTOR_ES_INDEX \
+              CONNECTOR_ES_USER CONNECTOR_ES_PASS CONNECTOR_KAFKA_BROKERS CONNECTOR_KAFKA_TOPIC \
+              CONNECTOR_FILE_PATH
 
+        if [[ ! -r "$conf" ]]; then
+            # Before v1.238 `connector add` wrote root:root 0640: the exporter (nftban) could not
+            # read it, the error went to stderr only and the cycle still counted as an export.
+            log_warn "Connector: $(basename "$conf") is not readable by $(id -un) — not exported. Fix: chgrp nftban '$conf' (mode 0640)"
+            record_export_start "file"; record_export_result "file" "false" "connector_unreadable"
+            any_failed=1
+            continue
+        fi
         # shellcheck source=/dev/null
-        source "$conf" || true
+        if ! source "$conf"; then
+            log_warn "Connector: $(basename "$conf") could not be loaded — not exported"
+            any_failed=1
+            continue
+        fi
 
         [[ "${CONNECTOR_ENABLED:-false}" != "true" ]] && continue
 
         case "${CONNECTOR_TYPE:-}" in
             elasticsearch)
+                record_export_start "elasticsearch"
                 local url="${CONNECTOR_ES_URL}/${CONNECTOR_ES_INDEX:-nftban-metrics}/_doc"
-                if curl -sf -X POST "$url" -H "Content-Type: application/json" -d "$json_payload" -o /dev/null; then
+                # Configured credentials are always used (same netrc mechanism as `connector push`,
+                # never on the command line); a user without a password is a configuration error.
+                local netrc_file="" es_host
+                if [[ -n "${CONNECTOR_ES_USER:-}" ]]; then
+                    if [[ -z "${CONNECTOR_ES_PASS:-}" ]]; then
+                        log_warn "Connector: Elasticsearch (${CONNECTOR_NAME}) has CONNECTOR_ES_USER but no CONNECTOR_ES_PASS — not sent"
+                        record_export_result "elasticsearch" "false" "credentials_incomplete"
+                        any_failed=1
+                        continue
+                    fi
+                    netrc_file=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban-es-netrc.XXXXXX") || {
+                        record_export_result "elasticsearch" "false" "mktemp_failed"; any_failed=1; continue; }
+                    es_host=$(echo "$url" | sed -E 's|https?://([^/:]+).*|\1|')
+                    printf 'machine %s login %s password %s\n' "$es_host" "$CONNECTOR_ES_USER" "$CONNECTOR_ES_PASS" > "$netrc_file"
+                fi
+                local es_rc=0 auth_args=()
+                [[ -n "$netrc_file" ]] && auth_args=(--netrc-file "$netrc_file")
+                printf '%s' "$json_payload" | curl -sf -X POST "$url" -H "Content-Type: application/json" \
+                    "${auth_args[@]}" -d @- -o /dev/null || es_rc=$?
+                [[ -n "$netrc_file" ]] && rm -f "$netrc_file"
+                if [[ $es_rc -eq 0 ]]; then
+                    # curl -f: only a 2xx reply (document indexed) counts as delivered.
+                    record_export_result "elasticsearch" "true"
                     log_info "Connector: sent to Elasticsearch (${CONNECTOR_NAME})"
                 else
-                    log_warn "Connector: Elasticsearch export failed (${CONNECTOR_NAME})"
+                    record_export_result "elasticsearch" "false" "curl_rc_${es_rc}"
+                    log_warn "Connector: Elasticsearch export failed (${CONNECTOR_NAME}, curl rc=${es_rc}; 22 = HTTP error such as 401)"
+                    any_failed=1
                 fi
                 ;;
 
             kafka)
-                if command -v kafkacat &>/dev/null; then
-                    echo "$json_payload" | kafkacat -P -b "${CONNECTOR_KAFKA_BROKERS}" -t "${CONNECTOR_KAFKA_TOPIC:-nftban}" 2>/dev/null
+                record_export_start "kafka"
+                if ! command -v kafkacat &>/dev/null; then
+                    log_warn "Connector: Kafka (${CONNECTOR_NAME}) skipped — kafkacat is not installed"
+                    record_export_result "kafka" "false" "kafkacat_missing"
+                    any_failed=1
+                elif echo "$json_payload" | kafkacat -P -b "${CONNECTOR_KAFKA_BROKERS}" -t "${CONNECTOR_KAFKA_TOPIC:-nftban}" 2>/dev/null; then
+                    record_export_result "kafka" "true"
                     log_info "Connector: sent to Kafka (${CONNECTOR_NAME})"
+                else
+                    record_export_result "kafka" "false" "kafkacat_failed"
+                    log_warn "Connector: Kafka export failed (${CONNECTOR_NAME})"
+                    any_failed=1
                 fi
                 ;;
 
             file)
+                record_export_start "file"
                 local path="${CONNECTOR_FILE_PATH:-${NFTBAN_LOG_DIR:-/var/log/nftban}/metrics.json}"
-                mkdir -p "$(dirname "$path")" || return 1
-                echo "$json_payload" >> "$path"
-                record_export_result "file" "true"
-                log_info "Connector: written to $path (${CONNECTOR_NAME})"
+                if mkdir -p "$(dirname "$path")" && echo "$json_payload" >> "$path"; then
+                    record_export_result "file" "true"
+                    log_info "Connector: written to $path (${CONNECTOR_NAME})"
+                else
+                    record_export_result "file" "false" "write_failed"
+                    log_warn "Connector: could not write $path (${CONNECTOR_NAME})"
+                    any_failed=1
+                fi
+                ;;
+
+            syslog|webhook)
+                # Not implemented in the periodic exporter (only `nftban connector push` sends these
+                # types); reported instead of silently skipped. Proposal: shared delivery, v1.239+.
+                record_export_start "${CONNECTOR_TYPE}"
+                record_export_result "${CONNECTOR_TYPE}" "false" "not_supported_by_timer"
+                log_warn "Connector: ${CONNECTOR_TYPE} (${CONNECTOR_NAME}) is not sent by the periodic exporter (only by 'nftban connector push')"
+                any_failed=1
+                ;;
+
+            *)
+                log_warn "Connector: ${CONNECTOR_NAME:-$(basename "$conf")} has unknown type '${CONNECTOR_TYPE:-}' — not exported"
+                any_failed=1
                 ;;
         esac
     done
+    return $any_failed
 }
 
 # =============================================================================
@@ -561,15 +635,28 @@ export_portal() {
           inventory:$inventory, modules:$modules, metrics:$metrics}') || {
         record_export_result "portal" "false" "payload_build_failed"; return 1; }
 
-    # Send to portal with real ACK
-    local response http_code
-    response=$(curl -sf -X POST "$portal_url" \
-        -H "Content-Type: application/json" \
-        -H "Authorization: Bearer $api_key" \
-        -H "X-NFTBan-Host-Key: $host_key" \
+    # Send to portal with real ACK.
+    # v1.238 OBS-PORTAL-API-KEY-IN-ARGV (owner GO 2026-11-23): the API key and host key travel in a
+    # 0600 header file (curl -H @file) and the payload on stdin (-d @-), never on the command line
+    # (/proc/<pid>/cmdline is readable by every local user); the key is never sent over plain http.
+    if [[ "$portal_url" != https://* ]]; then
+        log_warn "Portal: NFTBAN_PORTAL_URL must use https:// (the API key is not sent over plain http)"
+        record_export_result "portal" "false" "insecure_url"
+        return 1
+    fi
+    local response http_code hdr_file
+    hdr_file=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/portal_hdr.XXXXXX") || {
+        record_export_result "portal" "false" "mktemp_failed"
+        return 1
+    }
+    printf 'Content-Type: application/json\nAuthorization: Bearer %s\nX-NFTBan-Host-Key: %s\n' \
+        "$api_key" "$host_key" > "$hdr_file"
+    response=$(printf '%s' "$payload" | curl -sf --proto '=https' -X POST "$portal_url" \
+        -H @"$hdr_file" \
         --max-time "$timeout" \
         -w "\n%{http_code}" \
-        -d "$payload" 2>/dev/null) || response=""
+        -d @- 2>/dev/null) || response=""
+    rm -f "$hdr_file"
 
     http_code=$(echo "$response" | tail -1)
 

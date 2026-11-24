@@ -670,6 +670,9 @@ jobs:
       id-token: write
       contents: write
       actions: read
+    # ⛔ NOT SHA-pinned on purpose (Scorecard PinnedDependencies accepted risk, #1486): the SLSA
+    # builder MUST be referenced by an @vX.Y.Z tag; a commit-SHA reference fails the build
+    # (slsa-github-generator internal/builders/go/README.md "Referencing the SLSA builder").
     uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.1.0
     with:
       # v1.157 PR-C: pin exact patch (matches go.mod `go 1.26.11`) so the SLSA builder
