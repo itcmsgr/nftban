@@ -252,7 +252,7 @@ var RequiredDirs = []DirSpec{
 	// Writable subdirs are nftban:nftban.
 	{DataDir, 0750, "root:nftban"},
 	{StateDir, 02750, "root:nftban"}, // v1.237 C1 (fhs-spec state note): root writes, nftban group reads; setgid: new entries get group nftban
-	{FeedsDir, 0750, "root:nftban"},  // v1.236: root writes here; the nftban group reads
+	{FeedsDir, 02750, "root:nftban"}, // v1.238 D-2: setgid, so nftband (no CAP_CHOWN) writes records with group nftban
 	{PanelsDir, 0750, "nftban:nftban"},
 	{DataDir + "/banned", 0750, "nftban:nftban"},
 	{DataDir + "/whitelist", 0750, "nftban:nftban"},
