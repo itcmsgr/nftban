@@ -70,7 +70,7 @@ arm() { # $1=file $2=marker $3=inner_rc $4=quiet -> prints any warning
 declare -A MARK=(
     [ddos]='nftban ddos reload 2>/dev/null'
     [portscan]='nftban portscan reload 2>/dev/null'
-    [botguard]='nftban botguard enable --quiet 2>/dev/null'
+    [botguard]='nftban botguard apply >/dev/null 2>/dev/null'  # v1.238 D1/D2: apply, never enable
 )
 
 # The contract. A warning is correct ONLY when the command failed AND we are verbose.
@@ -115,7 +115,7 @@ done
     || bad "pre-fix shape mismatched $caught arms (want 2); the contract check proves nothing"
 
 echo "=== the defective precedence form is gone from the re-apply sites ==="
-n="$(grep -cE '(reload|botguard enable --quiet) 2>/dev/null \|\| \[\[ "\$quiet"' "$FW")" || n=0
+n="$(grep -cE '(reload|botguard apply >/dev/null) 2>/dev/null \|\| \[\[ "\$quiet"' "$FW")" || n=0
 [[ "$n" -eq 0 ]] \
     && ok "no module re-apply site uses the 'cmd || [[ ]] && echo' form" \
     || bad "$n re-apply site(s) still use the defective precedence form"
@@ -124,7 +124,7 @@ echo "=== stderr suppression is PRESERVED (P12-R02-B is a separate lane) ==="
 # ⛔ Removing 2>/dev/null here without routing through the canonical redactor would
 #    trade diagnosability for disclosure: these records reach support bundles that
 #    are emailed to third parties. That work is P12-R02-B, not this lane.
-s="$(grep -cE '(nftban (ddos|portscan) reload|nftban botguard enable --quiet) 2>/dev/null' "$FW")" || s=0
+s="$(grep -cE '(nftban (ddos|portscan) reload|nftban botguard apply >/dev/null) 2>/dev/null' "$FW")" || s=0
 [[ "$s" -ge 3 ]] \
     && ok "module re-apply calls still suppress stderr ($s sites) — scope not widened" \
     || bad "stderr suppression changed ($s sites) — this lane must not touch it"

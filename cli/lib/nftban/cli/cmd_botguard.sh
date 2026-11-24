@@ -65,6 +65,7 @@ USAGE:
 COMMANDS:
     enable              Enable HTTP Bot Guard protection
     disable             Disable HTTP Bot Guard protection
+    apply               Load the BotGuard rules if enabled (never changes the setting)
     status              Show bot guard status and statistics
     config              Show bot guard configuration
     stats               Show bot guard set statistics
@@ -347,10 +348,56 @@ _botguard_kernel_set_exists() {
 # COMMANDS
 # =============================================================================
 
+# v1.238 D1/D2 (owner 2026-11-23): the enable switch is written by the shared module writer (central
+# nftban.conf.local when the key is defined there, otherwise the module .local), read back, and its
+# source named. Only the explicit `nftban botguard enable|disable` writes; the rebuild uses `apply`.
+_botguard_save_switch() {
+    local want="$1" json_mode="$2" rb src now
+    if ! declare -F nftban_module_set_enabled >/dev/null 2>&1; then
+        # shellcheck source=/usr/lib/nftban/lib/module_authority.sh
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" || return 1
+    fi
+    nftban_module_set_enabled botguard "$want" || return 1
+    rb=$(nftban_module_enable_resolve botguard 2>/dev/null) || rb=""
+    src=$(cut -f2 <<<"$rb")
+    nftban_module_effective_enabled botguard >/dev/null 2>&1 && now=true || now=false
+    if [[ "$now" != "$want" ]]; then
+        echo "ERROR: HTTP_BOTGUARD_ENABLED is \"$(cut -f1 <<<"$rb")\" in ${src:-the defaults} after the write — the selection is NOT saved as requested" >&2
+        return 1
+    fi
+    [[ "$json_mode" == "true" ]] || echo "Selection saved: HTTP_BOTGUARD_ENABLED=\"$want\" (effective, from ${src:-defaults})"
+}
+
+# nftban botguard apply — v1.238: the rebuild's re-application (was `botguard enable`, which wrote
+# HTTP_BOTGUARD_ENABLED="true" over the operator's choice). Applies only when the effective switch is
+# on, prints why it failed, never writes config.
+_nftban_botguard_apply() {
+    if ! declare -F nftban_module_effective_enabled >/dev/null 2>&1; then
+        # shellcheck source=/usr/lib/nftban/lib/module_authority.sh
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" || return 1
+    fi
+    nftban_module_effective_enabled botguard >/dev/null 2>&1 || { echo "BotGuard is not enabled; nothing applied"; return 0; }
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR}/lib/nft_fragment.sh" || true
+    local frc=0
+    if declare -f nft_fragment_enable_module &>/dev/null; then
+        nft_fragment_enable_module "botguard" || frc=$?
+    fi
+    if [[ $frc -ne 0 ]]; then
+        echo "ERROR: BotGuard rules were NOT applied (fragment load failed, rc=$frc)" >&2
+        return 1
+    fi
+    if systemctl is-active nftband &>/dev/null && ! systemctl restart nftband 2>/dev/null; then
+        echo "ERROR: BotGuard rules loaded but nftband did not restart" >&2
+        return 1
+    fi
+    return 0
+}
+
 _nftban_botguard_enable() {
     local json_mode="${1:-false}"
 
-    _botguard_config_set "HTTP_BOTGUARD_ENABLED" "true"
+    _botguard_save_switch true "$json_mode" || return 1
 
     # Apply nft fragment: create sets + rules + jump chains
     # shellcheck source=/dev/null
@@ -400,7 +447,7 @@ _nftban_botguard_enable() {
 _nftban_botguard_disable() {
     local json_mode="${1:-false}"
 
-    _botguard_config_set "HTTP_BOTGUARD_ENABLED" "false"
+    _botguard_save_switch false "$json_mode" || return 1
 
     # Remove nft fragment: cleanup sets + rules
     # shellcheck source=/dev/null
@@ -929,8 +976,18 @@ nftban_cmd_botguard() {
         disable)
             _nftban_botguard_disable "$json_mode"
             ;;
+        apply)
+            _nftban_botguard_apply
+            ;;
         status)
-            _nftban_botguard_status "$json_mode"
+            # v1.238 D1/D2 option A: plus configuration / daemon / kernel (and .enable_state in JSON)
+            declare -F nftban_module_status_with_state >/dev/null 2>&1 \
+                || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" 2>/dev/null || true
+            if declare -F nftban_module_status_with_state >/dev/null 2>&1; then
+                nftban_module_status_with_state botguard "$json_mode" _nftban_botguard_status
+            else
+                _nftban_botguard_status "$json_mode"
+            fi
             ;;
         config)
             _nftban_botguard_config "$json_mode"

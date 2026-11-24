@@ -422,7 +422,14 @@ nftban_cmd_ddos() {
             # Pre-v1.141 this arm called nftban_ddos_status with NO json_mode
             # arg, producing banner + ━━━ heading bars + text body even on
             # `nftban ddos status --json` (cruel-judge §3 E_J6).
-            nftban_ddos_status "$json_mode"
+            # v1.238 D1/D2 option A: plus configuration / daemon / kernel (and .enable_state in JSON)
+            declare -F nftban_module_status_with_state >/dev/null 2>&1 \
+                || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" 2>/dev/null || true
+            if declare -F nftban_module_status_with_state >/dev/null 2>&1; then
+                nftban_module_status_with_state ddos "$json_mode" nftban_ddos_status
+            else
+                nftban_ddos_status "$json_mode"
+            fi
             ;;
 
         stats)
