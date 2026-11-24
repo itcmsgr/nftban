@@ -1948,33 +1948,39 @@ exit 0
 # removed /run/nftban. Same protocol as nft_writers.sh nftban_writers_acquire: publish the
 # intent, wait at most 60 s for LOCK_EX. nft_writers.lock is not under the one-release
 # legacy-path rule (that covers nft_operations / session_whitelist / maintenance locks).
-# BUSY = NOT REMOVED: no table is touched without the lock; the tables are kept (their SSH
-# accept rules stay) and a message names the manual step. REPORT, DO NOT ABORT, as in
-# _nftban_uninstall_synproxy_raw: the package removal itself does not fail on it.
+# BUSY = NOT REMOVED (owner 2026-11-24): no table is touched without the lock, the existing
+# nftban rules stay active, and the WARN gives a retry that holds the same lock for the whole
+# intervention. REPORT, DO NOT ABORT, as in _nftban_uninstall_synproxy_raw: the package
+# removal itself does not fail on it.
+# INTENT: removed only on success and only while it still holds exactly what this scriptlet
+# wrote; never on the busy path (it may belong to another writer by then).
 # Byte-identical copies: packaging/deb/postrm, packaging/build_nftban.sh (RPM postun) -
 # drift-checked by cli/lib/nftban/tests/uninstall_release_tables_lock_v1238_test.sh.
 _nftban_release_tables() {
     command -v nft >/dev/null 2>&1 || return 0
     _nrt_dir=/run/nftban-writers
+    # nftban:held - operator text, runs every nft step under the same flock
+    _nrt_retry="flock -w 60 \$_nrt_dir/nft_writers.lock sh -c 'nft delete table ip nftban; nft delete table ip6 nftban'"
     [ -d "\$_nrt_dir" ] || mkdir -m 0700 "\$_nrt_dir" 2>/dev/null || true
     if ! command -v flock >/dev/null 2>&1 || ! { exec 9>>"\$_nrt_dir/nft_writers.lock"; } 2>/dev/null; then
-        echo "nftban: WARN: cannot use \$_nrt_dir/nft_writers.lock - nftban tables NOT removed; when safe run: nft delete table ip nftban; nft delete table ip6 nftban" >&2
+        echo "nftban: WARN: cannot use \$_nrt_dir/nft_writers.lock - nftban tables NOT removed; the existing nftban rules stay active." >&2
         return 0
     fi
-    _nrt_boot=\$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)
-    echo "pid=\$\$ boot=\$_nrt_boot" > "\$_nrt_dir/nft_writers.intent" 2>/dev/null || true
+    _nrt_intent="pid=\$\$ boot=\$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)"
+    echo "\$_nrt_intent" > "\$_nrt_dir/nft_writers.intent" 2>/dev/null || true
     if ! flock -w 60 9; then
         exec 9>&-
-        rm -f "\$_nrt_dir/nft_writers.intent" 2>/dev/null || true
-        echo "nftban: WARN: the nft write boundary (\$_nrt_dir/nft_writers.lock) stayed busy for 60s - nftban tables NOT removed; when it is free run: nft delete table ip nftban; nft delete table ip6 nftban" >&2
+        echo "nftban: WARN: the nft write boundary (\$_nrt_dir/nft_writers.lock) stayed busy for 60s - nftban tables NOT removed; the existing nftban rules stay active. To remove them later, as root, holding the same lock for the whole step: \$_nrt_retry" >&2
         return 0
     fi
     for _nrt_fam in ip ip6; do
         nft flush table "\$_nrt_fam" nftban 2>/dev/null || true  # nftban:held
         nft delete table "\$_nrt_fam" nftban 2>/dev/null || true  # nftban:held
     done
+    if [ "\$(cat "\$_nrt_dir/nft_writers.intent" 2>/dev/null)" = "\$_nrt_intent" ]; then
+        rm -f "\$_nrt_dir/nft_writers.intent" 2>/dev/null || true
+    fi
     exec 9>&-
-    rm -f "\$_nrt_dir/nft_writers.intent" 2>/dev/null || true
     return 0
 }
 # <<< NFTBAN_RELEASE_TABLES_END <<<
