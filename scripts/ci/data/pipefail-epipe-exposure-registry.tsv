@@ -376,7 +376,6 @@ product	cli/lib/nftban/core/nftban_health_checks_security.sh	e28b3bb970f23508	1	
 product	cli/lib/nftban/core/nftban_health_checks_security.sh	e3ab636f7ae43e72	1	grep-q	A	n/a	UNVERIFIED	fn=nftban_health_check_nftables_security; security_or_count_surface=YES; MEASURED 65024 (~1600 set elements); 20/20 fail at 205291B
 product	cli/lib/nftban/core/nftban_health_checks_services.sh	521b5104190c1e11	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_health_checks_services.sh	5f113954e0d871fb	1	head	B	n/a	UNVERIFIED	-
-product	cli/lib/nftban/core/nftban_health_checks_services.sh	dd9432502d01d4fc	1	head	E	n/a	UNVERIFIED	fn=nftban_health_check_services; needs a producer-size probe on a representative host
 product	cli/lib/nftban/core/nftban_health_checks_services.sh	ee27cbe30bfebed8	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_health_fixes.sh	2fc534e10083ed54	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_health_fixes.sh	5f113954e0d871fb	1	head	B	n/a	UNVERIFIED	-
@@ -469,13 +468,8 @@ product	cli/lib/nftban/exporters/nftban_unified_exporter_collect.sh	9331641daef0
 product	cli/lib/nftban/exporters/nftban_unified_exporter_collect.sh	c67358e48d6ac84a	1	head	C	n/a	UNVERIFIED	-
 product	cli/lib/nftban/exporters/nftban_unified_exporter_collect.sh	d7280c976689f1a1	1	head	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/exporters/nftban_unified_exporter_collect.sh	f9ac1c1d87ba5851	1	head	C	n/a	UNVERIFIED	-
-product	cli/lib/nftban/exporters/nftban_unified_exporter_export.sh	1201d7cd3fe37b48	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 product	cli/lib/nftban/exporters/nftban_unified_exporter_export.sh	1a9ce87942441fd4	1	grep-q	E	n/a	UNVERIFIED	fn=export_zabbix; needs a producer-size probe on a representative host
-product	cli/lib/nftban/exporters/nftban_unified_exporter_export.sh	1af6c1db6f1c88e4	1	awk-exit	B	n/a	UNVERIFIED	-
-product	cli/lib/nftban/exporters/nftban_unified_exporter_export.sh	380ff8e74e2e0380	1	grep-q	UNCLASSIFIED	n/a	UNVERIFIED	-
-product	cli/lib/nftban/exporters/nftban_unified_exporter_export.sh	6e150cba461b4f66	1	awk-exit	UNCLASSIFIED	n/a	UNVERIFIED	-
 product	cli/lib/nftban/exporters/nftban_unified_exporter_export.sh	819b32e8c5f7f5ab	1	awk-exit	B	n/a	UNVERIFIED	-
-product	cli/lib/nftban/exporters/nftban_unified_exporter_export.sh	d93d8dd3d15e52f3	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 product	cli/lib/nftban/helpers/autoheal.sh	45d8f9815668c76b	1	grep-q	E	n/a	UNVERIFIED	fn=(file scope); needs a producer-size probe on a representative host
 product	cli/lib/nftban/helpers/autoheal.sh	ab885c5834b0705f	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/helpers/autoheal.sh	b7ff10a51d7c9acc	1	grep-q	B	n/a	UNVERIFIED	-

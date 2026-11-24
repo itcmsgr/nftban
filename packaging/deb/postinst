@@ -1436,6 +1436,19 @@ _nftban_migrate_reports_to_log() {
         _nftban_seed_operator_manual "whitelist.d/99-manual.conf" || true
         _nftban_seed_operator_manual "blacklist.d/99-manual.conf" || true
 
+        # v1.238 BUG-CONNECTOR-CONFIG-UNREADABLE-BY-EXPORTER: connector files written by
+        # `nftban connector add` before v1.238 are root:root 0640, unreadable by the exporter
+        # (User=nftban), so nothing was exported. Bring them to the canonical policy
+        # (fhs-spec /etc/nftban/connectors 0750 root:nftban; files 0640 root:nftban). Only regular,
+        # non-symlink files still owned root:root are touched; never fails the configure step.
+        for _cf in /etc/nftban/connectors/*.conf; do
+            [ -f "$_cf" ] && [ ! -L "$_cf" ] || continue
+            [ "$(stat -c '%U:%G' "$_cf" 2>/dev/null)" = "root:root" ] || continue
+            chgrp nftban "$_cf" 2>/dev/null && chmod 0640 "$_cf" 2>/dev/null \
+                && log_info "connector config made readable by the exporter: $_cf" || true
+        done
+        unset _cf
+
         # v1.234.0 BotScan patterns: restore/seed custom.patterns and migrate the
         # pre-v1.234 edited rule files that preinst saved (*.nftban-saved) ONCE.
         # Twin of the RPM %post block. Never fails the configure step.
@@ -1447,6 +1460,14 @@ _nftban_migrate_reports_to_log() {
         # before its Validate phase), put back exactly the flags this script removed,
         # where the record proves nothing changed the file since.
         nftban_immut_relock_owned | while read -r _st _p; do log_info "immutable flag $_st: $_p"; done
+
+        # v1.238 (owner 2026-11-23): install telemetry — same call and same consent gate as the RPM
+        # %post. nftban_send_install_result sends nothing unless COMMUNITY_STATS_ENABLED=yes was set
+        # explicitly by the operator (e.g. preconfigured before an unattended install); default
+        # anonymised. Background, bounded by curl timeouts; never changes this script's result.
+        if [ -f /usr/lib/nftban/lib/nftban_pro.sh ]; then
+            ( source /usr/lib/nftban/lib/nftban_pro.sh 2>/dev/null && nftban_send_install_result ) >/dev/null 2>&1 &
+        fi
 
         ;;
 esac

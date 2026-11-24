@@ -167,8 +167,16 @@ nftban_feeds_discover_all() {
     fi
 
     # Find all FEED_*_URL variables (dynamic discovery!)
+    # v1.238 (BUG-FEEDS-STATUS-IGNORES-FEEDS-CONF-LOCAL-DEFINITIONS, VM pass 2026-11-23): discover
+    # from the same files as the daemon/nftban-core reader (cmd_feeds.go parseFeedsConfig):
+    # feeds.conf, feeds.conf.local, nftban.conf.local. A feed defined only in feeds.conf.local was
+    # enforced while `feeds status` showed 0 enabled / 0 IPs.
     # v1.23.0 FIX (EVAL-1): Add || true to prevent pipefail crash when no feeds configured
-    grep -oP 'FEED_\K[A-Z0-9_]+(?=_URL=)' "$NFTBAN_FEEDS_CONFIG" 2>/dev/null | sort -u || true
+    local f files=()
+    for f in "$NFTBAN_FEEDS_CONFIG" "${NFTBAN_FEEDS_CONFIG}.local" "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"; do
+        [[ -f "$f" ]] && files+=("$f")
+    done
+    grep -hoP '^[[:space:]]*FEED_\K[A-Z0-9_]+(?=_URL=)' "${files[@]}" 2>/dev/null | sort -u || true
 }
 
 # Get feed property dynamically

@@ -35,8 +35,10 @@ package nftbanconf
 
 import (
 	"bufio"
+	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -329,6 +331,38 @@ func setBoolAlias(target *bool, state *aliasState, isCanonical bool, value, path
 func warnAliasConflict(path, canonical, alias, canonicalVal, aliasVal string) {
 	log.Printf("nftbanconf: %s: both %s=%q and %s=%q set with conflicting values; using %s (canonical)",
 		path, canonical, canonicalVal, alias, aliasVal, canonical)
+}
+
+// LoadEffective reads the configuration NOW, through the same parser as Load (nftban.conf, then
+// the central override nftban.conf.local), without the process cache.
+//
+// v1.238 (BUG-FEEDS-DAEMON-FULL-SYNC-USES-MASTER-SWITCH-CACHED-AT-START, owner GO 2026-11-23):
+// nftband used NFTBAN_FEEDS_ENABLED as it was when it started (Load is sync.Once), so a runtime
+// switch had no kernel effect until a restart. Unlike Load it never falls back to defaults: a
+// missing or unreadable nftban.conf, an nftban.conf.local that exists but cannot be read, or a
+// read error is an ERROR. Callers must treat an error as "unknown" — never as "feeds disabled".
+func LoadEffective() (*Config, error) { return loadEffectiveFrom(DefaultConfigFile) }
+
+func loadEffectiveFrom(path string) (*Config, error) {
+	if _, err := os.Stat(path); err != nil {
+		return nil, fmt.Errorf("config %s: %w", path, err)
+	}
+	cfg, err := loadFromFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("config %s: %w", path, err)
+	}
+	local := path + ".local"
+	if _, err := os.Stat(local); err == nil {
+		f, oerr := os.Open(filepath.Clean(local))
+		if oerr != nil {
+			return nil, fmt.Errorf("config override %s: %w", local, oerr)
+		}
+		_ = f.Close()
+		overlayFromFile(cfg, local)
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("config override %s: %w", local, err)
+	}
+	return cfg, nil
 }
 
 func loadFromFile(path string) (*Config, error) {

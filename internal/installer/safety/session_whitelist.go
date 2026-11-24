@@ -55,6 +55,7 @@ package safety
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -79,7 +80,16 @@ var sessionWhitelistPath = "/etc/nftban/whitelist.d/00-session.conf"
 // flock(2), so they genuinely interlock. It lives under /run (not the config
 // dir) so the whitelist `*.conf` loader glob can never see it. A var so tests
 // can redirect it.
-var sessionWhitelistLockPath = "/run/nftban/session_whitelist.lock"
+//
+// v1.238 (SEC-WRITE-BOUNDARY-LEGACY-ROOT-LOCKS-IN-NFTBAN-OWNED-RUN-DIR): it lives in the
+// root-only /run/nftban-writers (build/fhs-spec.yaml), not in the service-account-owned
+// /run/nftban. sessionWhitelistLegacyLockPath is taken AFTER it for one release only, so a
+// v1.237 process still running during the upgrade stays excluded; it is never unlinked or
+// replaced and a symlink there is not followed (limitation until v1.239 drops it: the service
+// account can still swap that legacy inode).
+var sessionWhitelistLockPath = "/run/nftban-writers/session_whitelist.lock"
+
+var sessionWhitelistLegacyLockPath = "/run/nftban/session_whitelist.lock"
 
 // lockSessionWhitelist takes an exclusive advisory lock (flock LOCK_EX) on
 // sessionWhitelistLockPath for the full duration of a session-whitelist
@@ -92,7 +102,7 @@ var sessionWhitelistLockPath = "/run/nftban/session_whitelist.lock"
 // created on-demand (volatile /run).
 func lockSessionWhitelist() (func(), error) {
 	if dir := filepath.Dir(sessionWhitelistLockPath); dir != "" {
-		_ = os.MkdirAll(dir, 0o750)
+		_ = os.MkdirAll(dir, 0o700) // root-only, as the spec declares /run/nftban-writers
 	}
 	// 0600 root-only: only root processes (installer + CLI firewall verbs) take
 	// this lock. filepath.Clean keeps gosec G304 quiet (matches blacklistd.go).
@@ -103,6 +113,40 @@ func lockSessionWhitelist() (func(), error) {
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil { // #nosec G115 -- fd always fits in int
 		_ = f.Close()
 		return nil, fmt.Errorf("flock session-whitelist lock %s: %w", sessionWhitelistLockPath, err)
+	}
+	legacy, err := lockSessionWhitelistLegacy()
+	if err != nil {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) // #nosec G115 -- fd always fits in int
+		_ = f.Close()
+		return nil, err
+	}
+	return func() {
+		legacy()                                        // reverse order: legacy first
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) // #nosec G115 -- fd always fits in int
+		_ = f.Close()
+	}, nil
+}
+
+// lockSessionWhitelistLegacy takes the v1.237 lock path (one release only, after the canonical
+// one). No-op when its directory is absent or a symlink sits at the name.
+func lockSessionWhitelistLegacy() (func(), error) {
+	noop := func() {}
+	if filepath.Clean(sessionWhitelistLegacyLockPath) == filepath.Clean(sessionWhitelistLockPath) {
+		return noop, nil // one file: already held through the canonical descriptor
+	}
+	if _, err := os.Stat(filepath.Dir(sessionWhitelistLegacyLockPath)); os.IsNotExist(err) {
+		return noop, nil
+	}
+	f, err := os.OpenFile(filepath.Clean(sessionWhitelistLegacyLockPath), os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
+	if err != nil {
+		if errors.Is(err, syscall.ELOOP) {
+			return noop, nil
+		}
+		return nil, fmt.Errorf("open legacy session-whitelist lock %s: %w", sessionWhitelistLegacyLockPath, err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil { // #nosec G115 -- fd always fits in int
+		_ = f.Close()
+		return nil, fmt.Errorf("flock legacy session-whitelist lock %s: %w", sessionWhitelistLegacyLockPath, err)
 	}
 	return func() {
 		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) // #nosec G115 -- fd always fits in int

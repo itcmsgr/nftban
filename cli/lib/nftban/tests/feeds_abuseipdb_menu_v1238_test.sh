@@ -110,7 +110,7 @@ lc=$(grep -m1 -n 'if ! curl ' <<<"$blk" || true); lc="${lc%%:*}"
 [[ -n "$lf" && -n "$lc" && $lf -lt $lc ]] && ok "shell fallback refuses a provider feed before any curl" || no "fallback FORMAT guard" "format=$lf curl=$lc"
 en=$(awk '/^nftban_feeds_enable\(\) \{/ {f=1} f {print} f && /^\}/ {exit}' "$FEEDS_SH")
 grep -qF '"$core" feeds update "$feed_name"' <<<"$en" && ok "enabling a provider feed downloads through nftban-core" || no "enable provider path"
-if grep -qxF '        search|export|suricata|geoban|install|uninstall|rebuild)' "$SBIN" && ! grep -qE '^ +search\|feeds\|' "$SBIN"; then
+if grep -qxF '        search|export|suricata|install|uninstall|rebuild)' "$SBIN" && ! grep -qE '^ +search\|feeds\|' "$SBIN"; then
     ok "feeds is not in the dispatcher's two-line help stub"
 else
     no "feeds still in the dispatcher help stub"

@@ -27,6 +27,11 @@ Every release must pass this checklist.
 - [ ] No postinst script creates directories manually
 - [ ] sysusers.d and tmpfiles.d executed successfully
 - [ ] No recursive chmod/chown present
+- [ ] Every added, renamed or retired configuration key (v1.238+) changes, in the same change: its consumer
+      (the code that applies it), `cli/lib/nftban/data/config-schema.json` (so `nftban config validate`
+      agrees with the consumer), the shipped defaults and help/docs, and the behaviour for an existing
+      operator `.local` (kept and still effective, or reported by `nftban config validate` with the key,
+      file, consequence and supported replacement). Operator `.local` lines are never rewritten.
 
 ---
 
@@ -42,9 +47,29 @@ Every release must pass this checklist.
 
 ## D. Networking
 
-- [ ] nftables rules use `inet` family
+- [ ] nftables rules use the family-split tables `ip nftban` and `ip6 nftban` (no `inet` table)
 - [ ] No iptables legacy dependencies
 - [ ] `nft` binary resolved via distro config
+
+### D.1 IPv4 / IPv6 coverage (required for every networking fix, v1.238+)
+
+For each fix that touches addresses, CIDRs, sets or rules, the PR and the release list state
+**separately for IPv4 and IPv6** one of: `supported` · `verified` (runtime evidence linked) ·
+`unsupported` (documented limitation) · `not tested`. Cover each stage that applies:
+
+| Stage | IPv4 | IPv6 |
+|---|---|---|
+| Input (CLI argument, config file, feed/country data source) | | |
+| Address / CIDR parsing and normalisation | | |
+| Authority decision (which module/source owns the entry) | | |
+| Whitelist precedence (whitelist, exceptions, overlapping ban reasons) | | |
+| Kernel application (`ip nftban` / `ip6 nftban` set or rule present) | | |
+| Status / `--json` reporting (no unsupported family shown as working, no unknown shown as 0) | | |
+| Mixed-family input (both families in one file/command), where applicable | | |
+
+- [ ] Every networking fix in this release has the table above, filled from existing evidence
+- [ ] An `unsupported` family is shown as unsupported in help, status and documentation
+- [ ] Ban/feed test fixtures are globally routable (reserved ranges are filtered by design)
 
 ---
 

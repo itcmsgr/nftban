@@ -31,6 +31,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,27 +120,53 @@ func loadGeoIPConfig(cfg *nftbanconf.Config) geoipConfig {
 	}
 
 	for _, configFile := range configFiles {
-		if file, err := os.Open(configFile); err == nil {
-			scanner := bufio.NewScanner(file)
-			for scanner.Scan() {
-				line := strings.TrimSpace(scanner.Text())
-				if strings.HasPrefix(line, "#") || line == "" {
-					continue
-				}
-				if strings.HasPrefix(line, "GEOIP_DB_SOURCE=") {
-					val := strings.TrimPrefix(line, "GEOIP_DB_SOURCE=")
-					config.Source = strings.Trim(val, "\"'")
-				}
-				if strings.HasPrefix(line, "GEOIP_MAXMIND_LICENSE_KEY=") {
-					val := strings.TrimPrefix(line, "GEOIP_MAXMIND_LICENSE_KEY=")
-					config.LicenseKey = strings.Trim(val, "\"'")
-				}
-			}
-			file.Close()
-		}
+		applyGeoipConfigFile(&config, configFile)
 	}
 
 	return config
+}
+
+// applyGeoipConfigFile applies one config file over config (later files win).
+//
+// v1.238 (shipped GeoIP keys did not reach their consumer, reproduced 2026-11-23): the shipped
+// conf.d/geoip/main.conf names the keys GEOIP_PROVIDER and GEOIP_MAXMIND_KEY, while this consumer
+// read only GEOIP_DB_SOURCE and GEOIP_MAXMIND_LICENSE_KEY (the names `nftban geoip config` writes),
+// so an operator following the shipped file changed nothing. Both spellings are accepted; within
+// one file the canonical name wins over the shipped alias. The shipped conffile is not renamed.
+func applyGeoipConfigFile(config *geoipConfig, path string) {
+	file, err := os.Open(filepath.Clean(path))
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	vals := map[string]string{}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "#") || line == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		switch k = strings.TrimSpace(k); k {
+		case "GEOIP_DB_SOURCE", "GEOIP_PROVIDER", "GEOIP_MAXMIND_LICENSE_KEY", "GEOIP_MAXMIND_KEY":
+			vals[k] = strings.Trim(strings.TrimSpace(v), "\"'")
+		}
+	}
+	if v, ok := vals["GEOIP_PROVIDER"]; ok {
+		config.Source = v
+	}
+	if v, ok := vals["GEOIP_DB_SOURCE"]; ok {
+		config.Source = v
+	}
+	if v, ok := vals["GEOIP_MAXMIND_KEY"]; ok {
+		config.LicenseKey = v
+	}
+	if v, ok := vals["GEOIP_MAXMIND_LICENSE_KEY"]; ok {
+		config.LicenseKey = v
+	}
 }
 
 // getGeoipDir returns the GeoIP database directory from passed config
@@ -237,7 +264,7 @@ func cmdGeoipUpdate(cfg *nftbanconf.Config) error {
 
 	var downloadErr error
 	if useMaxMind {
-		downloadErr = downloadMaxMindTarGz(dbURL, dbFile)
+		downloadErr = downloadMaxMindTarGz(dbURL, dbFile, geoipCfg.LicenseKey)
 	} else {
 		// v1.236: the new month can be unpublished for a while after it starts (measured
 		// 2026-11-01: 404); the previous month is the newest available file then.
@@ -654,8 +681,26 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// redactDownloadError returns err's text without the request URL (MaxMind's carries license_key=)
+// and with the key replaced, so no download failure can print the licence key to the terminal or
+// the nftban-core-geoip.service journal. Same rule as internal/feeds redactTransport (AbuseIPDB).
+//
+// v1.238 BUG-GEOIP-MAXMIND-LICENSE-KEY-IN-ERROR-OUTPUT (owner GO 2026-11-23): before this,
+// client.Get's *url.Error was wrapped with %w and printed the full URL including the key.
+func redactDownloadError(err error, key string) string {
+	var ue *neturl.Error
+	if errors.As(err, &ue) {
+		err = ue.Err
+	}
+	msg := err.Error()
+	if key != "" {
+		msg = strings.ReplaceAll(msg, key, "[REDACTED]")
+	}
+	return msg
+}
+
 // downloadMaxMindTarGz downloads and extracts MaxMind tar.gz format
-func downloadMaxMindTarGz(url, destPath string) error {
+func downloadMaxMindTarGz(url, destPath, licenseKey string) error {
 	tmpFile := destPath + ".tmp"
 
 	// Create HTTP client with timeout
@@ -665,7 +710,8 @@ func downloadMaxMindTarGz(url, destPath string) error {
 
 	resp, err := client.Get(url)
 	if err != nil {
-		return fmt.Errorf("download failed: %w", err)
+		// Never %w the *url.Error: its text is the full URL with license_key=.
+		return fmt.Errorf("download failed (download.maxmind.com): %s", redactDownloadError(err, licenseKey))
 	}
 	defer resp.Body.Close()
 
