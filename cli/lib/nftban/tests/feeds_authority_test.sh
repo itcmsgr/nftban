@@ -7,7 +7,7 @@
 # meta:name="feeds-authority-test"
 # meta:type="test"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:description="FEED_ENABLEMENT_AUTHORITY_FRAGMENTED. Measured 2026-08-31: the same question had three incompatible answers. nftban_module_effective_enabled read FEEDS_ENABLED from conf.d/feeds/main.conf — a key and a file that exist on no host — so feeds resolved DISABLED unconditionally and the DSR recovery path treated the producer as intentionally off (lab4: feeds disabled rc=1 while geoban ENABLED, proving the mechanism itself worked). nftban_feeds_update_all required exactly \"YES\" and defaulted an ABSENT gate to enabled (fail-open) despite the shipped default being false. autoheal required exactly \"true\". No configured value satisfied all three readers. Asserts one canonical truth parser across truthy/falsy/malformed vocabularies, feeds resolution from the authority that actually ships (conf.d/feeds.conf overridden by nftban.conf.local), removal of the fail-open default, and reproduces each defect against origin/main so no assertion passes vacuously."
+# meta:description="FEED_ENABLEMENT_AUTHORITY_FRAGMENTED. Measured 2026-08-31: the same question had three incompatible answers. nftban_module_effective_enabled read FEEDS_ENABLED from conf.d/feeds/main.conf — a key and a file that exist on no host — so feeds resolved DISABLED unconditionally and the DSR recovery path treated the producer as intentionally off (lab4: feeds disabled rc=1 while geoban ENABLED, proving the mechanism itself worked). nftban_feeds_update_all required exactly \"YES\" and defaulted an ABSENT gate to enabled (fail-open) despite the shipped default being false. autoheal required exactly \"true\". No configured value satisfied all three readers. Asserts one canonical truth parser across truthy/falsy/malformed vocabularies, feeds master resolution from the canonical loader's sources (v1.238, owner 2026-11-23: nftban.conf overridden by nftban.conf.local, the same files the daemon reads; conf.d/feeds.conf is not a master-switch source), removal of the fail-open default, and reproduces each defect against origin/main so no assertion passes vacuously."
 # meta:ta.id="feeds_authority_test"
 # meta:ta.owner="feeds"
 # meta:ta.module="feed-enablement-authority"
@@ -77,9 +77,11 @@ ask_new() { ( set +u; source "${LIB_DIR}/lib/module_authority.sh" >/dev/null 2>&
               nftban_module_effective_enabled feeds >/dev/null 2>&1 && echo ENABLED || echo disabled ); }
 ask_old() { ( set +u; source "$T/old_authority.sh" >/dev/null 2>&1
               nftban_module_effective_enabled feeds >/dev/null 2>&1 && echo ENABLED || echo disabled ); }
-set_master()   { printf 'NFTBAN_FEEDS_ENABLED="%s"\n' "$1" > "$T/etc/conf.d/feeds.conf"; }
+# v1.238: the master switch resolves from the canonical loader's sources (nftban.conf, then
+# nftban.conf.local), the same files the daemon reads (D-1 / #1499).
+set_master()   { printf 'NFTBAN_FEEDS_ENABLED="%s"\n' "$1" > "$T/etc/nftban.conf"; }
 set_override() { printf 'NFTBAN_FEEDS_ENABLED="%s"\n' "$1" > "$T/etc/nftban.conf.local"; }
-clear_all()    { rm -f "$T/etc/conf.d/feeds.conf" "$T/etc/nftban.conf.local"; }
+clear_all()    { rm -f "$T/etc/conf.d/feeds.conf" "$T/etc/nftban.conf" "$T/etc/nftban.conf.local"; }
 
 echo "=== canonical truth parser ==="
 # shellcheck source=/dev/null
@@ -101,7 +103,7 @@ echo "=== canonical truth parser ==="
 
 echo "=== feeds resolves from the authority that actually ships ==="
 clear_all; set_master true
-[[ "$(ask_new)" == "ENABLED" ]] && ok "master true in conf.d/feeds.conf -> ENABLED" || bad "master true -> $(ask_new)"
+[[ "$(ask_new)" == "ENABLED" ]] && ok "master true in nftban.conf -> ENABLED" || bad "master true -> $(ask_new)"
 set_master false
 [[ "$(ask_new)" == "disabled" ]] && ok "MASTER_DISABLED: master false -> disabled" || bad "master false -> $(ask_new)"
 set_master YES
@@ -116,6 +118,11 @@ set_master false; set_override true
 [[ "$(ask_new)" == "ENABLED" ]]  && ok "LOCAL_OVERRIDE: local true over shipped false -> ENABLED" || bad "override true -> $(ask_new)"
 
 echo "=== missing authority must not become enablement ==="
+clear_all
+# v1.238 contract (D-1 / #1499): a master switch set only in conf.d/feeds.conf is NOT read —
+# the daemon never read it, so the shell must not either (one answer for both sides).
+clear_all; printf 'NFTBAN_FEEDS_ENABLED="true"\n' > "$T/etc/conf.d/feeds.conf"
+[[ "$(ask_new)" == "disabled" ]] && ok "CONTRACT: master true only in conf.d/feeds.conf -> disabled (as the daemon)" || bad "conf.d/feeds.conf still read for the master switch -> $(ask_new)"
 clear_all
 [[ "$(ask_new)" == "disabled" ]] && ok "no configuration at all -> disabled (absence is not enablement)" || bad "absent config -> $(ask_new)"
 

@@ -591,7 +591,19 @@ nftban_geoban_fetch_bash() {
         return 1
     fi
 
-    # Copy to output location with header comment
+    # v1.238: reject incomplete or invalid country data before anything is written — every data
+    # line must be an IPv4 CIDR (the IPDENY zone format); a bad file is never installed, so an
+    # existing good file stays in place and no false success is reported.
+    local bad_lines
+    bad_lines=$(grep -vcE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+[[:space:]]*$' "$cache_file" || true)
+    if [[ "${bad_lines:-0}" -ne 0 ]]; then
+        nftban_error "Downloaded data for $cc has ${bad_lines} invalid line(s); nothing changed"
+        rm -f "$cache_file"
+        return 1
+    fi
+
+    # Copy to output location with header comment (atomic: temp file + rename)
+    local tmp_out="${output_file}.tmp.$$"
     {
         echo "# NFTBan GeoBan - Country: $cc"
         echo "# Action: $action"
@@ -599,8 +611,9 @@ nftban_geoban_fetch_bash() {
         echo "# Downloaded: $(nftban_timestamp 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo "# IP Ranges: $ip_count"
         echo "#"
+        echo "# Coverage: IPv4 only (IPv6 not downloaded)"
         cat "$cache_file"
-    } > "$output_file"
+    } > "$tmp_out" && mv -f "$tmp_out" "$output_file" || { rm -f "$tmp_out"; nftban_error "Could not write $output_file"; return 1; }
 
     # Create tracking JSON (simple format for bash mode)
     # v1.61.1 TOCTOU fix: atomic write via tmp+mv
@@ -697,6 +710,13 @@ nftban_geoban_ban_countries() {
             ((++failed))
             continue
         }
+
+        # v1.238: a country with a GeoBan exception is not also blocked (see whitelist).
+        if [[ -f "${GEOBAN_FILES_DIR}/40-whitelist-${cc}.conf" ]]; then
+            nftban_error "${cc} has a GeoBan exception; remove it first: nftban geoban unwhitelist ${cc}"
+            ((++failed))
+            continue
+        fi
 
         nftban_info "Banning country: ${cc}"
 
@@ -870,11 +890,19 @@ nftban_geoban_whitelist_countries() {
             continue
         }
 
-        nftban_info "Whitelisting country: ${cc}"
+        # v1.238 (owner GO 2026-11-23, option B): one country is either GeoBan-blocked or
+        # excepted, never both — the operator removes one before adding the other.
+        if [[ -f "${GEOBAN_FILES_DIR}/50-ban-${cc}.conf" ]]; then
+            nftban_error "${cc} is GeoBan-blocked; remove the block first: nftban geoban unban ${cc}"
+            ((++failed))
+            continue
+        fi
+
+        nftban_info "Adding GeoBan exception for country: ${cc} (GeoBan blocking only; not a global whitelist)"
 
         # Use smart fetch (Go with bash fallback)
         if nftban_geoban_fetch_country "${cc}" "whitelist"; then
-            nftban_success "Successfully whitelisted ${cc}"
+            nftban_success "GeoBan exception saved for ${cc}"
             ((++success))
         else
             nftban_error "Failed to whitelist ${cc}"
@@ -887,7 +915,21 @@ nftban_geoban_whitelist_countries() {
     nftban_info "Summary: ${success} succeeded, ${failed} failed"
 
     if [[ ${success} -gt 0 ]]; then
-        nftban_info "View whitelisted countries: nftban geoip list"
+        nftban_info "View GeoBan exceptions: nftban geoip list"
+    fi
+
+    # v1.238: exceptions are applied by the next GeoBan sync, through the same queue as ban/unban
+    # (before v1.238 nothing read the exception files).
+    if [[ ${success} -gt 0 ]]; then
+        echo ""
+        nftban_info "Exceptions affect GeoBan blocking only; feeds, detection modules and manual bans keep blocking these addresses."
+        if command -v nftban_queue_add &>/dev/null; then
+            nftban_queue_add "geoban_apply" "GeoBan exceptions changed: $*" >/dev/null 2>&1
+            nftban_info "   NFTables update queued (processed every 2 minutes); verify with: nftban geoban list"
+        else
+            nftban sync 2>/dev/null || true
+            nftban_info "   Applied by a full sync"
+        fi
     fi
 
     [[ ${failed} -eq 0 ]] && return 0 || return 1
@@ -947,10 +989,10 @@ nftban_geoban_unwhitelist_countries() {
 
         if [[ -f "$whitelist_file" ]]; then
             rm -f "$whitelist_file" "$tracking_file" "$cache_file"
-            nftban_success "Successfully removed whitelist for ${cc} (bash mode)"
+            nftban_success "Successfully removed GeoBan exception for ${cc}"
             ((++success))
         else
-            nftban_error "Country $cc not found in whitelist"
+            nftban_error "Country $cc has no GeoBan exception"
             ((++failed))
         fi
     done
@@ -958,6 +1000,20 @@ nftban_geoban_unwhitelist_countries() {
     # Summary
     echo ""
     nftban_info "Summary: ${success} succeeded, ${failed} failed"
+
+    # v1.238: exceptions are applied by the next GeoBan sync, through the same queue as ban/unban
+    # (before v1.238 nothing read the exception files).
+    if [[ ${success} -gt 0 ]]; then
+        echo ""
+        nftban_info "Exceptions affect GeoBan blocking only; feeds, detection modules and manual bans keep blocking these addresses."
+        if command -v nftban_queue_add &>/dev/null; then
+            nftban_queue_add "geoban_apply" "GeoBan exceptions changed: $*" >/dev/null 2>&1
+            nftban_info "   NFTables update queued (processed every 2 minutes); verify with: nftban geoban list"
+        else
+            nftban sync 2>/dev/null || true
+            nftban_info "   Applied by a full sync"
+        fi
+    fi
 
     [[ ${failed} -eq 0 ]] && return 0 || return 1
 }
@@ -983,10 +1039,11 @@ nftban_geoban_list() {
                 local cc
                 cc=$(basename "${file}" | sed -n 's/50-ban-\(.*\)\.conf/\1/p')
                 local ipv4_count
-                ipv4_count=$(grep -c "^[0-9]" "${file}" 2>/dev/null || true)
+                # v1.238: data lines only (the header comments contain ':' and were counted as IPv6)
+                ipv4_count=$(grep -cE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?[[:space:]]*$' "${file}" 2>/dev/null || true)
                 ipv4_count=${ipv4_count:-0}
                 local ipv6_count
-                ipv6_count=$(grep -c ":" "${file}" 2>/dev/null || true)
+                ipv6_count=$(grep -cE '^[0-9A-Fa-f]*:[0-9A-Fa-f:]*(/[0-9]+)?[[:space:]]*$' "${file}" 2>/dev/null || true)
                 ipv6_count=${ipv6_count:-0}
                 echo "   ${cc} - ${ipv4_count} IPv4 ranges, ${ipv6_count} IPv6 ranges"
                 ((++banned_count))
@@ -1003,16 +1060,17 @@ nftban_geoban_list() {
     local whitelist_count=0
 
     if [[ -e "${whitelist_files[0]}" ]]; then
-        echo "✅ Whitelisted Countries:"
+        echo "✅ GeoBan country exceptions (GeoBan blocking only; feeds, detection and manual bans still apply):"
         for file in "${whitelist_files[@]}"; do
             if [[ -f "${file}" ]]; then
                 local cc
                 cc=$(basename "${file}" | sed -n 's/40-whitelist-\(.*\)\.conf/\1/p')
                 local ipv4_count
-                ipv4_count=$(grep -c "^[0-9]" "${file}" 2>/dev/null || true)
+                # v1.238: data lines only (the header comments contain ':' and were counted as IPv6)
+                ipv4_count=$(grep -cE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?[[:space:]]*$' "${file}" 2>/dev/null || true)
                 ipv4_count=${ipv4_count:-0}
                 local ipv6_count
-                ipv6_count=$(grep -c ":" "${file}" 2>/dev/null || true)
+                ipv6_count=$(grep -cE '^[0-9A-Fa-f]*:[0-9A-Fa-f:]*(/[0-9]+)?[[:space:]]*$' "${file}" 2>/dev/null || true)
                 ipv6_count=${ipv6_count:-0}
                 echo "   ${cc} - ${ipv4_count} IPv4 ranges, ${ipv6_count} IPv6 ranges"
                 ((++whitelist_count))
@@ -1020,14 +1078,14 @@ nftban_geoban_list() {
         done
         echo ""
     else
-        echo "✅ Whitelisted Countries: None"
+        echo "✅ GeoBan country exceptions: None"
         echo ""
     fi
 
     # Summary
     echo "📊 Summary:"
     echo "   Banned: ${banned_count}"
-    echo "   Whitelisted: ${whitelist_count}"
+    echo "   Exceptions: ${whitelist_count}"
     echo "   Files directory: ${GEOBAN_FILES_DIR}"
     echo ""
 
@@ -1035,7 +1093,7 @@ nftban_geoban_list() {
     if [[ ${banned_count} -eq 0 ]] && [[ ${whitelist_count} -eq 0 ]]; then
         echo "💡 Usage:"
         echo "   nftban geoip ban CN RU       - Ban China and Russia"
-        echo "   nftban geoip whitelist US GB - Whitelist US and UK"
+        echo "   nftban geoip whitelist US GB - Exempt US and UK from GeoBan blocking only"
         echo ""
     fi
 }

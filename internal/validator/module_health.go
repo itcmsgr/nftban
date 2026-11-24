@@ -742,7 +742,9 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 		// and emits a finding for visibility. "degraded" is not in the blacklist
 		// sub-state enum (enforcing|primed|idle|loaded|stale|disabled).
 		// Canonical path: ${NFTBAN_DATA_DIR}/geoip/dbip-country-lite.mmdb
-		// Downloaded by nftban-core-geoip.timer → nftban geoip sync.
+		// Downloaded by nftban-core-geoip.timer → `nftban-core geoip update`; operator command:
+		// `nftban geoip update`. v1.238: the remediation used to name `nftban geoban sync`, which
+		// is not a command (VAL-GEOBAN-001; same nonexistent verb as cmd_firewall.sh:2153).
 		// Honor NFTBAN_DATA_DIR (via DataDir) instead of hardcoding /var/lib/nftban,
 		// matching the shell sync writer; DataDir falls back to the canonical default.
 		dbPath := filepath.Join(DataDir, "geoip", "dbip-country-lite.mmdb")
@@ -754,7 +756,7 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 				Severity:    SeverityWarn,
 				Component:   "module",
 				Message:     "GeoIP database missing or empty — geoban enforcement unavailable",
-				Remediation: "Run: nftban geoban sync",
+				Remediation: "Run: nftban geoip update",
 			})
 		} else if time.Since(info.ModTime()) > 45*24*time.Hour {
 			// GAP-BL3: DB exists but older than 45 days → stale data
@@ -764,7 +766,7 @@ func evaluateBlacklist(doc *RulesetDocument) *BlacklistHealth {
 				Severity:    SeverityWarn,
 				Component:   "module",
 				Message:     "GeoIP database older than 45 days — data may be inaccurate",
-				Remediation: "Run: nftban geoban sync",
+				Remediation: "Run: nftban geoip update",
 			})
 		} else {
 			bh.Geoban = BlacklistSubHealth{State: "loaded"}

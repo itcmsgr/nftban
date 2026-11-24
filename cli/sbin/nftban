@@ -1279,17 +1279,18 @@ main() {
     }
 
     case "$cmd" in
+        # v1.238: geoban is not in this list either (module verification batch 1: the GeoBan help with
+        # the country-exception scope and the M81-3 health note was unreachable behind this stub).
         # v1.238: feeds is not in this list: `nftban feeds help` shows the module's full help
         # (it printed only this two-line stub); a verb-level help request still reaches the
         # module's help via _nftban_dispatch_module and never runs the verb.
-        search|export|suricata|geoban|install|uninstall|rebuild)
+        search|export|suricata|install|uninstall|rebuild)
             if _v141_args_have_help_flag "$@"; then
                 echo "Usage: nftban $cmd [options]"
                 case "$cmd" in
                     search)   echo "  Search IPs/ports across feeds, ban lists, whitelists." ;;
                     export)   echo "  Export stats snapshot. Alias for 'nftban stats export'." ;;
                     suricata) echo "  Report Suricata integration state — dormant (status, help)." ;;
-                    geoban)   echo "  Country-based IP blocking (ban, unban, whitelist, list, status, update)." ;;
                     install|uninstall|rebuild)
                         echo "  Note: '$cmd' is handled by the distro package (DEB/RPM) and the"
                         echo "  systemd nftband service — not a CLI subcommand in this build."

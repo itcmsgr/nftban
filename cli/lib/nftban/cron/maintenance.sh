@@ -73,7 +73,6 @@ _source_local "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
 : "${NFTBAN_TABLE_IPV6:=ip6 nftban}"
 
 LOGFILE="${NFTBAN_LOG_DIR}/maintenance.log"
-LOCKFILE="${NFTBAN_RUN_DIR}/maintenance.lock"
 
 # =============================================================================
 # LOGGING
@@ -146,23 +145,24 @@ _maint_table_absent_confirmed() {
 # LOCKING (Prevent concurrent runs)
 # =============================================================================
 # NOTE: Locking is handled by systemd via flock (see nftban-maintenance.service)
-# The flock command wraps this script: flock -n /run/nftban/maintenance.lock
+# The flock command wraps this script: flock -n /run/nftban-writers/maintenance.lock
+# (v1.238; plus the v1.237 path /run/nftban/maintenance.lock for one release).
 # This means systemd creates the lock file BEFORE the script runs.
 # DO NOT add internal lock checks here - they conflict with flock and cause
 # "Maintenance already running (lock exists)" false positives.
 # =============================================================================
 
 acquire_lock() {
-    # Locking handled by systemd flock - just ensure directory exists
-    mkdir -p "$(dirname "$LOCKFILE")" 2>/dev/null || true
-    # Write PID for debugging (flock already holds the lock)
-    echo $$ > "$LOCKFILE" 2>/dev/null || true
+    # v1.238: the lock is held by the unit's flock(1) wrapper. This script never writes into
+    # or removes the lock file: it used to write its PID there and rm -f it on exit while the
+    # wrapper still held it, so a run starting in that window locked a NEW inode (two runs).
+    # The unit's state (systemctl) is what nftban health reports.
+    :
 }
 
 release_lock() {
-    # Lock file released automatically by flock when script exits
-    # Just clean up our PID marker
-    rm -f "$LOCKFILE" 2>/dev/null || true
+    # The flock is released by the kernel when the wrapper exits; nothing to clean up.
+    :
 }
 
 trap release_lock EXIT

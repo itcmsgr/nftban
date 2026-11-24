@@ -28,6 +28,28 @@ _UNIFIED_EXPORTER_COLLECT_LOADED="true"
 # - extended:  module_status, feed_health, watchdog, eventbus (every 5 runs)
 # - inventory: kernel, geoip, server_info, static config (every 60 runs)
 # =============================================================================
+# v1.238 (BUG-PROMETHEUS-MODULE-STATUS-READS-NONEXISTENT-MODULES-DIR, VM pass 2026-11-23): LoginMon runs
+# inside nftband, and /etc/nftban/modules does not exist, so nftban_module_login_status was always 0.
+# Its confirmed state comes from nftband's own read-only `modules` answer (permitted for the nftban
+# service account), as `nftban login status` uses since v1.238: running -> 1; disabled -> 0;
+# enabled but not running with an error -> -1, without an error -> 0. No answer -> empty (the metric
+# is omitted and JSON is null: unknown is never published as 0).
+_nftban_exporter_loginmon_status() {
+    local raw="" st=""
+    if raw=$(echo '{"method":"modules","params":{}}' | \
+            timeout 5 socat -t 5 - "UNIX-CONNECT:${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock" 2>/dev/null) \
+       && command -v jq >/dev/null 2>&1; then
+        st=$(jq -r '.data[]? | select(.name=="loginmon") | "\(.enabled) \(.running) \(.last_error // "" | length)"' <<<"$raw" 2>/dev/null) || st=""
+    fi
+    case "$st" in
+        "true true "*)  echo 1 ;;
+        "false "*)      echo 0 ;;
+        "true false 0") echo 0 ;;
+        "true false "*) echo -1 ;;
+        *)              echo "" ;;
+    esac
+}
+
 collect_all_metrics() {
     local collection_groups="${1:-live extended inventory}"
     log_debug "Collecting metrics (groups: $collection_groups)..."
@@ -841,7 +863,7 @@ collect_all_metrics() {
     # =========================================================================
     # Module status variables (declared at function level for JSON cache)
     local mod_enabled=0 mod_active=0 mod_failed=0
-    local module_login_status=0 module_portscan_status=0 module_ddos_status=0
+    local module_login_status="" module_portscan_status=0 module_ddos_status=0
     local module_suricata_status=0 module_feeds_status=0 module_geoban_status=0
     local module_watchdog_status=0 module_botguard_status=0
     # Feed health variables
@@ -912,6 +934,18 @@ collect_all_metrics() {
         for module in login portscan ddos suricata feeds geoban watchdog; do
             local status_val=0
             local config_file="${NFTBAN_CONFIG_DIR}/modules/${module}.conf"
+
+            # v1.238 (BUG-PROMETHEUS-MODULE-STATUS-READS-NONEXISTENT-MODULES-DIR, VM pass 2026-11-23):
+            # /etc/nftban/modules does not exist, so login was always 0 while LoginMon ran. LoginMon runs
+            # inside nftband: its confirmed state comes from nftband's own read-only `modules` answer
+            # (permitted for the nftban service account), as `nftban login status` does since v1.238:
+            # running -> 1, disabled -> 0, last_error with not running -> -1. No answer -> the metric is
+            # omitted and JSON is null (unknown is never published as 0).
+            if [[ "$module" == "login" ]]; then
+                module_login_status=$(_nftban_exporter_loginmon_status)
+                [[ -n "$module_login_status" ]] && metrics+="nftban_module_login_status $module_login_status\n"
+                continue
+            fi
 
             if [[ -f "$config_file" ]]; then
                 # Config exists, check if service/timer is active or failed
@@ -1746,7 +1780,7 @@ collect_all_metrics() {
     "failed": ${mod_failed:-0}
   },
   "module_status": {
-    "login": ${module_login_status:-0},
+    "login": ${module_login_status:-null},
     "portscan": ${module_portscan_status:-0},
     "ddos": ${module_ddos_status:-0},
     "suricata": ${module_suricata_status:-0},

@@ -103,6 +103,25 @@ fi
 # SUBCOMMAND: BRIEF (v1.37.1)
 # =============================================================================
 
+# v1.238 (BUG-STATS-JSON-TEMPORARY-COUNTS-PERMANENT): "<ipv4> <ipv6> <total>" temporary bans = elements
+# WITH a timeout in the blacklist and manual sets of each family — the quantity Prometheus publishes as
+# nftban_blacklist_temp. Unknown -> null (never 0).
+_nftban_stats_temporary_counts() {
+    local v4=UNKNOWN v6=UNKNOWN t=null
+    if declare -f nftban_nft_count_set_with_timeout >/dev/null 2>&1 && declare -f nftban_count_sum >/dev/null 2>&1; then
+        v4=$(nftban_count_sum \
+            "$(nftban_nft_count_set_with_timeout ip nftban blacklist_ipv4 2>/dev/null || echo UNKNOWN)" \
+            "$(nftban_nft_count_set_with_timeout ip nftban blacklist_manual_ipv4 2>/dev/null || echo UNKNOWN)")
+        v6=$(nftban_count_sum \
+            "$(nftban_nft_count_set_with_timeout ip6 nftban blacklist_ipv6 2>/dev/null || echo UNKNOWN)" \
+            "$(nftban_nft_count_set_with_timeout ip6 nftban blacklist_manual_ipv6 2>/dev/null || echo UNKNOWN)")
+    fi
+    if [[ "$v4" =~ ^[0-9]+$ && "$v6" =~ ^[0-9]+$ ]]; then t=$((v4 + v6)); fi
+    [[ "$v4" =~ ^[0-9]+$ ]] || v4=null
+    [[ "$v6" =~ ^[0-9]+$ ]] || v6=null
+    echo "$v4 $v6 $t"
+}
+
 nftban_stats_cmd_comms() {
     # A2b: central-comms counters from A2a-produced mail.prom (read-only; no new source).
     local prom="${NFTBAN_MAIL_METRICS_FILE:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/metrics/mail.prom}"
@@ -480,13 +499,20 @@ nftban_stats_cmd_dashboard() {
             geoban_countries=${geoban_countries:-0}
         fi
 
+        # v1.238 (BUG-STATS-JSON-TEMPORARY-COUNTS-PERMANENT, VM pass 2026-11-23): temp_v4/temp_v6 held
+        # the whole manual set (permanent + temporary), so breakdown.temporary counted permanent bans.
+        # The manual-set count stays in the active-bans sum (set elements); breakdown.temporary now uses
+        # the same quantity as Prometheus nftban_blacklist_temp: elements WITH a timeout in the
+        # blacklist and manual sets of each family (nftban_nft_count_set_with_timeout). Unknown -> null.
+        local manual_v4="$temp_v4" manual_v6="$temp_v6" total_temp
+        read -r temp_v4 temp_v6 total_temp <<<"$(_nftban_stats_temporary_counts)"
+
         # Calculate totals
-        local total_temp=$((${temp_v4} + ${temp_v6}))
         local total_black=$((${black_v4} + ${black_v6}))
         local total_feed=$((${feed_v4} + ${feed_v6}))
         local total_geoban=$((${geoban_v4} + ${geoban_v6}))
         local total_whitelist=$((${whitelist_v4} + ${whitelist_v6}))
-        active_bans=$((${total_temp} + ${total_black} + ${total_feed} + ${total_geoban}))
+        active_bans=$((${manual_v4} + ${manual_v6} + ${total_black} + ${total_feed} + ${total_geoban}))
 
         # Get top data
         local top_ips="[]"
@@ -645,9 +671,9 @@ nftban_stats_cmd_dashboard() {
                     },
                     breakdown: {
                         temporary: {
-                            total: ($total_temp | tonumber),
-                            ipv4: ($temp_v4 | tonumber),
-                            ipv6: ($temp_v6 | tonumber)
+                            total: ($total_temp | tonumber? // null),
+                            ipv4: ($temp_v4 | tonumber? // null),
+                            ipv6: ($temp_v6 | tonumber? // null)
                         },
                         blacklist: {
                             total: ($total_black | tonumber),

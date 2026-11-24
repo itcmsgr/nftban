@@ -33,9 +33,9 @@ package nftbanconf
 // ServiceNames holds all systemd service/timer/socket unit names
 type ServiceNames struct {
 	// Main services
-	MainService      string // nftban.service
-	CoreService      string // nftban-core.service (Go daemon)
-	DaemonService    string // nftband.service (unified daemon)
+	MainService   string // nftban.service
+	CoreService   string // nftban-core.service (Go daemon)
+	DaemonService string // nftband.service (unified daemon)
 
 	// Timers
 	SyncTimer        string // nftban-sync.timer
@@ -46,24 +46,24 @@ type ServiceNames struct {
 	HealthTimer      string // nftban-health.timer
 
 	// Detection services
-	PortscanService  string // nftban-portscan.service
-	DDoSService      string // nftban-ddos.service
-	LoginMonService  string // nftban-loginmon.service
-	SuricataService  string // nftban-suricata.service
+	PortscanService string // nftban-portscan.service
+	DDoSService     string // nftban-ddos.service
+	LoginMonService string // nftban-loginmon.service
+	SuricataService string // nftban-suricata.service
 
 	// Integration services
-	Fail2banService  string // fail2ban.service (external)
-	NFTablesService  string // nftables.service (external)
-	NodeExporter     string // node_exporter.service (external)
-	Prometheus       string // prometheus.service (external)
-	Grafana          string // grafana-server.service (external)
+	Fail2banService string // fail2ban.service (external)
+	NFTablesService string // nftables.service (external)
+	NodeExporter    string // node_exporter.service (external)
+	Prometheus      string // prometheus.service (external)
+	Grafana         string // grafana-server.service (external)
 }
 
 var defaultServices = &ServiceNames{
 	// Main services - nftband.service is the unified daemon
-	MainService:      "nftband.service",
-	CoreService:      "nftband.service",
-	DaemonService:    "nftband.service",
+	MainService:   "nftband.service",
+	CoreService:   "nftband.service",
+	DaemonService: "nftband.service",
 
 	// Timers - use canonical names from UNITS.md
 	SyncTimer:        "nftban-maintenance.timer",
@@ -74,17 +74,17 @@ var defaultServices = &ServiceNames{
 	HealthTimer:      "nftban-health.timer",
 
 	// Detection services
-	PortscanService:  "nftban-portscan.service",
-	DDoSService:      "nftban-ddos.service",
-	LoginMonService:  "nftban-loginmon.service",
-	SuricataService:  "nftban-suricata.service",
+	PortscanService: "nftban-portscan.service",
+	DDoSService:     "nftban-ddos.service",
+	LoginMonService: "nftban-loginmon.service",
+	SuricataService: "nftban-suricata.service",
 
 	// Integration services
-	Fail2banService:  "fail2ban.service",
-	NFTablesService:  "nftables.service",
-	NodeExporter:     "node_exporter.service",
-	Prometheus:       "prometheus.service",
-	Grafana:          "grafana-server.service",
+	Fail2banService: "fail2ban.service",
+	NFTablesService: "nftables.service",
+	NodeExporter:    "node_exporter.service",
+	Prometheus:      "prometheus.service",
+	Grafana:         "grafana-server.service",
 }
 
 // GetServices returns the service names registry
@@ -130,9 +130,9 @@ func ExternalServices() []string {
 
 // SocketPaths holds Unix socket paths used by nftban
 type SocketPaths struct {
-	CLI       string // /run/nftban/nftban.sock - CLI communication
-	Daemon    string // /run/nftban/nftband.sock - daemon socket
-	Metrics   string // /run/nftban/metrics.sock - metrics socket
+	CLI     string // /run/nftban/nftban.sock - CLI communication
+	Daemon  string // /run/nftban/nftband.sock - daemon socket
+	Metrics string // /run/nftban/metrics.sock - metrics socket
 }
 
 // GetSockets returns socket paths from central config
@@ -152,8 +152,8 @@ func GetSockets() *SocketPaths {
 
 // PIDFiles holds PID file paths
 type PIDFiles struct {
-	Main    string // nftban main process
-	Daemon  string // nftband daemon
+	Main   string // nftban main process
+	Daemon string // nftband daemon
 }
 
 // GetPIDFiles returns PID file paths from central config
@@ -187,9 +187,10 @@ func GetLockFiles() *LockFiles {
 	}
 
 	return &LockFiles{
-		Sync:        runDir + "/sync.lock",
-		Feeds:       runDir + "/feeds.lock",
-		Maintenance: runDir + "/maintenance.lock",
+		Sync:  runDir + "/sync.lock",
+		Feeds: runDir + "/feeds.lock",
+		// v1.238: root-only writers dir (fhs-spec), not the service-account-owned runDir.
+		Maintenance: "/run/nftban-writers/maintenance.lock",
 		GeoIP:       runDir + "/geoip.lock",
 	}
 }

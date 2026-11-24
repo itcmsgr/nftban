@@ -73,10 +73,13 @@ _saved_opts="$(set +o)"
 # shellcheck source=/dev/null
 source "$CLASSIFY" 2>/dev/null || { echo "  TEST_INVALID: cannot source $CLASSIFY"; exit 1; }
 eval "$_saved_opts"
+# v1.238: the rebuild wrapper resolves its lock paths through lib/nft_writers.sh.
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/../lib/nft_writers.sh"
 eval "$SRC"
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-export NFTBAN_RUN_DIR="$TMP/run"
+export NFTBAN_RUN_DIR="$TMP/run" NFTBAN_WRITERS_DIR="$TMP/run"
 mkdir -p "$NFTBAN_RUN_DIR" "$TMP/results"
 LOCK="$NFTBAN_RUN_DIR/nft_operations.lock"
 
