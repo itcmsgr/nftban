@@ -5236,8 +5236,9 @@ _firewall_rebuild_core() {
             # rc 0 and the step-10 warning. Generation and record above are unchanged.
             if [[ -z "${_NFTBAN_REBUILD_RESULT_FILE:-}" && "${_NFTBAN_REBUILD_CONTEXT:-runtime-required}" == "runtime-required" \
                   && "${_REBUILD_MODULE_BOTGUARD:-}" == "${MR_FAILED:-RESTORE_FAILED}" ]]; then
-                echo "REBUILD INCOMPLETE: BotGuard rules were NOT re-applied (re-apply failed)." >&2
-                echo "  The firewall schema and the other modules are applied. Run: nftban botguard enable" >&2
+                # v1.238 group g2 (owner wording): state the failure, do not assume which rules remain.
+                echo "REBUILD INCOMPLETE: BotGuard rule re-apply failed." >&2
+                echo "  Run: nftban botguard apply   (shows the reason)" >&2
                 return 1
             fi
             return 0

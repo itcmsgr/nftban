@@ -73,7 +73,7 @@ arm() { # $1 result_file $2 context $3 botguard_result -> "rc|stderr"
     echo "$r|$o"
 }
 r=$(arm "" runtime-required RESTORE_FAILED)
-[[ "${r%%|*}" == 1 && "$r" == *"BotGuard rules were NOT re-applied"* ]] && ok "runtime, no result file, BotGuard failed -> rc 1, names BotGuard" || no "runtime fail" "$r"
+[[ "${r%%|*}" == 1 && "$r" == *"BotGuard rule re-apply failed"* && "$r" == *"nftban botguard apply"* ]] && ok "runtime, no result file, BotGuard failed -> rc 1, names BotGuard" || no "runtime fail" "$r"
 r=$(arm "" runtime-required RESTORE_OK);   [[ "$r" == "0|" ]] && ok "BotGuard re-applied -> rc 0, silent" || no "ok arm" "$r"
 r=$(arm "" runtime-required SKIPPED);      [[ "$r" == "0|" ]] && ok "BotGuard not enabled (skipped) -> rc 0" || no "skip arm" "$r"
 r=$(arm "/x/res.json" runtime-required RESTORE_FAILED); [[ "$r" == "0|" ]] && ok "result-file consumer (update apply) -> rc 0 (COMPLETE pairs with 0)" || no "result file" "$r"
