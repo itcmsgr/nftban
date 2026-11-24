@@ -620,7 +620,7 @@ nftban_pro_cmd_community() {
             echo "  show-v3    Preview the v3 trial telemetry payload (opt-in, private, minimal)"
             echo "  send-test  Send ONE v3 trial payload and print the server response (requires enable)"
             echo ""
-            echo "  enable   - Opt in to anonymous community stats"
+            echo "  enable   - Opt in to community stats (random pseudonymous id)"
             echo "  disable  - Opt out of community stats"
             echo "  show     - Display exact JSON payload (verify no PII)"
             echo "  status   - Show current state and timer info"
@@ -639,8 +639,13 @@ nftban_community_enable() {
     local _assume_yes=0 _a
     for _a in "$@"; do [[ "$_a" == "--yes" || "$_a" == "-y" ]] && _assume_yes=1; done
     if [[ "$_assume_yes" -eq 0 ]]; then
-        echo "About to ENABLE anonymous community telemetry (opt-in, private, internal analysis)."
-        echo "  Sends ONLY: NFTBan version, OS/CPU/RAM buckets, per-module/health CLASS, an anonymous id."
+        echo "About to ENABLE community telemetry (opt-in, private, internal analysis)."
+        echo "  Sends ONLY: NFTBan version, OS/CPU/RAM buckets, per-module/health CLASS, a random installation id"
+        echo "  (pseudonymous: random, not derived from this machine). Also, once per install/upgrade, an"
+        echo "  install result (version, distro, arch, package type, protection verdict, time)."
+        echo "  Install statistics are optional. With anonymisation enabled, the install report contains no persistent identifier."
+        echo "  The receiving server can see the connection's source IP."
+        echo "  Anonymisation (COMMUNITY_STATS_ANONYMIZE) is currently: $( [[ "$(_nftban_community_conf_value COMMUNITY_STATS_ANONYMIZE)" == "no" ]] && echo "disabled — the install report includes the random pseudonymous id" || echo "enabled (default)" )"
         echo "  NEVER sends: IPs, hostnames, domains, emails, usernames, logs, tokens, config, ban lists."
         echo "  Preview the exact payload first:  nftban pro community show-v3"
         printf "Type 'yes' to enable (anything else cancels): "
@@ -1121,12 +1126,20 @@ nftban_community_submit() {
 # =============================================================================
 # INSTALL RESULT EVENT (Task 1 — default, minimal, fire-and-forget)
 # =============================================================================
-# Sends ONE anonymous install_result event after install or first validation.
-# Reuses existing server_id, existing curl pattern, existing API endpoint.
+# Sends ONE install_result event after install or upgrade — ONLY with the operator's explicit consent.
 #
-# INVARIANT: this is a MINIMAL signal. It does NOT require enrollment.
-# It does NOT send if the marker file already exists (one-time only).
-# It MUST NOT block the installer. Failure is silent.
+# v1.238 BUG-PRIVACY-RPM-INSTALL-RESULT-SENT-WITHOUT-OPTIN (owner 2026-11-23): until v1.237.0 the RPM
+# %post sent this unconditionally (no consent check) with a machine-id-derived node_id, although the
+# documentation said it required opt-in. Now:
+#   - participation: COMMUNITY_STATS_ENABLED=yes in conf.d/community_stats.conf (the existing,
+#     explicitly enabled community-stats switch). Unset, empty, any other value, or an unreadable
+#     file = no consent = nothing sent and nothing written.
+#   - anonymisation: COMMUNITY_STATS_ANONYMIZE (default yes, owner 2026-11-23). yes = no identifier.
+#     no = the community participant id (COMMUNITY_STATS_ID, a random UUID created at opt-in;
+#     pseudonymous, not derived from machine-id). The machine-id-derived server_id is never sent
+#     and is not created by this function.
+#   - the receiver also sees the connection's source IP (not part of the payload).
+#   - DEB and RPM: same call, same gate. Failure never fails the installation.
 #
 # STATE SEPARATION: health_state here is the kernel protection verdict,
 # NOT the community enrollment state. These are independent axes.
@@ -1134,7 +1147,20 @@ nftban_community_submit() {
 : "${NFTBAN_INSTALL_RESULT_MARKER:=${NFTBAN_PRO_DATA_DIR}/install_result_sent}"
 : "${NFTBAN_INSTALL_RESULT_URL:=https://pro.nftban.com/api/v1/install-result}"
 
+# _nftban_community_conf_value <KEY> — last value of KEY in the community config, read as data (never
+# sourced); empty when the file is missing, unreadable or a symlink.
+_nftban_community_conf_value() {
+    local conf="${NFTBAN_COMMUNITY_CONF:-/etc/nftban/conf.d/community_stats.conf}" line=""
+    [[ -f "$conf" && -r "$conf" && ! -L "$conf" ]] || return 0
+    line=$(grep -E "^[[:space:]]*$1=" "$conf" 2>/dev/null | tail -n 1) || line=""
+    line="${line#*=}"; line="${line%%#*}"; line="${line//\"/}"; line="${line//\'/}"
+    printf '%s' "${line//[[:space:]]/}"
+}
+
 nftban_send_install_result() {
+    # Consent first: nothing below runs (no directory, no marker, no id) without it.
+    [[ "$(_nftban_community_conf_value COMMUNITY_STATS_ENABLED)" == "yes" ]] || return 0
+
     # Skip if already sent (one-time only)
     if [[ -f "$NFTBAN_INSTALL_RESULT_MARKER" ]]; then
         return 0
@@ -1143,10 +1169,10 @@ nftban_send_install_result() {
     # Ensure data directory exists
     mkdir -p "$NFTBAN_PRO_DATA_DIR" 2>/dev/null || return 0
 
-    # Collect minimal anonymous data — reusing existing functions
-    local node_id version distro arch package_type health_state
-
-    node_id=$(nftban_pro_ensure_server_id 2>/dev/null || echo "unknown")
+    local version distro arch package_type health_state participant_id=""
+    if [[ "$(_nftban_community_conf_value COMMUNITY_STATS_ANONYMIZE)" == "no" ]]; then
+        participant_id="$(_nftban_community_conf_value COMMUNITY_STATS_ID)"
+    fi
     # Version fallback chain (same as community payload)
     local version=""
     [[ -z "$version" ]] && version=$(cat /usr/lib/nftban/VERSION 2>/dev/null | tr -d '\n')
@@ -1168,28 +1194,22 @@ nftban_send_install_result() {
     # Normalize to UPPERCASE (canonical — prevents PROTECTED vs protected mismatch)
     health_state=$(echo "$health_state" | tr '[:lower:]' '[:upper:]')
 
-    # Build minimal payload — STRICTLY limited fields
+    # Build minimal payload — the existing fields; node_id only when not anonymised (random
+    # participant id, never machine-derived).
     local payload
-    payload=$(cat <<JSONEOF
-{
-  "event": "install_result",
-  "node_id": "$node_id",
-  "version": "$version",
-  "distro": "$distro",
-  "arch": "$arch",
-  "package_type": "$package_type",
-  "health_state": "$health_state",
-  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-}
-JSONEOF
-)
+    payload=$(jq -n -c --arg node_id "$participant_id" --arg version "$version" --arg distro "$distro" \
+        --arg arch "$arch" --arg package_type "$package_type" --arg health_state "$health_state" \
+        --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        '{event:"install_result", version:$version, distro:$distro, arch:$arch, package_type:$package_type,
+          health_state:$health_state, timestamp:$timestamp} + (if $node_id == "" then {} else {node_id:$node_id} end)' \
+        2>/dev/null) || return 0
 
     # Fire-and-forget — DO NOT block installer, DO NOT retry
     # Reuses same curl pattern as nftban_community_submit
-    curl -s -o /dev/null \
+    printf '%s' "$payload" | curl -s -o /dev/null --proto '=https' \
         -X POST \
         -H "Content-Type: application/json" \
-        -d "$payload" \
+        -d @- \
         --connect-timeout 5 \
         --max-time 10 \
         "$NFTBAN_INSTALL_RESULT_URL" 2>/dev/null || true

@@ -24,7 +24,7 @@ contain any of:
 - raw logs · raw Suricata/EVE events or signatures · raw RBL/DNSBL/provider-bounce results · config file contents
 - any customer-identifying data
 
-The only identifier is a random, stable, anonymous `install_id` (generated locally at `enable` time).
+The only identifier is a random, stable `install_id` (generated locally at `enable` time). It is pseudonymous, not anonymous: it lets the receiver recognise the same installation. The receiver can also see the connection's source IP.
 
 ## Consent model (opt-in, no silent enablement)
 
@@ -34,7 +34,7 @@ The only identifier is a random, stable, anonymous `install_id` (generated local
 - `nftban pro community send-test` — sends **one** payload and prints the server response.
 - `nftban pro community disable` — stops all future sends.
 - `nftban pro community status` — shows enrollment state, id, endpoint, schema version.
-- **No automatic periodic sends occur until explicitly enabled.** The one-time `/install-result` heartbeat is **NOT** sent without the same opt-in (default off; gated behind community-enable).
+- **No automatic periodic sends occur until explicitly enabled.** From v1.238 the one-time `/install-result` event (DEB and RPM) is sent only when `COMMUNITY_STATS_ENABLED=yes`; by default it carries no identifier (`COMMUNITY_STATS_ANONYMIZE=yes`). **Correction:** RPM installs of v1.218.8 – v1.237.0 sent it on every install without this opt-in, with an identifier derived from `/etc/machine-id` (see the v1.238 release notes).
 
 ## v3 payload (field-for-field)
 

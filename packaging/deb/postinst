@@ -1458,6 +1458,14 @@ _nftban_migrate_reports_to_log() {
         # where the record proves nothing changed the file since.
         nftban_immut_relock_owned | while read -r _st _p; do log_info "immutable flag $_st: $_p"; done
 
+        # v1.238 (owner 2026-11-23): install telemetry — same call and same consent gate as the RPM
+        # %post. nftban_send_install_result sends nothing unless COMMUNITY_STATS_ENABLED=yes was set
+        # explicitly by the operator (e.g. preconfigured before an unattended install); default
+        # anonymised. Background, bounded by curl timeouts; never changes this script's result.
+        if [ -f /usr/lib/nftban/lib/nftban_pro.sh ]; then
+            ( source /usr/lib/nftban/lib/nftban_pro.sh 2>/dev/null && nftban_send_install_result ) >/dev/null 2>&1 &
+        fi
+
         ;;
 esac
 

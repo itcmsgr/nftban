@@ -1836,8 +1836,9 @@ _nftban_rpmnew_quarantine || true
 # runs BEFORE the installer's validate phase so logretention_policy_ready gates
 # the COMMITTED/DEGRADED verdict. See _nftban_generate_logretention above.
 
-# Send minimal anonymous install result (fire-and-forget, one-time)
-# Reuses nftban_pro.sh infrastructure. Failure is silent.
+# Install result (fire-and-forget, one-time). v1.238: sent ONLY when the operator set
+# COMMUNITY_STATS_ENABLED=yes (gate inside nftban_send_install_result; default anonymised).
+# Same call in the DEB postinst. Failure is silent and never fails the install.
 # INVARIANT: this is a MINIMAL signal, NOT enrollment. See state-separation invariant.
 if [ -f "/usr/lib/nftban/lib/nftban_pro.sh" ]; then
     (
