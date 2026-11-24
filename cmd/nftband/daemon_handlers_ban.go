@@ -265,19 +265,9 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 	metrics.RecordBanWithIP(source, family, ip)
 
 	// Log ban to bans.log for stats tracking
-	banSource := banlog.SourceManual
-	switch {
-	case strings.Contains(source, "portscan"):
-		banSource = banlog.SourcePortscan
-	case strings.Contains(source, "login"):
-		banSource = banlog.SourceLogin
-	case strings.Contains(source, "ddos"):
-		banSource = banlog.SourceDDoS
-	case strings.Contains(source, "feed"):
-		banSource = banlog.SourceFeeds
-	case strings.Contains(source, "suricata"):
-		banSource = banlog.SourceSuricata
-	}
+	// v1.238: same mapping as the event subscriber (ban_source_label.go); a direct BotScan ban
+	// (source "botscan") was written as "manual" here.
+	banSource, _ := banSourceLabel(source, "")
 	country := lookupCountry(ip)
 	// BLC-1: determine ban class for lifecycle logging
 	banClass := banlog.ClassTemp

@@ -231,25 +231,10 @@ func (d *Daemon) Run() error {
 				}
 				metrics.RecordBanWithIP(e.Source, family, e.IP)
 				// Log to bans.log with GeoIP country lookup
-				banSource := banlog.SourceManual
-				persistKey := "persistent"
-				switch {
-				case strings.Contains(e.Source, "portscan"):
-					banSource = banlog.SourcePortscan
-					persistKey = "portscan"
-				case strings.Contains(e.Source, "login"):
-					banSource = banlog.SourceLogin
-					persistKey = "login"
-				case strings.Contains(e.Source, "ddos"):
-					banSource = banlog.SourceDDoS
-					persistKey = "ddos"
-				case strings.Contains(e.Source, "feed"):
-					banSource = banlog.SourceFeeds
-				case strings.Contains(e.Source, "suricata"):
-					banSource = banlog.SourceSuricata
-				case strings.Contains(e.Source, "botguard"):
-					banSource = banlog.SourceDDoS // Bot guard bans categorized as DDoS
-				}
+				// v1.238: one mapping for both bans.log writers (ban_source_label.go); a BotScan
+				// signal arrives as module botguard with data source=clock3_batch.
+				dataSource, _ := e.Data["source"].(string)
+				banSource, persistKey := banSourceLabel(e.Source, dataSource)
 				country := lookupCountry(e.IP)
 				// v1.41.0: Generate ban correlation ID to link BAN→UNBAN entries
 				banID := banlog.GenerateBanID()
