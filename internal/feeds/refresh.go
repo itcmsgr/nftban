@@ -19,6 +19,7 @@ package feeds
 // authority (Evaluate) does. The API key never appears in them.
 
 import (
+	"syscall"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -130,7 +131,11 @@ func WriteFeedDirFile(dir, name string, data []byte, owner func() (int, int, boo
 		return e
 	}
 	if owner != nil {
-		if uid, gid, ok := owner(); ok {
+		if uid, gid, ok := owner(); ok && !hasOwner(out, uid, gid) {
+			// v1.238 D-2: in the setgid root:nftban feeds directory (fhs-spec 2750) a file
+			// created by root already has the wanted owner and group, so no chown is needed —
+			// nftband has no CAP_CHOWN and its chown failed, so full-sync.status was never
+			// written. A chown is attempted only when the owner really differs.
 			if err := out.Chown(uid, gid); err != nil {
 				return fail(fmt.Errorf("chown feed file: %w", err))
 			}
@@ -154,6 +159,16 @@ func WriteFeedDirFile(dir, name string, data []byte, owner func() (int, int, boo
 		return fmt.Errorf("failed to save feed file: %w", err)
 	}
 	return nil
+}
+
+// hasOwner reports whether f is already owned by uid:gid.
+func hasOwner(f *os.File, uid, gid int) bool {
+	fi, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	return ok && int(st.Uid) == uid && int(st.Gid) == gid
 }
 
 func recordName(feed string) string { return strings.ToLower(feed) + ".status" }

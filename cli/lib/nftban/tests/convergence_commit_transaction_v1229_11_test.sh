@@ -56,6 +56,10 @@ export NFTBAN_PLAN_RECORD_DIR="$TMP/run"
 # have nothing to do with the behaviour under test.
 #   REDIRECTING ONE RUNTIME PATH IS NOT ISOLATING THE RUNTIME.
 export NFTBAN_RUN_DIR="$TMP/run"
+# v1.238: the canonical nft lane lock moved to the root-only writers dir (NFTBAN_WRITERS_DIR,
+# default /run/nftban-writers) — redirect it too, for the same reason as above.
+export NFTBAN_WRITERS_DIR="$TMP/writers"
+mkdir -p "$NFTBAN_WRITERS_DIR"
 export NFTBAN_PLAN_GENERATION_FILE="$TMP/run/convergence-generation"
 # shellcheck source=/dev/null
 source "$AUTH"
