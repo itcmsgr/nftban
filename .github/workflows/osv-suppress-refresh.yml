@@ -23,13 +23,17 @@ on:
         required: false
         default: '1.25.8'
 
+# v1.238 (Scorecard TokenPermissions, #1486): top level is read-only; the write grants live
+# on the one job that opens the refresh PR.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   refresh:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write        # create-pull-request pushes the chore/osv-suppress-refresh branch
+      pull-requests: write   # create-pull-request opens/updates the PR
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

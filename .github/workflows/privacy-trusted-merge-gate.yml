@@ -27,9 +27,10 @@ on:
         description: "Exact approved PR-head SHA to scan (full 40-char commit SHA)"
         required: true
 
+# v1.238 (Scorecard TokenPermissions, #1486): top level is read-only; the single gate job
+# holds the commit-status write grant.
 permissions:
   contents: read
-  statuses: write
 
 concurrency:
   group: privacy-trusted-gate-${{ github.event.inputs.pr_head_sha }}
@@ -44,6 +45,9 @@ jobs:
     # environment (or repository) by the maintainer; their values never appear in the
     # repo, workflow inputs, artifacts, caches, or job summaries.
     environment: privacy-gate
+    permissions:
+      contents: read
+      statuses: write   # POST the privacy/trusted-private-gate commit status on the PR head
     steps:
       - name: Validate PR-head SHA input shape
         env:
