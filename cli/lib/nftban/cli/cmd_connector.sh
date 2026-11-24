@@ -116,10 +116,17 @@ _connector_save() {
     # Ensure directory exists
     mkdir -p "${NFTBAN_CONNECTORS_DIR}" || return 1
 
-    local config_file
+    local config_file tmp_file
     config_file=$(_connector_config_path "$name")
 
-    cat > "$config_file" << EOF
+    # v1.238 BUG-CONNECTOR-CONFIG-UNREADABLE-BY-EXPORTER (owner GO 2026-11-23): the file holds
+    # credentials (e.g. CONNECTOR_ES_PASS) and is read by the unified exporter, which runs as the
+    # nftban service account. Canonical policy (build/fhs-spec.yaml /etc/nftban/connectors 0750
+    # root:nftban): file 0640 root:nftban, created private and renamed into place — before v1.238
+    # it was root:root (unreadable by the exporter, so nothing was exported) and briefly 0644.
+    tmp_file=$(umask 077; mktemp "${NFTBAN_CONNECTORS_DIR}/.${name}.conf.XXXXXX") || return 1
+
+    cat > "$tmp_file" << EOF
 # NFTBan Connector Configuration
 # Name: $name
 # Type: $type
@@ -132,11 +139,17 @@ EOF
 
     # Add type-specific options
     while [[ $# -gt 0 ]]; do
-        echo "$1" >> "$config_file"
+        echo "$1" >> "$tmp_file"
         shift
     done
 
-    chmod 640 "$config_file"
+    chmod 640 "$tmp_file"
+    if ! chgrp nftban "$tmp_file" 2>/dev/null; then
+        rm -f "$tmp_file"
+        _connector_print_error "Could not give group nftban read access to the connector file; nothing saved"
+        return 1
+    fi
+    mv -f "$tmp_file" "$config_file"
 }
 
 # =============================================================================

@@ -698,7 +698,8 @@ nftban_community_disable() {
 nftban_community_show() {
     echo "Community Stats Payload (this is exactly what gets sent):"
     echo "========================================================="
-    nftban_community_build_payload
+    # v1.238: same builder as `submit` (schema v3) — this preview must match what the timer sends.
+    nftban_community_build_payload_v3
     echo ""
     echo "NOTE: No hostname, IP addresses, logs, or PII included."
 }
@@ -1083,8 +1084,13 @@ nftban_community_submit() {
     fi
 
     local url="${COMMUNITY_STATS_URL:-https://stats.nftban.com/api/v1/community}"
+    # v1.238 BUG-PRIVACY-COMMUNITY-SUBMIT-SENDS-MACHINE-DERIVED-SERVER-ID (owner GO 2026-11-24): the daily
+    # submit (nftban-community-stats.timer) sent the v2 payload, whose node_id is the PRO server_id
+    # (first 16 chars of /etc/machine-id + suffix) — an opted-in community report was joinable to a PRO
+    # account. Community is anonymous: send schema v3, whose only identifier is the random
+    # anonymous_install_id generated at opt-in (COMMUNITY_STATS_ID).
     local payload
-    payload=$(nftban_community_build_payload)
+    payload=$(nftban_community_build_payload_v3)
 
     echo "Submitting anonymous community stats..."
     local http_code
