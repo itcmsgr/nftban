@@ -393,7 +393,15 @@ func (d *Daemon) runSyncLocked(quickMode bool) SocketResponse {
 			// (until v1.236 every .txt was, whatever NFTBAN_FEEDS_ENABLED said). If it cannot
 			// be decided, or an enforced file cannot be read, the sync is REFUSED before the
 			// unified replace: the replace would otherwise drop the live feed protection.
-			fd, ferr := feeds.Evaluate(fcfg.ConfigDir, fcfg.DataDir, fcfg.FeedsEnabled)
+			// v1.238 D-1: the feeds master switch as configured NOW (cached Load is from daemon
+			// start). Unreadable configuration is unknown, never "feeds disabled": refuse before
+			// the unified replace, so the existing feed protection is kept.
+			eff, eerr := nftbanconf.LoadEffective()
+			if eerr != nil {
+				return SocketResponse{Success: false, Error: "feed configuration unreadable, sync refused (existing feed protection kept): " + eerr.Error(),
+					Data: map[string]any{ipc.KeyEffect: string(ipc.EffectRefused)}}
+			}
+			fd, ferr := feeds.Evaluate(fcfg.ConfigDir, fcfg.DataDir, eff.FeedsEnabled)
 			if ferr != nil {
 				return SocketResponse{Success: false, Error: "feed authority undecidable, sync refused (existing feed protection kept): " + ferr.Error(),
 					Data: map[string]any{ipc.KeyEffect: string(ipc.EffectRefused)}}
@@ -768,7 +776,12 @@ func (d *Daemon) handleLoadCIDRsRequest(params map[string]any) SocketResponse {
 			// 2026-11-20). Never a disabled, not-enabled or expired feed; additive as before.
 			feedsDir := dataDir + "/feeds"
 			fcfg := nftbanconf.MustLoad()
-			fd, ferr := feeds.Evaluate(fcfg.ConfigDir, fcfg.DataDir, fcfg.FeedsEnabled)
+			// v1.238 D-1: current master switch; unreadable configuration loads nothing (unknown).
+			eff, eerr := nftbanconf.LoadEffective()
+			if eerr != nil {
+				return SocketResponse{Success: false, Error: "feed configuration unreadable, nothing loaded: " + eerr.Error()}
+			}
+			fd, ferr := feeds.Evaluate(fcfg.ConfigDir, fcfg.DataDir, eff.FeedsEnabled)
 			if ferr != nil {
 				return SocketResponse{Success: false, Error: "feed authority undecidable, nothing loaded: " + ferr.Error()}
 			}

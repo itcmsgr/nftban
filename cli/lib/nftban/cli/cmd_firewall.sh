@@ -1144,7 +1144,9 @@ _NFTBAN_SESSION_WHITELIST_PATH="${_NFTBAN_SESSION_WHITELIST_PATH:-/etc/nftban/wh
 # `nftban update` (Go) and a CLI add/remove/cleanup can't lose an update (atomic
 # rename only prevents torn reads, not lost updates). Volatile /run, on-demand;
 # overridable for hermetic tests.
-_NFTBAN_SESSION_WL_LOCK="${_NFTBAN_SESSION_WL_LOCK:-/run/nftban/session_whitelist.lock}"
+# v1.238: in the root-only writers dir (fhs-spec); the v1.237 path is also taken for one
+# release (nftban_legacy_lock_take, after this one).
+_NFTBAN_SESSION_WL_LOCK="${_NFTBAN_SESSION_WL_LOCK:-${NFTBAN_WRITERS_DIR:-/run/nftban-writers}/session_whitelist.lock}"
 
 # Ensure the shared lock file exists at mode 0600 BEFORE the `9>` redirect opens
 # it — the redirect itself honors the process umask (root umask 027 → 0640), so
@@ -1152,7 +1154,10 @@ _NFTBAN_SESSION_WL_LOCK="${_NFTBAN_SESSION_WL_LOCK:-/run/nftban/session_whitelis
 # (whichever creates it first wins). Forcing 0600 here gives exact cross-language
 # parity (root-only; matches internal/installer/safety/session_whitelist.go).
 _whitelist_session_ensure_lock() {
-    mkdir -p "$(dirname "$_NFTBAN_SESSION_WL_LOCK")" 2>/dev/null || true
+    local _swl_dir
+    _swl_dir="$(dirname "$_NFTBAN_SESSION_WL_LOCK")"
+    # parent exists (/run, or a test sandbox); -m without -p so the mode applies to this dir
+    [[ -d "$_swl_dir" ]] || mkdir -m 0700 -- "$_swl_dir" 2>/dev/null || true
     [[ -e "$_NFTBAN_SESSION_WL_LOCK" ]] || ( umask 0177; : > "$_NFTBAN_SESSION_WL_LOCK" ) 2>/dev/null || true
     chmod 0600 "$_NFTBAN_SESSION_WL_LOCK" 2>/dev/null || true
 }
@@ -1284,6 +1289,7 @@ _whitelist_session_add() {
     _whitelist_session_ensure_lock
     (
         flock 9 || { echo "ERROR: could not acquire session-whitelist lock" >&2; exit 1; }
+        nftban_legacy_lock_take session_whitelist.lock -b || { echo "ERROR: could not acquire the legacy session-whitelist lock" >&2; exit 1; }
 
         _whitelist_session_ensure_header
 
@@ -1442,6 +1448,7 @@ _whitelist_session_remove() {
     _whitelist_session_ensure_lock
     (
         flock 9 || { echo "ERROR: could not acquire session-whitelist lock" >&2; exit 1; }
+        nftban_legacy_lock_take session_whitelist.lock -b || { echo "ERROR: could not acquire the legacy session-whitelist lock" >&2; exit 1; }
 
     local tmp
     tmp=$(mktemp "${_NFTBAN_SESSION_WHITELIST_PATH}.XXXXXX")
@@ -1525,6 +1532,7 @@ _whitelist_session_cleanup() {
         # matching the plain-subshell `( ... ) 9>LOCK` form used by add/remove.
         exec 9>"$_NFTBAN_SESSION_WL_LOCK" || { echo "ERROR: could not open session-whitelist lock" >&2; exit 1; }
         flock 9 || { echo "ERROR: could not acquire session-whitelist lock" >&2; exit 1; }
+        nftban_legacy_lock_take session_whitelist.lock -b || { echo "ERROR: could not acquire the legacy session-whitelist lock" >&2; exit 1; }
 
         local now_unix
         now_unix=$(date -u +%s)
@@ -4075,7 +4083,9 @@ _firewall_rebuild_serialized() {
     # runs under it). Plain rebuilds never prune and never plan.
     _RBP_STATUS=""
     if _rebuild_is_update_lifecycle "$@"; then _rebuild_prune_plan; fi
-    local _nftlock_path="${NFTBAN_RUN_DIR:-/run/nftban}/nft_operations.lock"
+    # v1.238: canonical path in the root-only writers dir (+ one-release legacy lock below).
+    local _nftlock_path
+    _nftlock_path="$(nftban_root_lock_path nft_operations.lock)"
     # ⛔ v1.229.11 LANE 7: THE POLICY LIVES HERE TOO, OR IT DOES NOT EXIST.
     # Making nftban_plan_txn_begin fail-fast changed NOTHING for `firewall
     # rebuild`: this wrapper takes the SAME lock FIRST, and a 30s wait here means
@@ -4095,7 +4105,7 @@ _firewall_rebuild_serialized() {
         _nftlock_wait="${NFTBAN_TIMEOUT_NFT_LOCK:-30}"
     fi
 
-    mkdir -p "$(dirname "$_nftlock_path")" 2>/dev/null || true
+    nftban_root_lock_dir_ready
     if ! exec 8>>"$_nftlock_path"; then
         echo "ERROR: cannot open nft operations lock: $_nftlock_path" >&2
         echo "       The firewall was NOT modified." >&2
@@ -4106,6 +4116,17 @@ _firewall_rebuild_serialized() {
         flock -w "$_nftlock_wait" 8 && _nftlock_got=1     # declared lifecycle policy
     else
         flock -n 8 && _nftlock_got=1                      # interactive: refuse now
+    fi
+    # v1.238: then the legacy lock (same policy), so a v1.237 holder during the upgrade still
+    # excludes this rebuild. Busy there = busy: release the canonical lock, refuse below.
+    local _nftlock_legacy_fd=""
+    if (( _nftlock_got == 1 )); then
+        if [[ -n "$_nftlock_wait" ]]; then
+            nftban_legacy_lock_take nft_operations.lock -w "$_nftlock_wait" || _nftlock_got=0
+        else
+            nftban_legacy_lock_take nft_operations.lock -n || _nftlock_got=0
+        fi
+        _nftlock_legacy_fd="${NFTBAN_LEGACY_LOCK_FD:-}"
     fi
     if (( _nftlock_got == 0 )); then
         # REFUSE, never proceed unserialized: a rebuild that cannot serialize could
@@ -4204,6 +4225,7 @@ _firewall_rebuild_serialized() {
     # ancestor still held it and converge UNSERIALIZED — a stale marker is worse
     # than no marker, because it fails open and says nothing.
     #     THE MARKER'S LIFETIME MUST EQUAL THE LOCK'S LIFETIME.
+    nftban_legacy_lock_drop "$_nftlock_legacy_fd"
     exec 8>&-
     unset NFTBAN_NFTLOCK_HELD
     return "$_rebuild_rc"

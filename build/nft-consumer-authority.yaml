@@ -114,7 +114,7 @@ units:
     user: root
     nft_operation: read
     requires_capabilities: []
-    evidence: "cmd_pro.sh:948 -> nftban_pro.sh:814 `/usr/lib/nftban/bin/nftban-validate --json` -> internal/validator/nftjson.go:137 `nft -j list ruleset`. (Sibling calls :801 `nftban status --brief` and :805 `nftban health check --brief` are DIFFERENT executables that also reach the validator indirectly; only :814 invokes nftban-validate directly.)"
+    evidence: "v1.238: nftban_pro.sh:1081 nftban_community_submit -> nftban_community_build_payload_v3 -> :938 `/usr/lib/nftban/bin/nftban-validate --json` -> internal/validator/nftjson.go:137 `nft -j list ruleset`; and :955 `nft list tables` (read). Was the v2 builder (:814) until v1.238."
 
   # -------------------------------------------------------------- CONDITIONAL
   - name: nftban-queue.service

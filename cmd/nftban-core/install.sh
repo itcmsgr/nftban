@@ -74,7 +74,7 @@ install -d -o root -g nftban -m 0750 /etc/nftban/whitelist.d
 install -d -o root -g nftban -m 0750 /etc/nftban/blacklist.d
 install -d -o root -g nftban -m 0750 /etc/nftban/ports.d
 install -d -o root -g nftban -m 0750 /var/lib/nftban
-install -d -o root -g nftban -m 0750 /var/lib/nftban/feeds
+install -d -o root -g nftban -m 2750 /var/lib/nftban/feeds   # v1.238 D-2: setgid (fhs-spec)
 echo -e "${GREEN}✓${NC} Directories created with proper permissions"
 echo
 

@@ -139,8 +139,9 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 # arms that need their own value still override locally.
 _HI="$TMP/hi"
 export NFTBAN_CONFIG_DIR="$_HI/etc" NFTBAN_DATA_DIR="$_HI/data" NFTBAN_LOG_DIR="$_HI/log" \
-       NFTBAN_CACHE_DIR="$_HI/cache" NFTBAN_RUN_DIR="$_HI/run" NFTBAN_STATE_DIR="$_HI/data/state"
-mkdir -p "$NFTBAN_CONFIG_DIR" "$NFTBAN_DATA_DIR/state" "$NFTBAN_LOG_DIR" "$NFTBAN_CACHE_DIR" "$NFTBAN_RUN_DIR"
+       NFTBAN_CACHE_DIR="$_HI/cache" NFTBAN_RUN_DIR="$_HI/run" NFTBAN_STATE_DIR="$_HI/data/state" \
+       NFTBAN_WRITERS_DIR="$_HI/writers"   # v1.238: the nft lane lock lives in the root-only writers dir
+mkdir -p "$NFTBAN_CONFIG_DIR" "$NFTBAN_DATA_DIR/state" "$NFTBAN_LOG_DIR" "$NFTBAN_CACHE_DIR" "$NFTBAN_RUN_DIR" "$NFTBAN_WRITERS_DIR"
 # Host guard: the HOST config paths this test once wrote must be unchanged at the end
 # (logs/state/cache are rewritten by a live product, so those are checked in the sandbox).
 _hg_state(){ local p; for p in "$@"; do if [[ ! -e "$p" ]]; then echo "$p ABSENT"; elif [[ -r "$p" ]]; then echo "$p $(sha256sum < "$p" | cut -c1-16) $(stat -c %Y "$p")"; else echo "$p UNREADABLE $(stat -c %Y "$p" 2>/dev/null)"; fi; done; }
@@ -466,7 +467,7 @@ for mod in ddos portscan; do
         local out rc
         out="$(NFTBAN_CONFIG_DIR="$d" NFTBAN_PLAN_RECORD_DIR="$d/run" \
                NFTBAN_PLAN_GENERATION_FILE="$d/run/convergence-generation" \
-           NFTBAN_RUN_DIR="$d/run" \
+           NFTBAN_RUN_DIR="$d/run" NFTBAN_WRITERS_DIR="$d/run" \
                NFTBAN_LIB_DIR="$ROOT/cli/lib/nftban" bash -c "
             set -Eeuo pipefail
             source '$ROOT/cli/lib/nftban/lib/module_authority.sh'

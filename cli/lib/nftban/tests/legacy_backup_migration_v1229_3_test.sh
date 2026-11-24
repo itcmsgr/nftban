@@ -58,7 +58,7 @@ else
 fi
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-export NFTBAN_DATA_DIR="$TMP/lib" NFTBAN_RUN_DIR="$TMP/run"
+export NFTBAN_DATA_DIR="$TMP/lib" NFTBAN_RUN_DIR="$TMP/run" NFTBAN_WRITERS_DIR="$TMP/run"
 mkdir -p "$NFTBAN_DATA_DIR/backup" "$NFTBAN_DATA_DIR/state" "$NFTBAN_RUN_DIR"
 BK="$NFTBAN_DATA_DIR/backup"
 # shellcheck source=/dev/null

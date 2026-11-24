@@ -25,7 +25,7 @@
 # meta:ta.requires_package="false"
 # meta:inventory.files="cli/lib/nftban/lib/module_authority.sh"
 # meta:inventory.binaries="bash,flock"
-# meta:inventory.env_vars="NFTBAN_RUN_DIR,NFTBAN_TIMEOUT_NFT_LOCK,NFTBAN_NFTLOCK_HELD"
+# meta:inventory.env_vars="NFTBAN_RUN_DIR,NFTBAN_WRITERS_DIR,NFTBAN_TIMEOUT_NFT_LOCK,NFTBAN_NFTLOCK_HELD"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
@@ -58,7 +58,7 @@ owner() {  # owner <hold_seconds> <lock_wait|""> [extra-env]
     local hold="$1" wait="$2"; shift 2
     env NFTBAN_CONFIG_DIR="$TMP" NFTBAN_PLAN_RECORD_DIR="$TMP/run" \
         NFTBAN_PLAN_GENERATION_FILE="$TMP/run/convergence-generation" \
-        NFTBAN_RUN_DIR="$TMP/run" NFTBAN_PLAN_LOCK_WAIT="$wait" "$@" \
+        NFTBAN_RUN_DIR="$TMP/run" NFTBAN_WRITERS_DIR="$TMP/run" NFTBAN_PLAN_LOCK_WAIT="$wait" "$@" \
     bash -c '
         source "'"$AUTH"'"
         # ⛔ DO NOT SUPPRESS STDERR HERE. The refusal DIAGNOSTIC is part of the
@@ -119,7 +119,7 @@ eq "T3.3 each chose the SAME target — neither committed, so N never moved" \
 t0=$(date +%s)
 out="$(NFTBAN_CONFIG_DIR="$TMP" NFTBAN_PLAN_RECORD_DIR="$TMP/run" \
   NFTBAN_PLAN_GENERATION_FILE="$TMP/run/convergence-generation" \
-  NFTBAN_RUN_DIR="$TMP/run" bash -c '
+  NFTBAN_RUN_DIR="$TMP/run" NFTBAN_WRITERS_DIR="$TMP/run" bash -c '
     source "'"$AUTH"'"
     # Simulate _firewall_rebuild_serialized: take the canonical lock, declare it.
     exec 8>>"'"$TMP"'/run/nft_operations.lock"
@@ -144,7 +144,7 @@ owner 3 "" > "$TMP/e.out" & EPID=$!
 sleep 0.7                                    # a writer is mid-transaction
 t0=$(date +%s)
 reff="$(NFTBAN_CONFIG_DIR="$TMP" NFTBAN_PLAN_RECORD_DIR="$TMP/run" \
-  NFTBAN_PLAN_GENERATION_FILE="$TMP/run/convergence-generation" NFTBAN_RUN_DIR="$TMP/run" \
+  NFTBAN_PLAN_GENERATION_FILE="$TMP/run/convergence-generation" NFTBAN_RUN_DIR="$TMP/run" NFTBAN_WRITERS_DIR="$TMP/run" \
   bash -c 'source "'"$AUTH"'"; nftban_module_report_modes ddos | sed -n "s/^NFTBAN_REPORT_EFFECTIVE_MODE=//p"' 2>&1)"
 t1=$(date +%s)
 wait $EPID || true
@@ -161,7 +161,7 @@ eq "T5.3 the reader takes no lock at all" \
 rm -f "$TMP/run"/module-plan-* ; printf '4\n' > "$TMP/run/convergence-generation"
 NFTBAN_CONFIG_DIR="$TMP" NFTBAN_PLAN_RECORD_DIR="$TMP/run" \
   NFTBAN_PLAN_GENERATION_FILE="$TMP/run/convergence-generation" \
-  NFTBAN_RUN_DIR="$TMP/run" bash -c '
+  NFTBAN_RUN_DIR="$TMP/run" NFTBAN_WRITERS_DIR="$TMP/run" bash -c '
     source "'"$AUTH"'"; nftban_plan_txn_begin ddos portscan >/dev/null 2>&1; sleep 30' &
 KPID=$!
 sleep 0.7; kill -9 $KPID 2>/dev/null || true; wait $KPID 2>/dev/null || true
