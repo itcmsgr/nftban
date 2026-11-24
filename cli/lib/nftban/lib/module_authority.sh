@@ -64,13 +64,21 @@ nftban_bool_is_true() {
 #    authority location and a new shipped conffile (upgrade risk) without
 #    resolving the semantic split. Read what the project already ships.
 # -----------------------------------------------------------------------------
+#
+# v1.238 (owner 2026-11-23, with D-1 / #1499): ONE effective-config contract for the feeds
+# MASTER switch. The daemon and every Go reader resolve NFTBAN_FEEDS_ENABLED through the
+# canonical loader (internal/nftbanconf: nftban.conf, then the central override
+# nftban.conf.local); this shell reader now reads the SAME two files in the SAME order with the
+# same vocabulary (util.ParseBool == nftban_bool_is_true). It used to read conf.d/feeds.conf
+# instead of nftban.conf, so a value set in one base file was seen by only one side
+# (BUG-FEEDS-MASTER-SWITCH-TWO-READERS-CLI-FEEDS-CONF-VS-DAEMON-NFTBAN-CONF). conf.d/feeds.conf
+# keeps the per-feed keys; its NFTBAN_FEEDS_ENABLED line is not read for the master switch.
 _nftban_module_feeds_enabled() {
     local cfg="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
     local val="" v
-    v="$(_nftban_module_read_key "${cfg}/conf.d/feeds.conf" NFTBAN_FEEDS_ENABLED)"
+    v="$(_nftban_module_read_key "${cfg}/nftban.conf" NFTBAN_FEEDS_ENABLED)"
     [[ -n "$v" ]] && val="$v"
-    # nftban.conf.local OVERRIDES the shipped default — same precedence as the
-    # per-feed reader, so master and per-feed answers come from one model.
+    # nftban.conf.local OVERRIDES the shipped default (where `nftban feeds enable` writes).
     v="$(_nftban_module_read_key "${cfg}/nftban.conf.local" NFTBAN_FEEDS_ENABLED)"
     [[ -n "$v" ]] && val="$v"
     nftban_bool_is_true "$val"
@@ -84,9 +92,8 @@ _nftban_module_enable_var() {
         portscan) echo "PORTSCAN_ENABLED" ;;
         botguard) echo "HTTP_BOTGUARD_ENABLED" ;;
         geoban)   echo "GEOBAN_ENABLED" ;;
-        # feeds ships NFTBAN_FEEDS_ENABLED in conf.d/feeds.conf, not
-        # FEEDS_ENABLED in conf.d/feeds/main.conf. See
-        # _nftban_module_feeds_enabled, which owns the feeds lookup.
+        # feeds' master switch is NFTBAN_FEEDS_ENABLED in nftban.conf / nftban.conf.local
+        # (v1.238: the canonical loader's sources). See _nftban_module_feeds_enabled.
         feeds)    echo "NFTBAN_FEEDS_ENABLED" ;;
         *)        return 1 ;;
     esac
@@ -760,12 +767,20 @@ nftban_plan_txn_required_modules() {
 # — two owners opened the same transaction concurrently while the code "held" a
 # lock that had already evaporated.
 #     A LOCK ACQUIRED IN A SUBSHELL IS RELEASED WHEN THAT SUBSHELL EXITS.
+# v1.238: the root-lock path helpers (canonical + one-release legacy) live with the write
+# boundary; loaded relative to this file, like env.sh and cmd_firewall.sh do.
+# shellcheck source=/usr/lib/nftban/lib/nft_writers.sh
+declare -F nftban_legacy_lock_take >/dev/null 2>&1 || source "${BASH_SOURCE[0]%/*}/nft_writers.sh"
+
 _nftban_plan_lock_acquire() {
     NFTBAN_PLAN_TXN_LOCKFD=""
     if [[ -n "${NFTBAN_NFTLOCK_HELD:-}" ]]; then
         return 0             # an ancestor holds it; do NOT re-acquire
     fi
-    local path="${NFTBAN_RUN_DIR:-/run/nftban}/nft_operations.lock"
+    # v1.238: canonical path in the root-only writers dir (+ one-release legacy lock below).
+    local path
+    path="$(nftban_root_lock_path nft_operations.lock)"
+    nftban_root_lock_dir_ready
     # ⛔ FAIL-FAST IS THE DEFAULT. A bounded wait serializes correctly but LIES TO
     # THE OPERATOR: two administrators each run a mutation, both are told it
     # succeeded, and neither learns they collided. Measured on lab2 before this
@@ -794,6 +809,17 @@ _nftban_plan_lock_acquire() {
     else
         flock -n "$fd" && _got=1                # default: refuse immediately
     fi
+    # v1.238: then the legacy lock with the same policy (a v1.237 holder during the upgrade
+    # still excludes this transaction). Busy there = busy here.
+    NFTBAN_PLAN_TXN_LEGACY_LOCKFD=""
+    if (( _got == 1 )); then
+        if [[ -n "$wait" ]]; then
+            nftban_legacy_lock_take nft_operations.lock -w "$wait" || _got=0
+        else
+            nftban_legacy_lock_take nft_operations.lock -n || _got=0
+        fi
+        NFTBAN_PLAN_TXN_LEGACY_LOCKFD="${NFTBAN_LEGACY_LOCK_FD:-}"
+    fi
     if (( _got == 0 )); then
         # ⛔ THIS IS ITS OWN VERDICT CLASS. It is not "the convergence failed" —
         # it is "the convergence never began". Nothing has been mutated.
@@ -814,6 +840,8 @@ _nftban_plan_lock_acquire() {
 _nftban_plan_lock_release() {
     local fd="${1:-}"
     [[ -n "$fd" ]] || return 0        # we did not acquire it; not ours to release
+    nftban_legacy_lock_drop "${NFTBAN_PLAN_TXN_LEGACY_LOCKFD:-}"   # reverse order: legacy first
+    NFTBAN_PLAN_TXN_LEGACY_LOCKFD=""
     eval "exec ${fd}>&-" 2>/dev/null || true
     unset NFTBAN_NFTLOCK_HELD
     return 0

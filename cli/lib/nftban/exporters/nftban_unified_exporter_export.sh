@@ -99,7 +99,7 @@ write_reconciliation_metrics() {
     timestamp=$(date +%s)
     local metrics=""
 
-    for target in prometheus zabbix portal elasticsearch kafka file; do
+    for target in prometheus zabbix portal elasticsearch kafka file syslog webhook; do
         local attempts="${EXPORT_ATTEMPTS["$target"]:-0}"
         local successes="${EXPORT_SUCCESSES["$target"]:-0}"
         local failures="${EXPORT_FAILURES["$target"]:-0}"
@@ -399,41 +399,115 @@ export_connectors() {
         }
     ' "$METRICS_CACHE")
 
-    # Process each connector
+    # Process each connector.
+    # v1.238 (owner GO 2026-11-23: count delivery only after the destination's acknowledgement;
+    # show skipped, failed and unverified outcomes). Each connector's result is recorded under its
+    # type; the function fails if any enabled connector did not deliver.
+    local any_failed=0 conf
     for conf in "$connectors_dir"/*.conf; do
         [[ -f "$conf" ]] || continue
+        # No value may leak from the previous connector (e.g. another connector's credentials).
+        unset CONNECTOR_NAME CONNECTOR_TYPE CONNECTOR_ENABLED CONNECTOR_ES_URL CONNECTOR_ES_INDEX \
+              CONNECTOR_ES_USER CONNECTOR_ES_PASS CONNECTOR_KAFKA_BROKERS CONNECTOR_KAFKA_TOPIC \
+              CONNECTOR_FILE_PATH
 
+        if [[ ! -r "$conf" ]]; then
+            # Before v1.238 `connector add` wrote root:root 0640: the exporter (nftban) could not
+            # read it, the error went to stderr only and the cycle still counted as an export.
+            log_warn "Connector: $(basename "$conf") is not readable by $(id -un) — not exported. Fix: chgrp nftban '$conf' (mode 0640)"
+            record_export_start "file"; record_export_result "file" "false" "connector_unreadable"
+            any_failed=1
+            continue
+        fi
         # shellcheck source=/dev/null
-        source "$conf" || true
+        if ! source "$conf"; then
+            log_warn "Connector: $(basename "$conf") could not be loaded — not exported"
+            any_failed=1
+            continue
+        fi
 
         [[ "${CONNECTOR_ENABLED:-false}" != "true" ]] && continue
 
         case "${CONNECTOR_TYPE:-}" in
             elasticsearch)
+                record_export_start "elasticsearch"
                 local url="${CONNECTOR_ES_URL}/${CONNECTOR_ES_INDEX:-nftban-metrics}/_doc"
-                if curl -sf -X POST "$url" -H "Content-Type: application/json" -d "$json_payload" -o /dev/null; then
+                # Configured credentials are always used (same netrc mechanism as `connector push`,
+                # never on the command line); a user without a password is a configuration error.
+                local netrc_file="" es_host
+                if [[ -n "${CONNECTOR_ES_USER:-}" ]]; then
+                    if [[ -z "${CONNECTOR_ES_PASS:-}" ]]; then
+                        log_warn "Connector: Elasticsearch (${CONNECTOR_NAME}) has CONNECTOR_ES_USER but no CONNECTOR_ES_PASS — not sent"
+                        record_export_result "elasticsearch" "false" "credentials_incomplete"
+                        any_failed=1
+                        continue
+                    fi
+                    netrc_file=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban-es-netrc.XXXXXX") || {
+                        record_export_result "elasticsearch" "false" "mktemp_failed"; any_failed=1; continue; }
+                    es_host=$(echo "$url" | sed -E 's|https?://([^/:]+).*|\1|')
+                    printf 'machine %s login %s password %s\n' "$es_host" "$CONNECTOR_ES_USER" "$CONNECTOR_ES_PASS" > "$netrc_file"
+                fi
+                local es_rc=0 auth_args=()
+                [[ -n "$netrc_file" ]] && auth_args=(--netrc-file "$netrc_file")
+                printf '%s' "$json_payload" | curl -sf -X POST "$url" -H "Content-Type: application/json" \
+                    "${auth_args[@]}" -d @- -o /dev/null || es_rc=$?
+                [[ -n "$netrc_file" ]] && rm -f "$netrc_file"
+                if [[ $es_rc -eq 0 ]]; then
+                    # curl -f: only a 2xx reply (document indexed) counts as delivered.
+                    record_export_result "elasticsearch" "true"
                     log_info "Connector: sent to Elasticsearch (${CONNECTOR_NAME})"
                 else
-                    log_warn "Connector: Elasticsearch export failed (${CONNECTOR_NAME})"
+                    record_export_result "elasticsearch" "false" "curl_rc_${es_rc}"
+                    log_warn "Connector: Elasticsearch export failed (${CONNECTOR_NAME}, curl rc=${es_rc}; 22 = HTTP error such as 401)"
+                    any_failed=1
                 fi
                 ;;
 
             kafka)
-                if command -v kafkacat &>/dev/null; then
-                    echo "$json_payload" | kafkacat -P -b "${CONNECTOR_KAFKA_BROKERS}" -t "${CONNECTOR_KAFKA_TOPIC:-nftban}" 2>/dev/null
+                record_export_start "kafka"
+                if ! command -v kafkacat &>/dev/null; then
+                    log_warn "Connector: Kafka (${CONNECTOR_NAME}) skipped — kafkacat is not installed"
+                    record_export_result "kafka" "false" "kafkacat_missing"
+                    any_failed=1
+                elif echo "$json_payload" | kafkacat -P -b "${CONNECTOR_KAFKA_BROKERS}" -t "${CONNECTOR_KAFKA_TOPIC:-nftban}" 2>/dev/null; then
+                    record_export_result "kafka" "true"
                     log_info "Connector: sent to Kafka (${CONNECTOR_NAME})"
+                else
+                    record_export_result "kafka" "false" "kafkacat_failed"
+                    log_warn "Connector: Kafka export failed (${CONNECTOR_NAME})"
+                    any_failed=1
                 fi
                 ;;
 
             file)
+                record_export_start "file"
                 local path="${CONNECTOR_FILE_PATH:-${NFTBAN_LOG_DIR:-/var/log/nftban}/metrics.json}"
-                mkdir -p "$(dirname "$path")" || return 1
-                echo "$json_payload" >> "$path"
-                record_export_result "file" "true"
-                log_info "Connector: written to $path (${CONNECTOR_NAME})"
+                if mkdir -p "$(dirname "$path")" && echo "$json_payload" >> "$path"; then
+                    record_export_result "file" "true"
+                    log_info "Connector: written to $path (${CONNECTOR_NAME})"
+                else
+                    record_export_result "file" "false" "write_failed"
+                    log_warn "Connector: could not write $path (${CONNECTOR_NAME})"
+                    any_failed=1
+                fi
+                ;;
+
+            syslog|webhook)
+                # Not implemented in the periodic exporter (only `nftban connector push` sends these
+                # types); reported instead of silently skipped. Proposal: shared delivery, v1.239+.
+                record_export_start "${CONNECTOR_TYPE}"
+                record_export_result "${CONNECTOR_TYPE}" "false" "not_supported_by_timer"
+                log_warn "Connector: ${CONNECTOR_TYPE} (${CONNECTOR_NAME}) is not sent by the periodic exporter (only by 'nftban connector push')"
+                any_failed=1
+                ;;
+
+            *)
+                log_warn "Connector: ${CONNECTOR_NAME:-$(basename "$conf")} has unknown type '${CONNECTOR_TYPE:-}' — not exported"
+                any_failed=1
                 ;;
         esac
     done
+    return $any_failed
 }
 
 # =============================================================================
@@ -468,93 +542,121 @@ export_portal() {
         host_key=$(echo -n "${mac}${hostname}" | sha256sum | cut -d' ' -f1)
     fi
 
-    local timestamp hostname fqdn primary_ip
+    local timestamp hostname fqdn primary_ip primary_if
     timestamp=$(date -Iseconds)
     hostname=$(hostname -s 2>/dev/null || hostname)
     fqdn=$(hostname -f 2>/dev/null || hostname)
-    primary_ip=$(ip route get 1 2>/dev/null | awk '{print $7; exit}' || echo "127.0.0.1")
+    # (awk reads to the end — no early exit downstream of a pipe under pipefail)
+    primary_ip=$(ip route get 1 2>/dev/null | awk '!d{for(i=1;i<NF;i++) if($i=="src"){print $(i+1); d=1; break}}')
+    primary_if=$(ip route get 1 2>/dev/null | awk '!d{for(i=1;i<NF;i++) if($i=="dev"){print $(i+1); d=1; break}}')
 
-    # Build inventory JSON from collected metrics
+    # v1.238 BUG-PORTAL-PAYLOAD-INVALID-JSON / BUG-PORTAL-MODULE-STATUS-READS-NONEXISTENT-MODULES-DIR
+    # (reproduced 2026-11-23): the payload was assembled from heredocs and awk printf, so a metric
+    # line without a timestamp produced `"ts":}` (the cache lines are "name value"), skipped string
+    # metrics left `,,`, and any quote in a value broke the document; subnet_mask came from the
+    # first interface (lo); module status read /etc/nftban/modules/*.conf, which does not exist, so
+    # every module was 0. The payload is now built by jq from typed values; module status comes from
+    # nftban_module_effective_enabled (the authority the CLI, health and Zabbix LLD use): 1 enabled,
+    # 0 disabled, null when it cannot be resolved (never a false 0).
+    command -v jq >/dev/null 2>&1 || {
+        log_warn "Portal: jq is required to build the payload"
+        record_export_result "portal" "false" "jq_missing"
+        return 1
+    }
+
+    local prefix_len subnet_mask=""
+    prefix_len=$(ip -4 -o addr show dev "${primary_if:-lo}" 2>/dev/null | awk '!d{split($4,a,"/"); print a[2]; d=1}')
+    if [[ "$prefix_len" =~ ^[0-9]+$ ]] && (( prefix_len <= 32 )); then
+        local m=$(( prefix_len == 0 ? 0 : (0xFFFFFFFF << (32 - prefix_len)) & 0xFFFFFFFF ))
+        subnet_mask="$(( (m >> 24) & 255 )).$(( (m >> 16) & 255 )).$(( (m >> 8) & 255 )).$(( m & 255 ))"
+    fi
+
     local inventory_json
-    inventory_json=$(cat <<EOF
-{
-    "mac_address": "$(ip link show 2>/dev/null | awk '/link\/ether/ {print $2; exit}' || echo "")",
-    "cpu_cores": $(nproc 2>/dev/null || echo 1),
-    "cpu_model": "$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d':' -f2 | sed 's/^[ \t]*//' || echo "unknown")",
-    "memory_total_bytes": $(awk '/^MemTotal:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo 0),
-    "disk_total_bytes": $(df -B1 / 2>/dev/null | tail -1 | awk '{print $2}' || echo 0),
-    "server_type": "$(systemd-detect-virt 2>/dev/null | grep -q none && echo physical || echo vm)",
-    "vendor": "$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || echo "Unknown")",
-    "model": "$(cat /sys/class/dmi/id/product_name 2>/dev/null || echo "Unknown")",
-    "serial_number": "$(cat /sys/class/dmi/id/product_serial 2>/dev/null || echo "N/A")",
-    "os_name": "$(grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d'"' -f2 || uname -o)",
-    "os_release": "$(grep -E '^NAME=' /etc/os-release 2>/dev/null | cut -d'"' -f2 || uname -o)",
-    "kernel_version": "$(uname -r)",
-    "arch": "$(uname -m)",
-    "nftban_version": "$(cat "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/VERSION" 2>/dev/null | head -1 || echo "unknown")",
-    "panel": "${NFTBAN_PANEL:-none}",
-    "networks": $(ip -4 -j addr 2>/dev/null | jq -c '[.[] | select(.operstate=="UP") | {(.ifname): .addr_info[0].local}] | add // {}' 2>/dev/null || echo '{}'),
-    "subnet_mask": "$(ip -4 addr show 2>/dev/null | awk '/inet / {print $2}' | head -1 | cut -d'/' -f2 | xargs -I{} sh -c 'case {} in 8) echo 255.0.0.0;; 16) echo 255.255.0.0;; 24) echo 255.255.255.0;; *) echo 255.255.255.0;; esac' 2>/dev/null || echo "255.255.255.0")",
-    "location": "${NFTBAN_SERVER_LOCATION:-}"
-}
-EOF
-)
+    inventory_json=$(jq -n \
+        --arg mac "$(ip link show "${primary_if:-}" 2>/dev/null | awk '!d && /link\/ether/ {print $2; d=1}')" \
+        --arg cpu_model "$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d':' -f2 | sed 's/^[ \t]*//')" \
+        --arg cpu_cores "$(nproc 2>/dev/null || echo 1)" \
+        --arg mem "$(awk '/^MemTotal:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null)" \
+        --arg disk "$(df -B1 / 2>/dev/null | tail -1 | awk '{print $2}')" \
+        --arg server_type "$(systemd-detect-virt -q 2>/dev/null && echo vm || echo physical)" \
+        --arg vendor "$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || echo Unknown)" \
+        --arg model "$(cat /sys/class/dmi/id/product_name 2>/dev/null || echo Unknown)" \
+        --arg serial "$(cat /sys/class/dmi/id/product_serial 2>/dev/null || echo N/A)" \
+        --arg os_name "$(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-$(uname -o)}")" \
+        --arg os_release "$(. /etc/os-release 2>/dev/null; echo "${NAME:-$(uname -o)}")" \
+        --arg kernel "$(uname -r)" --arg arch "$(uname -m)" \
+        --arg version "$(head -1 "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/VERSION" 2>/dev/null || echo unknown)" \
+        --arg panel "${NFTBAN_PANEL:-none}" --arg mask "$subnet_mask" --arg location "${NFTBAN_SERVER_LOCATION:-}" \
+        --argjson networks "$(ip -4 -j addr 2>/dev/null | jq -c '[.[] | select(.operstate=="UP") | {(.ifname): .addr_info[0].local}] | add // {}' 2>/dev/null || echo '{}')" \
+        '{mac_address:$mac, cpu_cores:($cpu_cores|tonumber? // null), cpu_model:$cpu_model,
+          memory_total_bytes:($mem|tonumber? // null), disk_total_bytes:($disk|tonumber? // null),
+          server_type:$server_type, vendor:$vendor, model:$model, serial_number:$serial,
+          os_name:$os_name, os_release:$os_release, kernel_version:$kernel, arch:$arch,
+          nftban_version:$version, panel:$panel, networks:$networks,
+          subnet_mask:(if $mask == "" then null else $mask end), location:$location}') || {
+        record_export_result "portal" "false" "payload_build_failed"; return 1; }
 
-    # Build metrics array from cache (skip string metrics)
+    # numeric metrics only ("name value" or "name value ts"; |STRING| values skipped)
     local metrics_json
-    metrics_json=$(awk 'BEGIN { printf "[" }
-        NR > 1 { printf "," }
-        {
-            if (index($2, "|STRING|") == 1) next
-            gsub(/{|}/, "", $1)
-            gsub(/"/, "\\\"", $1)
-            printf "{\"name\":\"%s\",\"value\":%s,\"ts\":%s}", $1, $2, $3
-        }
-        END { printf "]" }
-    ' "$METRICS_CACHE" 2>/dev/null || echo "[]")
+    metrics_json=$(jq -R -s -c '
+        split("\n") | map(select(length > 0) | split(" ") | select(length >= 2)
+          | select((.[1] | startswith("|STRING|")) | not)
+          | {name: (.[0] | gsub("[{}]"; "")), value: (.[1] | tonumber? // null),
+             ts: ((.[2] // "") | tonumber? // null)}
+          | select(.value != null))' "$METRICS_CACHE" 2>/dev/null) || metrics_json="[]"
 
-    # Build module status array
-    local modules_json="[]"
+    if ! declare -F nftban_module_effective_enabled >/dev/null 2>&1; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" >/dev/null 2>&1 || true
+    fi
+    local modules_json="[]" module _mkey _rc st
     for module in login portscan ddos suricata feeds geoban watchdog; do
-        local status_val=0
-        local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/modules/${module}.conf"
-        if [[ -f "$config_file" ]]; then
-            if systemctl is-active "nftban-${module}.timer" &>/dev/null 2>&1 || \
-               systemctl is-active "nftban-${module}.service" &>/dev/null 2>&1; then
-                status_val=1
-            elif systemctl is-failed "nftban-${module}.service" &>/dev/null 2>&1; then
-                status_val=-1
-            fi
+        st="null"
+        case "$module" in
+            login)    _mkey="LOGIN_ENABLED" ;;
+            suricata) _mkey="SURICATA_ENABLED" ;;
+            *)        _mkey="" ;;
+        esac
+        # watchdog: two runtime authorities (CONFIG-WATCHDOG-DUAL-RUNTIME-AUTHORITY-SPLIT) -> unresolved
+        if [[ "$module" != "watchdog" ]] && declare -F nftban_module_effective_enabled >/dev/null 2>&1; then
+            _rc=0
+            # shellcheck disable=SC2086  # empty _mkey = omit the argument
+            nftban_module_effective_enabled "$module" $_mkey >/dev/null 2>&1 || _rc=$?
+            case "$_rc" in 0) st=1 ;; 1) st=0 ;; *) st="null" ;; esac
         fi
-        modules_json=$(echo "$modules_json" | jq --arg m "$module" --argjson s "$status_val" \
-            '. + [{"name": $m, "status": $s}]' 2>/dev/null || echo "$modules_json")
+        modules_json=$(jq -c --arg m "$module" --argjson s "$st" '. + [{name: $m, status: $s}]' <<<"$modules_json")
     done
 
-    # Build full payload
     local payload
-    payload=$(cat <<EOF
-{
-    "host_key": "$host_key",
-    "hostname": "$hostname",
-    "fqdn": "$fqdn",
-    "primary_ip": "$primary_ip",
-    "timestamp": "$timestamp",
-    "inventory": $inventory_json,
-    "modules": $modules_json,
-    "metrics": $metrics_json
-}
-EOF
-)
+    payload=$(jq -n -c --arg host_key "$host_key" --arg hostname "$hostname" --arg fqdn "$fqdn" \
+        --arg primary_ip "$primary_ip" --arg timestamp "$timestamp" \
+        --argjson inventory "$inventory_json" --argjson modules "$modules_json" --argjson metrics "$metrics_json" \
+        '{host_key:$host_key, hostname:$hostname, fqdn:$fqdn, primary_ip:$primary_ip, timestamp:$timestamp,
+          inventory:$inventory, modules:$modules, metrics:$metrics}') || {
+        record_export_result "portal" "false" "payload_build_failed"; return 1; }
 
-    # Send to portal with real ACK
-    local response http_code
-    response=$(curl -sf -X POST "$portal_url" \
-        -H "Content-Type: application/json" \
-        -H "Authorization: Bearer $api_key" \
-        -H "X-NFTBan-Host-Key: $host_key" \
+    # Send to portal with real ACK.
+    # v1.238 OBS-PORTAL-API-KEY-IN-ARGV (owner GO 2026-11-23): the API key and host key travel in a
+    # 0600 header file (curl -H @file) and the payload on stdin (-d @-), never on the command line
+    # (/proc/<pid>/cmdline is readable by every local user); the key is never sent over plain http.
+    if [[ "$portal_url" != https://* ]]; then
+        log_warn "Portal: NFTBAN_PORTAL_URL must use https:// (the API key is not sent over plain http)"
+        record_export_result "portal" "false" "insecure_url"
+        return 1
+    fi
+    local response http_code hdr_file
+    hdr_file=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/portal_hdr.XXXXXX") || {
+        record_export_result "portal" "false" "mktemp_failed"
+        return 1
+    }
+    printf 'Content-Type: application/json\nAuthorization: Bearer %s\nX-NFTBan-Host-Key: %s\n' \
+        "$api_key" "$host_key" > "$hdr_file"
+    response=$(printf '%s' "$payload" | curl -sf --proto '=https' -X POST "$portal_url" \
+        -H @"$hdr_file" \
         --max-time "$timeout" \
         -w "\n%{http_code}" \
-        -d "$payload" 2>/dev/null) || response=""
+        -d @- 2>/dev/null) || response=""
+    rm -f "$hdr_file"
 
     http_code=$(echo "$response" | tail -1)
 

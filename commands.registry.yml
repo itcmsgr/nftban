@@ -797,17 +797,13 @@ ddos:
     test:
       mutates: false
       description: "Test DDoS protection rules"
-    config:
-      mutates: false
-      description: "Show DDoS configuration"
-      options:
-        --json: {type: bool, description: "Output in JSON format"}
+    # v1.238: `config` removed — cmd_ddos.sh has no such verb ("Unknown command", rc 1; reproduced
+    # 2026-11-23, BUG-REGISTRY-LISTS-DDOS-CONFIG-NOT-DISPATCHED). Configuration: `nftban config`.
   examples:
     - "nftban ddos status"
     - "nftban ddos enable"
     - "nftban ddos disable"
     - "nftban ddos test"
-    - "nftban ddos config --json"
 
 portscan:
   category: active_protection

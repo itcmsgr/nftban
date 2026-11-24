@@ -62,6 +62,7 @@ botscan_throughput_v187_test	cli/lib/nftban/tests/botscan_throughput_v187_test.s
 botscan_trend_v208_test	cli/lib/nftban/tests/botscan_trend_v208_test.sh	botscan	test	botscan-trend	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 botscan_wpadmin_context_gate_v1922_test	cli/lib/nftban/tests/botscan_wpadmin_context_gate_v1922_test.sh	botscan	test	botscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 bounded_read_checkpoint_v1231_test	cli/lib/nftban/tests/bounded_read_checkpoint_v1231_test.sh	cross-cutting	test	http-logs	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+bounded_reporting_corrections_v1238_test	cli/lib/nftban/tests/bounded_reporting_corrections_v1238_test.sh	core	test	reporting	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 build_provenance_source_v1232_test	cli/lib/nftban/tests/build_provenance_source_v1232_test.sh	release	test	build-provenance	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 build_tree_cleanliness_v1229_4_test	cli/lib/nftban/tests/build_tree_cleanliness_v1229_4_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 checksum_population_v1229_4_test	cli/lib/nftban/tests/checksum_population_v1229_4_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
@@ -133,6 +134,7 @@ comms_redact_debug_p_retire1_test	cli/lib/nftban/tests/comms_redact_debug_p_reti
 comms_redact_failloud_p_retire2_test	cli/lib/nftban/tests/comms_redact_failloud_p_retire2_test.sh	security	test	redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	300		
 comms_redact_p2a_noleak_test	cli/lib/nftban/tests/comms_redact_p2a_noleak_test.sh	security	test	redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 comms_redact_p2b1_test	cli/lib/nftban/tests/comms_redact_p2b1_test.sh	security	test	redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+community_submit_anonymous_v1238_test	cli/lib/nftban/tests/community_submit_anonymous_v1238_test.sh	core	test	community	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 community_trial_v3_test	cli/lib/nftban/tests/community_trial_v3_test.sh	comms	test	community-trial	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 conffile_mutation_guard_test	cli/lib/nftban/tests/conffile_mutation_guard_test.sh	packaging	test	release-safety-conffile	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 config_authority_guard_controls_test	cli/lib/nftban/tests/config_authority_guard_controls_test.sh	core	test	config-authority-guards	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
@@ -145,11 +147,13 @@ config_overlay_integrations_family_test	cli/lib/nftban/tests/config_overlay_inte
 config_overlay_maintenance_family_test	cli/lib/nftban/tests/config_overlay_maintenance_family_test.sh	core	test	config-precedence	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 config_reload_truthfulness_v1229_2_test	cli/lib/nftban/tests/config_reload_truthfulness_v1229_2_test.sh	cli	test	cli	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 config_show_secret_redaction_v1227_test	cli/lib/nftban/tests/config_show_secret_redaction_v1227_test.sh	mail	test	config-secret-redaction	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+connectors_delivery_truth_v1238_test	cli/lib/nftban/tests/connectors_delivery_truth_v1238_test.sh	metrics	test	connectors	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 connlimit_claim_matches_keying_v1231_test	cli/lib/nftban/tests/connlimit_claim_matches_keying_v1231_test.sh	ddos	test	ddos-status-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 convergence_commit_transaction_v1229_11_test	cli/lib/nftban/tests/convergence_commit_transaction_v1229_11_test.sh	firewall	test	mode-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	90		
 convergence_serialization_v1229_11_test	cli/lib/nftban/tests/convergence_serialization_v1229_11_test.sh	firewall	test	mode-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
 core_ownership_identity_v1228_9_test	cli/lib/nftban/tests/core_ownership_identity_v1228_9_test.sh	core	test	legal-identity	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
 count_unknown_propagation_v1231_test	cli/lib/nftban/tests/count_unknown_propagation_v1231_test.sh	metrics	test	nft-counting-model	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+credentials_not_in_argv_v1238_test	cli/lib/nftban/tests/credentials_not_in_argv_v1238_test.sh	metrics	test	credentials	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 csf_observation_purity_v1229_test	cli/lib/nftban/tests/csf_observation_purity_v1229_test.sh	firewall	test	firewall	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 daemon_callable_neutrality_v1229_7_test	cli/lib/nftban/tests/daemon_callable_neutrality_v1229_7_test.sh	firewall	test	daemon-runtime-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 ddos_enable_disable_txn_v1233_1_test	cli/lib/nftban/tests/ddos_enable_disable_txn_v1233_1_test.sh	firewall	test	daemon-runtime-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	2400		
@@ -192,6 +196,7 @@ fw_l2cd_transition_counter_botguard_chain_test	cli/lib/nftban/tests/fw_l2cd_tran
 fw_rebuild_preserve_timed_bans_l2a_test	cli/lib/nftban/tests/fw_rebuild_preserve_timed_bans_l2a_test.sh	firewall	test	firewall-rebuild	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 fw_transition_health_truth_v1982_test	cli/lib/nftban/tests/fw_transition_health_truth_v1982_test.sh	firewall	test	firewall-transition-health	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 generation_read_nft_compat_v1236_1_test	cli/lib/nftban/tests/generation_read_nft_compat_v1236_1_test.sh	firewall	test	atomic-load	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+geoban_country_exception_v1238_test	cli/lib/nftban/tests/geoban_country_exception_v1238_test.sh	core	test	geoban	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 geoban_derived_state_convergence_v1228_8_test	cli/lib/nftban/tests/geoban_derived_state_convergence_v1228_8_test.sh	geoban	test	derived-state-convergence	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
 geoban_migration_v1228_7_test	cli/lib/nftban/tests/geoban_migration_v1228_7_test.sh	firewall	test	geoban-migration	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 geoban_refresh_execcondition_v159_test	cli/lib/nftban/tests/geoban_refresh_execcondition_v159_test.sh	geoban	test	geoban	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
@@ -229,6 +234,7 @@ lifecycle_matrix_observation_semantics_v1229_test	cli/lib/nftban/tests/lifecycle
 list_ipv6_clamp_v153_test	cli/lib/nftban/tests/list_ipv6_clamp_v153_test.sh	cli	test	list	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 logdir_foreign_content_safety_v1228_10_test	cli/lib/nftban/tests/logdir_foreign_content_safety_v1228_10_test.sh	packaging	test	fhs-permissions	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 login_classic_cursor_after_success_v1235_test	cli/lib/nftban/tests/login_classic_cursor_after_success_v1235_test.sh	loginmon	test	loginmon-classic-cursor	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+login_disable_apply_v1238_test	cli/lib/nftban/tests/login_disable_apply_v1238_test.sh	core	test	login	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 loginmon_ipc_health_truth_v1231_test	cli/lib/nftban/tests/loginmon_ipc_health_truth_v1231_test.sh	health	test	login-monitor	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 logretention_packaging_derivedstate_gateb_test	cli/lib/nftban/tests/logretention_packaging_derivedstate_gateb_test.sh	packaging	test	logretention	PACKAGE_BUILD	package-build	true	false	false	false	false	false			
 logretention_terminology_guard_gateb_test	cli/lib/nftban/tests/logretention_terminology_guard_gateb_test.sh	core	test	logretention	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

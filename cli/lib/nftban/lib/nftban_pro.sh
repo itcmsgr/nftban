@@ -358,14 +358,20 @@ EOF
     # Submit to Pro endpoint
     # v1.19.0: Use mktemp instead of predictable PID-based temp files (R17)
     local _pro_tmp_response
+    # v1.238 BUG/OBS-PORTAL-API-KEY-IN-ARGV (owner GO 2026-11-23): the bearer token is passed in a
+    # 0600 header file (curl -H @file), never on the command line (/proc/<pid>/cmdline is readable
+    # by every local user). Same rule as the GeoIP licence key (curl -K, nftban_geoip_download.sh).
+    local _pro_auth_hdr
     _pro_tmp_response=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_pro_XXXXXX")
-    trap 'rm -f "${_pro_tmp_response:-}"' RETURN
+    _pro_auth_hdr=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_pro_hdr_XXXXXX") || { rm -f "$_pro_tmp_response"; return 1; }
+    trap 'rm -f "${_pro_tmp_response:-}" "${_pro_auth_hdr:-}"' RETURN
+    printf 'Authorization: Bearer %s\n' "$token" > "$_pro_auth_hdr"
 
     local response
     local http_code
     http_code=$(curl -sf --connect-timeout "$NFTBAN_PRO_TIMEOUT" \
         -X POST \
-        -H "Authorization: Bearer $token" \
+        -H @"$_pro_auth_hdr" \
         -H "Content-Type: application/json" \
         -d "$payload" \
         -w "%{http_code}" \
@@ -373,7 +379,7 @@ EOF
         "$NFTBAN_PRO_INVENTORY_URL" 2>/dev/null || echo "000")
 
     response=$(cat "$_pro_tmp_response" 2>/dev/null || echo "")
-    rm -f "$_pro_tmp_response"
+    rm -f "$_pro_tmp_response" "$_pro_auth_hdr"
 
     case "$http_code" in
         200|201|202)
@@ -439,19 +445,25 @@ nftban_pro_check_license() {
     # Query status endpoint
     # v1.19.0: Use mktemp instead of predictable PID-based temp files (R17)
     local _pro_tmp_license
+    # v1.238 BUG/OBS-PORTAL-API-KEY-IN-ARGV (owner GO 2026-11-23): the bearer token is passed in a
+    # 0600 header file (curl -H @file), never on the command line (/proc/<pid>/cmdline is readable
+    # by every local user). Same rule as the GeoIP licence key (curl -K, nftban_geoip_download.sh).
+    local _pro_lic_hdr
     _pro_tmp_license=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_pro_XXXXXX")
-    trap 'rm -f "${_pro_tmp_license:-}"' RETURN
+    _pro_lic_hdr=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/nftban_pro_hdr_XXXXXX") || { rm -f "$_pro_tmp_license"; return 1; }
+    trap 'rm -f "${_pro_tmp_license:-}" "${_pro_lic_hdr:-}"' RETURN
+    printf 'Authorization: Bearer %s\n' "$token" > "$_pro_lic_hdr"
 
     local http_code
     http_code=$(curl -sf --connect-timeout "$NFTBAN_PRO_TIMEOUT" \
-        -H "Authorization: Bearer $token" \
+        -H @"$_pro_lic_hdr" \
         -w "%{http_code}" \
         -o "$_pro_tmp_license" \
         "${NFTBAN_PRO_STATUS_URL}?server_id=${server_id}" 2>/dev/null || echo "000")
 
     local response
     response=$(cat "$_pro_tmp_license" 2>/dev/null || echo "")
-    rm -f "$_pro_tmp_license"
+    rm -f "$_pro_tmp_license" "$_pro_lic_hdr"
 
     case "$http_code" in
         200)
@@ -691,7 +703,8 @@ nftban_community_disable() {
 nftban_community_show() {
     echo "Community Stats Payload (this is exactly what gets sent):"
     echo "========================================================="
-    nftban_community_build_payload
+    # v1.238: same builder as `submit` (schema v3) — this preview must match what the timer sends.
+    nftban_community_build_payload_v3
     echo ""
     echo "NOTE: No hostname, IP addresses, logs, or PII included."
 }
@@ -1076,8 +1089,13 @@ nftban_community_submit() {
     fi
 
     local url="${COMMUNITY_STATS_URL:-https://stats.nftban.com/api/v1/community}"
+    # v1.238 BUG-PRIVACY-COMMUNITY-SUBMIT-SENDS-MACHINE-DERIVED-SERVER-ID (owner GO 2026-11-24): the daily
+    # submit (nftban-community-stats.timer) sent the v2 payload, whose node_id is the PRO server_id
+    # (first 16 chars of /etc/machine-id + suffix) — an opted-in community report was joinable to a PRO
+    # account. Community is anonymous: send schema v3, whose only identifier is the random
+    # anonymous_install_id generated at opt-in (COMMUNITY_STATS_ID).
     local payload
-    payload=$(nftban_community_build_payload)
+    payload=$(nftban_community_build_payload_v3)
 
     echo "Submitting anonymous community stats..."
     local http_code

@@ -44,8 +44,8 @@ no(){ FAIL=$((FAIL+1)); echo "  ✗ $1${2:+ — $2}"; }
 [[ -f "$FW" ]] || { echo "cmd_firewall.sh not found at $FW"; exit 1; }
 
 echo "== Part A: lock + path vars defined and overridable =="
-grep -qE '_NFTBAN_SESSION_WL_LOCK="\$\{_NFTBAN_SESSION_WL_LOCK:-/run/nftban/session_whitelist\.lock\}"' "$FW" \
-  && ok "A1 shared lock var = /run/nftban/session_whitelist.lock (overridable)" \
+grep -qE '_NFTBAN_SESSION_WL_LOCK="\$\{_NFTBAN_SESSION_WL_LOCK:-\$\{NFTBAN_WRITERS_DIR:-/run/nftban-writers\}/session_whitelist\.lock\}"' "$FW" \
+  && ok "A1 shared lock var = /run/nftban-writers/session_whitelist.lock (v1.238; overridable)" \
   || no "A1 shared lock var" "missing/changed"
 grep -qE '_NFTBAN_SESSION_WHITELIST_PATH="\$\{_NFTBAN_SESSION_WHITELIST_PATH:-/etc/nftban/whitelist\.d/00-session\.conf\}"' "$FW" \
   && ok "A2 session path overridable" || no "A2 session path overridable" "missing/changed"

@@ -20,8 +20,10 @@ jobs:
   health:
     # v1.236: pinned to the image main last passed on (ubuntu-latest = 26.04 brings shellcheck 0.11 / SC2319).
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write # Required for auto-commit of STATUS.md on main branch
+    # v1.238 (Scorecard TokenPermissions, #1486): no job-level write grant; the job inherits
+    # top-level `contents: read`. The STATUS.md auto-commit below has been rejected by main's
+    # branch protection (GH006: PR required, admins enforced) on every run since 2026-07-16, so
+    # contents: write bought nothing; the push now fails on permission and still only warns.
 
     steps:
       - name: Checkout
@@ -50,7 +52,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck shfmt yamllint jq devscripts nftables
-          npm i -g markdownlint-cli2@0.17.2
+          # v1.238 (#1486, Scorecard PinnedDependencies): markdownlint-cli2 0.17.2 from a committed
+          # lockfile (integrity hashes), install scripts off, outside the checkout; rules unchanged.
+          mkdir -p "$RUNNER_TEMP/markdownlint"
+          cp .github/ci/markdownlint/package.json .github/ci/markdownlint/package-lock.json "$RUNNER_TEMP/markdownlint/"
+          npm ci --prefix "$RUNNER_TEMP/markdownlint" --ignore-scripts --no-audit --no-fund
+          echo "$RUNNER_TEMP/markdownlint/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Run health check
         run: .github/ci/health_check.sh
