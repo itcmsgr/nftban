@@ -14567,14 +14567,137 @@
       "category": "system",
       "config_file": "conf.d/logs.conf",
       "active_when": "always"
+    },
+    "FEED_ABUSEIPDB_URL": {
+      "type": "string",
+      "description": "AbuseIPDB blacklist API endpoint (FEED_<NAME>_URL defines a feed) — v1.238 schema: shipped in install/config/feeds.conf; read by nftban-core/feeds",
+      "introduced_in": "1.238.0",
+      "default": "https://api.abuseipdb.com/api/v2/blacklist",
+      "module": "feeds",
+      "config_file": "feeds.conf"
+    },
+    "FEED_ABUSEIPDB_FORMAT": {
+      "type": "string",
+      "description": "Provider format; \"abuseipdb\" = API download with the key file (cmd_feeds.go:1076) — v1.238 schema: shipped in install/config/feeds.conf; read by nftban-core/feeds",
+      "introduced_in": "1.238.0",
+      "default": "abuseipdb",
+      "module": "feeds",
+      "config_file": "feeds.conf"
+    },
+    "FEED_ABUSEIPDB_ENABLED": {
+      "type": "string",
+      "description": "Select the AbuseIPDB feed (needs an API key) — v1.238 schema: shipped in install/config/feeds.conf; read by nftban-core/feeds",
+      "introduced_in": "1.238.0",
+      "default": "false",
+      "module": "feeds",
+      "config_file": "feeds.conf",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "FEED_ABUSEIPDB_CATEGORY": {
+      "type": "string",
+      "description": "Feed category shown by nftban feeds — v1.238 schema: shipped in install/config/feeds.conf; read by nftban-core/feeds",
+      "introduced_in": "1.238.0",
+      "default": "reputation",
+      "module": "feeds",
+      "config_file": "feeds.conf"
+    },
+    "FEED_ABUSEIPDB_DESCRIPTION": {
+      "type": "string",
+      "description": "Feed description shown by nftban feeds — v1.238 schema: shipped in install/config/feeds.conf; read by nftban-core/feeds",
+      "introduced_in": "1.238.0",
+      "default": "AbuseIPDB blacklist - reported abusive IPs (API key required)",
+      "module": "feeds",
+      "config_file": "feeds.conf"
+    },
+    "FEED_ABUSEIPDB_INTERVAL": {
+      "type": "string",
+      "description": "Provider update interval label shown by nftban feeds list — v1.238 schema: shipped in install/config/feeds.conf; read by nftban-core/feeds",
+      "introduced_in": "1.238.0",
+      "default": "DAILY",
+      "module": "feeds",
+      "config_file": "feeds.conf"
+    },
+    "FEED_ABUSEIPDB_SIZE": {
+      "type": "string",
+      "description": "Expected size label shown by nftban feeds select — v1.238 schema: shipped in install/config/feeds.conf; read by nftban-core/feeds",
+      "introduced_in": "1.238.0",
+      "default": "up to 10,000 IPs (free plan)",
+      "module": "feeds",
+      "config_file": "feeds.conf"
+    },
+    "FEED_ABUSEIPDB_CONFIDENCE_MINIMUM": {
+      "type": "string",
+      "description": "Minimum abuse confidence score 25-100 (cmd_feeds.go:1087) — v1.238 schema: shipped in install/config/feeds.conf; read by nftban-core/feeds",
+      "introduced_in": "1.238.0",
+      "default": "100",
+      "module": "feeds",
+      "config_file": "feeds.conf"
+    },
+    "FEED_ABUSEIPDB_LIMIT": {
+      "type": "string",
+      "description": "Maximum entries requested 1-500000 (cmd_feeds.go:1087) — v1.238 schema: shipped in install/config/feeds.conf; read by nftban-core/feeds",
+      "introduced_in": "1.238.0",
+      "default": "10000",
+      "module": "feeds",
+      "config_file": "feeds.conf"
+    },
+    "FEED_ABUSEIPDB_MAX_AGE": {
+      "type": "string",
+      "description": "Snapshot expiry as a Go duration; empty or 0 = no expiry (internal/feeds/expiry.go) — v1.238 schema: shipped in install/config/feeds.conf; read by nftban-core/feeds",
+      "introduced_in": "1.238.0",
+      "default": "72h",
+      "module": "feeds",
+      "config_file": "feeds.conf"
+    },
+    "FEED_ABUSEIPDB_MIN_INTERVAL": {
+      "type": "string",
+      "description": "No new request sooner than this after the last successful refresh (internal/feeds/stale.go, cmd_feeds.go:1080) — v1.238 schema: shipped in install/config/feeds.conf; read by nftban-core/feeds",
+      "introduced_in": "1.238.0",
+      "default": "6h",
+      "module": "feeds",
+      "config_file": "feeds.conf"
+    },
+    "PORTSCAN_CLASSIC_GENERIC_CORROBORATE": {
+      "type": "string",
+      "description": "Classic engine: a \"generic\" detection auto-bans only if its distinct-port count reaches the corroboration floor; below it, log/alert only. Only \"true\" enables it (nftban_portscan_classic.sh:1553). Shipped conf.d/portscan/classic.conf:75",
+      "introduced_in": "1.238.0",
+      "default": "true",
+      "module": "portscan",
+      "config_file": "conf.d/portscan/classic.conf",
+      "$ref": "#/definitions/boolean_string"
+    },
+    "PORTSCAN_CLASSIC_GENERIC_CORROBORATE_PORTS": {
+      "type": "string",
+      "description": "Classic engine: distinct-port floor required to corroborate a \"generic\" auto-ban; empty falls back to PORTSCAN_CLASSIC_VERTICAL_PORTS (nftban_portscan_classic.sh:1554). Shipped conf.d/portscan/classic.conf:78",
+      "introduced_in": "1.238.0",
+      "default": "",
+      "module": "portscan",
+      "config_file": "conf.d/portscan/classic.conf"
+    },
+    "SSH_PORT": {
+      "type": "string",
+      "description": "Detected SSH port, written by nftban-installer to nftban.conf.local (lockout prevention; detection order: sshd listener, sshd_config, state file, this value)",
+      "introduced_in": "1.238.0",
+      "module": "core",
+      "config_file": "nftban.conf.local"
+    },
+    "NFTBAN_LOG_DIR": {
+      "type": "string",
+      "description": "Log directory (shipped install/config/nftban.conf:293; read by lib/env.sh)",
+      "introduced_in": "1.238.0",
+      "default": "/var/log/nftban",
+      "module": "core",
+      "config_file": "nftban.conf",
+      "$ref": "#/definitions/path"
     }
   },
   "deprecated": {
     "NFTBAN_FAIL2BAN_ENABLED": {
       "deprecated_in": "1.0.0",
-      "removed_in": null,
+      "removed_in": "1.0.0",
       "replaced_by": null,
-      "message": "Fail2ban integration removed in v1.0; use Suricata mode instead"
+      "message": "Fail2ban integration was removed in v1.0 (configloader no-op); this key has no effect. NFTBan only detects a co-installed fail2ban as a possible firewall conflict.",
+      "effect": "none"
     },
     "NFTBAN_BACKUP_GENERATIONS": {
       "deprecated_in": "1.201.2",
@@ -14661,5 +14784,13 @@
     "monitoring": "Login monitoring and alerting",
     "security": "Recovery, rollback, and safety settings",
     "network": "Trusted provider IP range management"
+  },
+  "patternProperties": {
+    "^FEED_[A-Z0-9_]+_(URL|ENABLED|CATEGORY|DESCRIPTION|INTERVAL|SIZE|FORMAT|MIN_INTERVAL|CONFIDENCE_MINIMUM|LIMIT|MAX_AGE)$": {
+      "type": "string",
+      "module": "feeds",
+      "description": "Custom feed setting (v1.238). A feed is defined by FEED_<NAME>_URL; the other suffixes are read by nftban-core (cmd_feeds.go parseFeedsConfig, internal/feeds) and the feeds CLI.",
+      "introduced_in": "1.238.0"
+    }
   }
 }
