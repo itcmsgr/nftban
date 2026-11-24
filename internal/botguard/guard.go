@@ -587,15 +587,19 @@ func (m *Module) classify(r *IPRecord) {
 		}
 		m.mu.Unlock()
 
-		// Publish event
-		m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
-			WithIP(r.IP.String()).
-			WithMessage(fmt.Sprintf("Bot guard: %s → %s", oldState, r.State)).
-			WithData("old_state", oldState.String()).
-			WithData("new_state", r.State.String()).
-			WithData("hit_count", r.HitCount).
-			WithData("reason", reason).
-			WithData("bot_name", result.BotName))
+		// Publish the ban event only for a Ban decision. v1.238
+		// (BUG-BOTGUARD-REALTIME-EVENTBAN-ON-ANY-STATE-CHANGE-INCL-ALLOW): the daemon turns every
+		// EventBan into a blacklist ban, so Allow/Pending/Grey transitions also created one.
+		if r.State == StateBan {
+			m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
+				WithIP(r.IP.String()).
+				WithMessage(fmt.Sprintf("Bot guard: %s → %s", oldState, r.State)).
+				WithData("old_state", oldState.String()).
+				WithData("new_state", r.State.String()).
+				WithData("hit_count", r.HitCount).
+				WithData("reason", reason).
+				WithData("bot_name", result.BotName))
+		}
 	}
 }
 
@@ -675,15 +679,19 @@ func (m *Module) applyVerification(vr VerifyResult) {
 		}
 		m.mu.Unlock()
 
-		m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
-			WithIP(record.IP.String()).
-			WithMessage(fmt.Sprintf("Bot guard verify: %s → %s", oldState, record.State)).
-			WithData("old_state", oldState.String()).
-			WithData("new_state", record.State.String()).
-			WithData("verify_status", vr.Status.String()).
-			WithData("bot_name", result.BotName).
-			WithData("hostname", vr.Hostname).
-			WithData("reason", result.Reason))
+		// Ban event only for a Ban decision (v1.238): a verified crawler (Allow) or a failed
+		// verification (Grey) must not create or refresh a blacklist ban.
+		if record.State == StateBan {
+			m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
+				WithIP(record.IP.String()).
+				WithMessage(fmt.Sprintf("Bot guard verify: %s → %s", oldState, record.State)).
+				WithData("old_state", oldState.String()).
+				WithData("new_state", record.State.String()).
+				WithData("verify_status", vr.Status.String()).
+				WithData("bot_name", result.BotName).
+				WithData("hostname", vr.Hostname).
+				WithData("reason", result.Reason))
+		}
 	}
 }
 
