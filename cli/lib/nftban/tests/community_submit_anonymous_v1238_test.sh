@@ -60,7 +60,10 @@ run() { # $1 case dir, $2 opt-in yes|no, $3 pro yes|no, $4 function -> stdout
     mkdir -p "$d/curl"
     env -i PATH="$W/bin:/usr/bin:/bin" HOME="$d" F2_CURL_DIR="$d/curl" NFTBAN_CONFIG_DIR="$d/etc" \
         NFTBAN_PRO_SERVER_ID_FILE="$d/etc/server_id" NFTBAN_PRO_TOKEN_FILE="$d/etc/pro.token" \
-        bash -c 'source "$1" >/dev/null 2>&1; NFTBAN_COMMUNITY_CONF="$NFTBAN_CONFIG_DIR/conf.d/community_stats.conf"; "$2"' _ "$LIB" "$4" 2>&1
+        F2_NOERREXIT="${F2_NOERREXIT:-}" \
+        bash -c 'source "$1" >/dev/null 2>&1; NFTBAN_COMMUNITY_CONF="$NFTBAN_CONFIG_DIR/conf.d/community_stats.conf"
+                 [[ -n "$F2_NOERREXIT" ]] && set +e +o pipefail   # see the non-vacuity step
+                 "$2"' _ "$LIB" "$4" 2>&1
 }
 calls() { find "$W/$1/curl" -name 'call.*' 2>/dev/null | wc -l | tr -d ' '; }
 field() { # $1 case -> value after -d / --data* in the first call
@@ -105,7 +108,10 @@ noleak c3 "Free host"
 echo "=== preview + non-vacuity ==="
 s_rc=0; s=$(run c4 yes yes nftban_community_show) || s_rc=$?   # keep the rc: a failing builder must report, not abort the script
 [[ "$s" == *'"schema_version": 3'* && "$s" == *"$IID"* && "$s" != *"$SID"* ]] && ok "community show previews the same v3 payload" || no "show differs from submit" "rc=$s_rc $(tail -3 <<<"$s")"
-v2_rc=0; v2=$(run c5 yes yes nftban_community_build_payload) || v2_rc=$?
+# The lib sets `set -Eeuo pipefail` when sourced; the v2 builder reads /usr/lib/nftban/VERSION, absent on a CI
+# runner, so under errexit it exits 1 with no payload. Run the OLD builder without errexit/pipefail: the property
+# proven here (node_id = PRO server_id) does not depend on the version file. PASS only if the sentinel is seen.
+v2_rc=0; v2=$(F2_NOERREXIT=1 run c5 yes yes nftban_community_build_payload) || v2_rc=$?
 [[ "$v2" == *"$SID"* ]] && ok "non-vacuity: the v2 builder (pre-fix submit) carries the PRO server_id" || no "non-vacuity: v2 sentinel not seen" "rc=$v2_rc $(tail -5 <<<"$v2")"
 
 echo ""
