@@ -620,15 +620,28 @@ EOF
 EOF
 )
 
-    # Send to portal with real ACK
-    local response http_code
-    response=$(curl -sf -X POST "$portal_url" \
-        -H "Content-Type: application/json" \
-        -H "Authorization: Bearer $api_key" \
-        -H "X-NFTBan-Host-Key: $host_key" \
+    # Send to portal with real ACK.
+    # v1.238 OBS-PORTAL-API-KEY-IN-ARGV (owner GO 2026-11-23): the API key and host key travel in a
+    # 0600 header file (curl -H @file) and the payload on stdin (-d @-), never on the command line
+    # (/proc/<pid>/cmdline is readable by every local user); the key is never sent over plain http.
+    if [[ "$portal_url" != https://* ]]; then
+        log_warn "Portal: NFTBAN_PORTAL_URL must use https:// (the API key is not sent over plain http)"
+        record_export_result "portal" "false" "insecure_url"
+        return 1
+    fi
+    local response http_code hdr_file
+    hdr_file=$(mktemp "${NFTBAN_RUN_DIR:-/run/nftban}/portal_hdr.XXXXXX") || {
+        record_export_result "portal" "false" "mktemp_failed"
+        return 1
+    }
+    printf 'Content-Type: application/json\nAuthorization: Bearer %s\nX-NFTBan-Host-Key: %s\n' \
+        "$api_key" "$host_key" > "$hdr_file"
+    response=$(printf '%s' "$payload" | curl -sf --proto '=https' -X POST "$portal_url" \
+        -H @"$hdr_file" \
         --max-time "$timeout" \
         -w "\n%{http_code}" \
-        -d "$payload" 2>/dev/null) || response=""
+        -d @- 2>/dev/null) || response=""
+    rm -f "$hdr_file"
 
     http_code=$(echo "$response" | tail -1)
 
