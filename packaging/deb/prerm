@@ -635,6 +635,75 @@ nftban_forward_unmanaged_preflight() {
 # Remove NFTBan's OWN immutable flags before upgrade/remove (v1.234: only flags whose
 # ownership is proven; see the inlined library). Candidates:
 # /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh
+# =============================================================================
+# v1.238 operator configuration backup at removal (owner 2026-11-23, #1508)
+# =============================================================================
+# dpkg deletes the shipped config files during a purge, so the operator's configuration is copied
+# here, in `prerm remove` — before dpkg removes anything — for both `apt remove` and a direct purge
+# of an installed package (upgrades call prerm with `upgrade` and are not affected). If the backup
+# cannot be completed and validated, the removal STOPS here (exit 1): the package stays installed
+# and dpkg runs `postinst abort-remove`. The helpers are copies of packaging/deb/postrm's (maintainer
+# scripts cannot share a library at this point) — keep them identical.
+_NFTBAN_BACKUP_MARK=/var/lib/nftban/.purge-config-backup
+
+_nftban_backup_valid() {  # <dir> : ours, root:root 0700, not a symlink, holds the config archive
+    case "$1" in /var/tmp/nftban-config-backup-*) ;; *) return 1 ;; esac
+    case "$1" in *..*|*//*) return 1 ;; esac   # VM check D4: no path traversal in the record
+    [ -d "$1" ] && [ ! -L "$1" ] || return 1
+    [ "$(stat -c '%u:%g:%a' "$1" 2>/dev/null)" = "0:0:700" ] || return 1
+    [ -f "$1/etc-nftban.tar" ] && [ ! -L "$1/etc-nftban.tar" ] && [ -s "$1/etc-nftban.tar" ]
+}
+
+_nftban_backup_take() {  # prints the new backup directory; rc!=0 = nothing usable was written
+    # (the reason is printed on stderr as "nftban: backup failed: ...")
+    [ -d /etc/nftban ] || return 1
+    _b=$(umask 077; mktemp -d /var/tmp/nftban-config-backup-XXXXXXXX 2>&1) || {
+        echo "nftban: backup failed: cannot create a private directory in /var/tmp: $_b" >&2; return 1; }
+    if ! _e=$( (umask 077; tar -C / -cpf "$_b/etc-nftban.tar" etc/nftban) 2>&1 ); then
+        rm -rf "$_b"; echo "nftban: backup failed: writing $_b/etc-nftban.tar: ${_e:-tar error}" >&2; return 1
+    fi
+    if [ -d /var/lib/nftban/state ] && ! _e=$( (umask 077; tar -C / -cpf "$_b/var-lib-nftban-state.tar" var/lib/nftban/state) 2>&1 ); then
+        rm -rf "$_b"; echo "nftban: backup failed: writing $_b/var-lib-nftban-state.tar: ${_e:-tar error}" >&2; return 1
+    fi
+    _nftban_backup_valid "$_b" || { rm -rf "$_b"; echo "nftban: backup failed: $_b did not validate (owner/mode/content)" >&2; return 1; }
+    printf '%s\n' "$_b"
+}
+
+_nftban_backup_report() {  # <dir>
+    echo "nftban: Configuration backup (root-only, kept until you delete it): $1"
+    echo "nftban:   Contents: $(cd "$1" && ls -1 | tr '\n' ' ')"
+    echo "nftban:   Restore after reinstalling, as root (checks that the backup is root-owned, 0700 and has no links):"
+    # VM check D1: after a reinstall /etc/nftban/nftban.conf carries the package's immutable flag, so
+    # extracting it fails (rc 2) and the newer archive was never applied. It is package-managed
+    # (operator settings belong in nftban.conf.local), so the restore skips it; its copy stays in the
+    # archive.
+    echo "nftban:     B=$1; [ ! -L \"\$B\" ] && [ \"\$(stat -c %u:%g:%a \"\$B\")\" = 0:0:700 ] && [ -z \"\$(find \"\$B\" -mindepth 1 ! -type f -print -quit)\" ] && tar -C / -xpf \"\$B/etc-nftban.tar\" --exclude=etc/nftban/nftban.conf etc/nftban && { [ ! -f \"\$B/etc-nftban-at-purge.tar\" ] || tar -C / -xpf \"\$B/etc-nftban-at-purge.tar\" --exclude=etc/nftban/nftban.conf etc/nftban; } && echo restored"
+    echo "nftban:   nftban.conf is package-managed and is NOT restored by this command. Your saved copy is in the archive;"
+    echo "nftban:     view it:  tar -xOf $1/etc-nftban.tar etc/nftban/nftban.conf"
+    echo "nftban:     compare:  tar -xOf $1/etc-nftban.tar etc/nftban/nftban.conf | diff /etc/nftban/nftban.conf -"
+    echo "nftban:     then put the settings you changed into /etc/nftban/nftban.conf.local (it overrides nftban.conf)."
+    echo "nftban:   (etc-nftban.tar = copy taken at package removal, including shipped config files; etc-nftban-at-purge.tar, when present = newer copy taken at purge, applied second)"
+    echo "nftban:   Remove it when no longer needed: rm -rf $1"
+    logger -t nftban "configuration backup kept at $1 (root-only; remove with: rm -rf $1)" 2>/dev/null || true
+}
+
+if [ "$1" = "remove" ] && [ -d /etc/nftban ]; then
+    rm -f "$_NFTBAN_BACKUP_MARK" 2>/dev/null || true
+    if _nftban_rm_backup=$(_nftban_backup_take); then
+        (umask 077; printf '%s\n' "$_nftban_rm_backup" > "$_NFTBAN_BACKUP_MARK") 2>/dev/null || true
+        _nftban_backup_report "$_nftban_rm_backup"
+        echo "nftban:   Note: if you purge later, changes to *.local files and lists are kept by the purge; edits made after removal to shipped config files (non-.local) are deleted by dpkg before the purge runs — put them in .local files."
+    else
+        echo "nftban: ERROR: removal STOPPED — the configuration backup could not be completed (see the reason above)." >&2
+        echo "nftban:   Backup location: /var/tmp (private directory nftban-config-backup-XXXXXXXX)." >&2
+        echo "nftban:   Nothing was removed; NFTBan stays installed and /etc/nftban is unchanged." >&2
+        echo "nftban:   Retry: free space in /var/tmp or fix its permissions (df -h /var/tmp; ls -ld /var/tmp), then run the removal again." >&2
+        logger -t nftban "removal stopped: configuration backup failed in /var/tmp" 2>/dev/null || true
+        exit 1
+    fi
+    unset _nftban_rm_backup
+fi
+
 nftban_immut_unlock_owned | while read -r _st _p; do echo "nftban: immutable flag $_st: $_p"; done
 
 case "$1" in
