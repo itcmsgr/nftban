@@ -56,7 +56,7 @@ derive their authoritative verdict from kernel and validator evidence.
 - HTTP bot classification (BotGuard) using dedicated nftables HTTP signal sets
 - Malicious-HTTP / exploit-probe scanning (BotScan) with durable ban-evidence handoff to the daemon
 - Server public IPv4/IPv6 reputation monitoring via DNSBL/RBL checks, with explicit degraded-coverage reporting — observe-only and non-enforcing
-- Optional Suricata alert ingestion (EVE JSON from an external Suricata; see [Known limitations](#known-limitations-as-of-v1238))
+- Optional Suricata alert ingestion (EVE JSON from an external Suricata; see [Known limitations](#known-limitations-v1238-unreleased))
 - 4-axis health model with kernel-derived truth validator
 - Atomic nftables ruleset transaction (validate before load)
 - Structured transactional installer with emergency SSH protection and per-run forensic logging
@@ -113,7 +113,7 @@ Interpretation rules:
 | **DNS Tunnel Detection** | Suspicious DNS behavior | DNS-query analysis | Advisory and non-blocking |
 
 Suricata integration: the `nftban suricata` CLI reports status only; alert ingestion has a known
-input-continuity limitation (see [Known limitations](#known-limitations-as-of-v1238)).
+input-continuity limitation (see [Known limitations](#known-limitations-v1238-unreleased)).
 
 See the [Architecture Overview](https://github.com/itcmsgr/nftban/wiki/Architecture-Overview)
 for the full protection-domain / evidence / runtime taxonomy.
@@ -183,7 +183,7 @@ sudo apt install -y ./nftban-ubuntu22.04-amd64.deb
 ```
 
 
-### Known limitations (as of v1.238)
+### Known limitations (v1.238, Unreleased)
 
 - **Suricata alert input.** On hosts with the Suricata integration enabled, bans already in the
   firewall stay enforced, but if the alert input (`/var/log/nftban/suricata/eve-alerts.json`) is lost
@@ -370,8 +370,8 @@ All packages under `internal/` are implementation details.
 
 - **Linux**: Rocky / Alma / RHEL 9–10, Ubuntu 22.04 / 24.04 / 26.04 LTS (Resolute Raccoon), Debian 12 / 13
 - **nftables**: 1.0+
-- **Bash**: 4.4+
-- **systemd**: 252+
+- **Bash** and **systemd**: the versions shipped by the platforms listed above (the packages
+  declare `bash >= 4.0`; a single cross-platform minimum for systemd is not verified)
 - **jq**: JSON processor
 - **Go 1.26.11+**: For building from source (optional; the `go` directive in `go.mod`)
 
