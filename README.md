@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/github/v/tag/itcmsgr/nftban?label=version&sort=semver&color=blue)](https://github.com/itcmsgr/nftban/releases)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
-[![Build: Go 1.25](https://img.shields.io/badge/Build-Go%201.25-00ADD8.svg)](https://go.dev/)
+[![Build: Go 1.26](https://img.shields.io/badge/Build-Go%201.26-00ADD8.svg)](https://go.dev/)
 [![FHS Compliant](https://img.shields.io/badge/FHS-Compliant-success)]()
 [![IPv4 + IPv6](https://img.shields.io/badge/IPv4%20%2B%20IPv6-supported-brightgreen)]()
 [![Packages](https://img.shields.io/badge/packages-DEB%20%7C%20RPM-blue)]()
@@ -56,7 +56,7 @@ derive their authoritative verdict from kernel and validator evidence.
 - HTTP bot classification (BotGuard) using dedicated nftables HTTP signal sets
 - Malicious-HTTP / exploit-probe scanning (BotScan) with durable ban-evidence handoff to the daemon
 - Server public IPv4/IPv6 reputation monitoring via DNSBL/RBL checks, with explicit degraded-coverage reporting — observe-only and non-enforcing
-- Optional Suricata DPI integration (EVE JSON)
+- Optional Suricata alert ingestion (EVE JSON from an external Suricata; see [Known limitations](#known-limitations-as-of-v1238))
 - 4-axis health model with kernel-derived truth validator
 - Atomic nftables ruleset transaction (validate before load)
 - Structured transactional installer with emergency SSH protection and per-run forensic logging
@@ -111,6 +111,9 @@ Interpretation rules:
 | **Suricata Integration** | IDS-detected network threats | Suricata EVE JSON (external IDS) | External IDS producer + NFTBan processing |
 | **RBL Monitoring** | Server-IP reputation and mail-delivery blocklisting risk | Public IPv4/IPv6 DNSBL checks | Scheduled and on-demand; observe-only; alerts and reports (no bans, no nftables writes) |
 | **DNS Tunnel Detection** | Suspicious DNS behavior | DNS-query analysis | Advisory and non-blocking |
+
+Suricata integration: the `nftban suricata` CLI reports status only; alert ingestion has a known
+input-continuity limitation (see [Known limitations](#known-limitations-as-of-v1238)).
 
 See the [Architecture Overview](https://github.com/itcmsgr/nftban/wiki/Architecture-Overview)
 for the full protection-domain / evidence / runtime taxonomy.
@@ -180,92 +183,16 @@ sudo apt install -y ./nftban-ubuntu22.04-amd64.deb
 ```
 
 
-### ⚠️ Known issue in v1.233.1: a fresh installation may not complete
+### Known limitations (as of v1.238)
 
-**What was reproduced:** on the fresh installations tested below, the NFTBan install transaction does not complete. Upgrades of a running
-installation whose core timers are already active may avoid this failure; this has not been proven for every upgrade path.
+- **Suricata alert input.** On hosts with the Suricata integration enabled, bans already in the
+  firewall stay enforced, but if the alert input (`/var/log/nftban/suricata/eve-alerts.json`) is lost
+  or stalls, new Suricata-driven bans can stop. The package does not create or rotate that file, and
+  the reader does not keep its read position across a `copytruncate` rotation. Rotating the file by
+  hand with `copytruncate` is **not** a verified workaround. A repair is planned for v1.239.
 
-#### Symptom
-The package manager (`dnf` / `apt`) reports success, but NFTBan's install transaction does not complete:
-
-- `/var/lib/nftban/state/install_state` shows `INSTALL_STATE=FAILED_REBUILD` (not `COMMITTED`)
-- the installer log reports the post-rebuild validation finding `VAL-TIMER-001` ("no active nftban timers")
-- NFTBan's timers are left disabled, so maintenance, watchdog and feed updates do not run
-- the `nftban` tables are loaded, and a temporary table, `inet nftban_install_emergency`, that keeps SSH open is left in place
-
-**Cause:** the installer validates the firewall before it enables NFTBan's timers. A related defect is that re-running the package
-transaction (a reinstall) does not remove the temporary SSH table. Both are scheduled to be fixed in v1.234.
-
-#### Tested results (v1.233.1)
-
-**Fresh installs on clean images:**
-
-| Platform | Initial condition | Package (sha256) | Result |
-|---|---|---|---|
-| AlmaLinux 9.8, SELinux enforcing | clean image, no firewall service | `nftban-el9-x86_64.rpm` (`be493675563c9b6b…`) | `FAILED_REBUILD` (VAL-TIMER-001), dnf rc 0 |
-| Ubuntu 24.04.4 | clean image, `ufw` disabled first | `nftban-ubuntu24.04-amd64.deb` (`8cdea1a750402238…`) | `FAILED_REBUILD` (VAL-TIMER-001), apt rc 0 |
-| Ubuntu 24.04.4 | clean image, stock `ufw` unit enabled (inactive) | `nftban-ubuntu24.04-amd64.deb` (`8cdea1a750402238…`) | `FAILED_AUTHORITY_ABORT` (UFW detected; takeover not approved) |
-
-**Other paths observed separately:**
-
-| Path | Platform | Result |
-|---|---|---|
-| Recovery after an authority abort (UFW takeover approved with `NFTBAN_TAKEOVER=1 … --repair`) | Ubuntu 26.04.1 (`nftban-ubuntu26.04-amd64.deb`, `43ddf512c941c65c…`) | `FAILED_REBUILD` (VAL-TIMER-001) |
-| Reinstall after an uninstall (state directory kept) | Ubuntu 24.04 (DEB), Rocky 9 (RPM) | `FAILED_REBUILD` (VAL-TIMER-001) |
-
-Other distributions share the same installer but have not been tested on a clean image.
-
-#### Recovery (validated only for `FAILED_REBUILD` on AlmaLinux 9.8 with SELinux enforcing and on Ubuntu 24.04.4, SSH on port 22)
-**Not validated** for other distributions, custom SSH ports, or installs that stopped with `FAILED_AUTHORITY_ABORT`. For
-`FAILED_AUTHORITY_ABORT`, first decide whether NFTBan should take over the other firewall; see the installer's printed guidance.
-
-Keep an existing SSH session (or console access) open throughout. Keep the downloaded package in `/tmp`.
-
-**1. Enable NFTBan's core timers.** These are exactly the timers a completed install enables. Leave every other `nftban-*.timer` unchanged:
-the optional timers (anonymous community stats, weekly auto-update apply, Pro, and the others) keep their opt-in state.
-```
-sudo systemctl enable --now nftban-maintenance.timer nftban-health.timer nftban-unified-exporter.timer \
-  nftban-core-geoip.timer nftban-core-feeds.timer nftban-watchdog.timer nftban-queue.timer \
-  nftban-update-check.timer nftban-geoban-refresh.timer nftban-botscan.timer nftban-botscan-collector.timer
-```
-
-**2. Confirm NFTBan's rules permit your SSH port, then remove the temporary table.** All of the following must print `yes`:
-```
-P=$(sudo sshd -T | awk '$1=="port"{print $2}'); echo "sshd port: $P"
-for fam in ip ip6; do
-  sudo nft get element $fam nftban tcp_ports_in "{ $P }" >/dev/null 2>&1 && echo "$fam port $P allowed: yes" || echo "$fam port $P allowed: NO"
-  sudo nft list chain $fam nftban input | grep -qF 'tcp dport @tcp_ports_in ct state new' && echo "$fam accept rule: yes" || echo "$fam accept rule: NO"
-done
-```
-Only if every line says `yes`:
-```
-sudo nft delete table inet nftban_install_emergency
-```
-Now, **without closing your current session**, open a **new** SSH connection to the server. If it fails, stop and restore access from the still-open
-session or the console before doing anything else.
-
-**3. Re-run the package transaction once:**
-```
-# AlmaLinux / Rocky / RHEL 9
-sudo dnf -y reinstall /tmp/nftban-el9-x86_64.rpm
-# Ubuntu 24.04
-sudo apt-get install --reinstall -y /tmp/nftban-ubuntu24.04-amd64.deb
-```
-
-In testing, the commands above, run verbatim, reached `COMMITTED` on both platforms, including a new SSH connection after step 2, and the
-state was unchanged after a reboot. Across all runs, 6 of 6 reached `COMMITTED`. If the check in step 2 prints `NO`, the temporary table
-must stay, and the procedure stops there. On Ubuntu, if `apt` reports that the dpkg lock is held (for example by unattended-upgrades),
-wait until it is released and re-run step 3.
-
-Step 2 is required: without it, the reinstall ends `DEGRADED` (`no_emergency_table`). Re-running the installation without step 1 fails
-again.
-
-#### Verify
-```
-grep INSTALL_STATE /var/lib/nftban/state/install_state    # expect COMMITTED
-systemctl is-active nftband                                # expect active
-nft list tables                                            # expect ip nftban and ip6 nftban, and no nftban_install_emergency
-```
+Release-specific known issues are listed in [CHANGELOG.md](CHANGELOG.md) under each release.
+Standing limitations: [Known Limitations](https://github.com/itcmsgr/nftban/wiki/Known-Limitations-and-Validation-Scope).
 
 ---
 
@@ -327,11 +254,9 @@ nftban health                                  # 4-axis truth table
 nftban support                                 # collect a diagnostic bundle
 ```
 
-`nftban support` writes `/tmp/nftban-support-<timestamp>.tar.gz`. Move or copy that
-file somewhere durable before running any repair — a repair can destroy the state the
-bundle explains. (`nftban support --output DIR` writes straight to `DIR`, but that flag
-works only on **current main / upcoming v1.229.12 — not yet published**; on v1.229.11 it
-exits 1 and produces no bundle.)
+`nftban support` writes `/tmp/nftban-support-<timestamp>.tar.gz`; `nftban support --output DIR`
+writes it to `DIR` (v1.229.12 and later). Move or copy the bundle somewhere durable before
+running any repair — a repair can destroy the state the bundle explains.
 
 `--timeout` requires a positive integer (seconds) — non-integer / negative /
 zero / fractional / signed / hex / leading-zero values are rejected at parse
@@ -409,11 +334,12 @@ These invariants are enforced by validation logic and CI gates.
 
 ## Metrics and Observability
 
-The daemon serves runtime metrics at `http://127.0.0.1:9580/metrics`
-(the `/metrics` endpoint is loopback-restricted; Prometheus text exposition
-format). This is the canonical runtime metrics surface. Note that the daemon's
-`:9580` listener binds all interfaces and its `/health` and `/api/v1/*`
-endpoints are not loopback-restricted — firewall `:9580` to trusted sources.
+The daemon serves runtime metrics at `http://127.0.0.1:9580/metrics` (Prometheus text
+exposition format 0.0.4; the `/metrics` endpoint answers loopback clients only). This is the
+canonical runtime metrics surface. The listener binds `127.0.0.1:9580` by default. The same
+listener serves `/health` and `/api/v1/*` without authentication. A non-loopback
+`NFTBAN_API_ADDR` is refused (the daemon falls back to loopback) unless the daemon's environment
+sets `NFTBAN_API_ALLOW_INSECURE_BIND=YES`; if you do that, restrict `:9580` to trusted sources.
 Validator-backed health surfaces use the validator as their canonical
 kernel-evidence source, reducing duplicate nftables inspection.
 
@@ -447,7 +373,7 @@ All packages under `internal/` are implementation details.
 - **Bash**: 4.4+
 - **systemd**: 252+
 - **jq**: JSON processor
-- **Go 1.25+**: For building from source (optional; matches the `go.mod` toolchain)
+- **Go 1.26.11+**: For building from source (optional; the `go` directive in `go.mod`)
 
 Ubuntu 26.04 LTS (Resolute Raccoon) is a **Tier 1** target — released, packaged,
 and installable — see the [Quick Install — Tier 1](#tier-1--newer-platforms)
@@ -461,9 +387,26 @@ install snippet and `.deb` URL. Tier 0 remains the primary/recommended baseline
 
 **SLSA Level 3 provenance for the standalone `nftban-core` release binary** (other
 release assets — `nftband` and the complete DEB/RPM packages — are checksum-verified
-via `SHA256SUMS`, not covered by that provenance). Plus automated security checks —
-CodeQL, OSV-Scanner, gitleaks, Trivy, gosec, ShellCheck, Semgrep, fuzzing, and
-Dependency Review — with an SBOM on every release and all GitHub Actions SHA-pinned.
+via `SHA256SUMS`, not covered by that provenance).
+
+Automated checks, with the workflow (and job) that runs each one:
+
+| When | Check | Workflow — job |
+|---|---|---|
+| Every pull request; **required to merge** | CodeQL | `codeql.yml` — CodeQL Analysis (Go) |
+| | ShellCheck | `shellcheck.yml` — ShellCheck - Find bash errors |
+| | Semgrep | `semgrep.yml` — Semgrep Scan |
+| | gitleaks (secrets) | `gitleaks.yml` — Scan for secrets |
+| | gosec, Trivy, govulncheck | `secure-go.yml` — Build, Test, Scan (Go) |
+| Every pull request (reported, not required to merge) | OSV-Scanner | `osv-scanner.yml` — OSV Vulnerability Scan |
+| | Dependency Review | `dependency-review.yml` — Dependency Review |
+| Push to `main` and on a schedule | Go fuzzing | `fuzz.yml` — Fuzz Tests |
+| Every release | SBOM (Syft) and `SHA256SUMS` | `release.yml` — Create GitHub Release |
+| | SLSA L3 provenance for `nftban-core` | `release.yml` — Build nftban-core (SLSA3) |
+
+GitHub Actions are pinned by commit SHA, with one exception: the SLSA builder
+(`release.yml`) must be referenced by its version tag, because a commit-SHA reference
+breaks that builder (accepted OpenSSF Scorecard exception).
 
 **Reporting is split by process (shared `security@nftban.com` mailbox):** security
 **vulnerabilities** → the private process in [SECURITY.md](SECURITY.md) (GitHub private
