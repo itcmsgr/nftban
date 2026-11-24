@@ -264,10 +264,11 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 	}
 	metrics.RecordBanWithIP(source, family, ip)
 
-	// Log ban to bans.log for stats tracking
-	// v1.238: same mapping as the event subscriber (ban_source_label.go); a direct BotScan ban
-	// (source "botscan") was written as "manual" here.
-	banSource, _ := banSourceLabel(source, "")
+	// Log ban to bans.log for stats tracking.
+	// v1.238: classSource drives the ban class exactly as before; logSource is what bans.log shows
+	// (ban_label.go) — a direct BotScan ban keeps class manual but is logged as botscan.
+	classSource, logSource := ipcBanLabels(source)
+	banSource := classSource
 	country := lookupCountry(ip)
 	// BLC-1: determine ban class for lifecycle logging
 	banClass := banlog.ClassTemp
@@ -279,7 +280,7 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 		banClass = banlog.ClassEscalated
 	}
 	banID := banlog.GenerateBanID()
-	_ = banlog.LogBanFull(ip, banSource, country, reason, banID, timeout, banClass)
+	_ = banlog.LogBanFull(ip, logSource, country, reason, banID, timeout, banClass)
 
 	// Track permanent ban if requested (timeout=0 and permanent flag set)
 	if permanent && timeout == 0 {

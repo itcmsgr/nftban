@@ -231,10 +231,9 @@ func (d *Daemon) Run() error {
 				}
 				metrics.RecordBanWithIP(e.Source, family, e.IP)
 				// Log to bans.log with GeoIP country lookup
-				// v1.238: one mapping for both bans.log writers (ban_source_label.go); a BotScan
-				// signal arrives as module botguard with data source=clock3_batch.
-				dataSource, _ := e.Data["source"].(string)
-				banSource, persistKey := banSourceLabel(e.Source, dataSource)
+				// v1.238: label only (ban_label.go); class, duration and set below do not use it.
+				eventDataSource, _ := e.Data["source"].(string)
+				banSource, persistKey := subscriberBanLabel(e.Source, eventDataSource)
 				country := lookupCountry(e.IP)
 				// v1.41.0: Generate ban correlation ID to link BAN→UNBAN entries
 				banID := banlog.GenerateBanID()
