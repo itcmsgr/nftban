@@ -1940,6 +1940,45 @@ fi
 exit 0
 
 %postun
+# >>> NFTBAN_RELEASE_TABLES_BEGIN >>>
+# v1.238 (owner 2026-11-24, audit KERNEL_WRITER_AUDIT_d016f838 V2): flush and delete the
+# nftban ip/ip6 tables under the CANONICAL write boundary /run/nftban-writers/nft_writers.lock
+# (root only; fhs-spec, tmpfiles). The pre-v1.238 lines locked /run/nftban/nft_writers.lock,
+# a file no other writer uses (the boundary moved in v1.236), and RPM postun had already
+# removed /run/nftban. Same protocol as nft_writers.sh nftban_writers_acquire: publish the
+# intent, wait at most 60 s for LOCK_EX. nft_writers.lock is not under the one-release
+# legacy-path rule (that covers nft_operations / session_whitelist / maintenance locks).
+# BUSY = NOT REMOVED: no table is touched without the lock; the tables are kept (their SSH
+# accept rules stay) and a message names the manual step. REPORT, DO NOT ABORT, as in
+# _nftban_uninstall_synproxy_raw: the package removal itself does not fail on it.
+# Byte-identical copies: packaging/deb/postrm, packaging/build_nftban.sh (RPM postun) -
+# drift-checked by cli/lib/nftban/tests/uninstall_release_tables_lock_v1238_test.sh.
+_nftban_release_tables() {
+    command -v nft >/dev/null 2>&1 || return 0
+    _nrt_dir=/run/nftban-writers
+    [ -d "\$_nrt_dir" ] || mkdir -m 0700 "\$_nrt_dir" 2>/dev/null || true
+    if ! command -v flock >/dev/null 2>&1 || ! { exec 9>>"\$_nrt_dir/nft_writers.lock"; } 2>/dev/null; then
+        echo "nftban: WARN: cannot use \$_nrt_dir/nft_writers.lock - nftban tables NOT removed; when safe run: nft delete table ip nftban; nft delete table ip6 nftban" >&2
+        return 0
+    fi
+    _nrt_boot=\$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)
+    echo "pid=\$\$ boot=\$_nrt_boot" > "\$_nrt_dir/nft_writers.intent" 2>/dev/null || true
+    if ! flock -w 60 9; then
+        exec 9>&-
+        rm -f "\$_nrt_dir/nft_writers.intent" 2>/dev/null || true
+        echo "nftban: WARN: the nft write boundary (\$_nrt_dir/nft_writers.lock) stayed busy for 60s - nftban tables NOT removed; when it is free run: nft delete table ip nftban; nft delete table ip6 nftban" >&2
+        return 0
+    fi
+    for _nrt_fam in ip ip6; do
+        nft flush table "\$_nrt_fam" nftban 2>/dev/null || true  # nftban:held
+        nft delete table "\$_nrt_fam" nftban 2>/dev/null || true  # nftban:held
+    done
+    exec 9>&-
+    rm -f "\$_nrt_dir/nft_writers.intent" 2>/dev/null || true
+    return 0
+}
+# <<< NFTBAN_RELEASE_TABLES_END <<<
+
 # >>> NFTBAN_SYNPROXY_RAW_CLEANUP_BEGIN >>>
 # v1.233.1 BUG-UNINSTALL-DOES-NOT-REMOVE-SYNPROXY-RAW-NOTRACK-RULES.
 # NFTBan's SYNPROXY notrack rules live in the FOREIGN tables ip/ip6 raw, chain
@@ -2124,13 +2163,8 @@ if [ \$1 -eq 0 ]; then
 
     # STEP 4: Flush and delete nftables tables (CRITICAL — rules persist otherwise)
     if command -v nft >/dev/null 2>&1; then
-        # v1.236: the write boundary (nft_writers.lock EXCLUSIVE, bounded), inline: the
-        # library may already be gone here.
-        mkdir -p /run/nftban 2>/dev/null || true
-        flock -w 60 /run/nftban/nft_writers.lock nft flush table ip nftban 2>/dev/null || true
-        flock -w 60 /run/nftban/nft_writers.lock nft flush table ip6 nftban 2>/dev/null || true
-        flock -w 60 /run/nftban/nft_writers.lock nft delete table ip nftban 2>/dev/null || true
-        flock -w 60 /run/nftban/nft_writers.lock nft delete table ip6 nftban 2>/dev/null || true
+        # v1.238: the canonical write boundary (see _nftban_release_tables).
+        _nftban_release_tables
     fi
 
     # STEP 4b: v1.233.1 NFTBan SYNPROXY notrack rules in the FOREIGN ip/ip6
