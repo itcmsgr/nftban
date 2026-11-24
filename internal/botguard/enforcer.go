@@ -61,6 +61,12 @@ func NewEnforcer(queue *opqueue.OpQueue, config *Config) *Enforcer {
 // Apply writes a classification decision to the appropriate nft set.
 // It removes the IP from the old set (if any) and adds it to the new set.
 func (e *Enforcer) Apply(ip netip.Addr, oldState, newState IPState, reason string) error {
+	return e.ApplyWithTTL(ip, oldState, newState, reason, e.ttlSeconds(newState))
+}
+
+// ApplyWithTTL is Apply with an explicit TTL for the new state's set (v1.238: a BotScan ban lasts the
+// duration BotScan requested, capped by the caller). Apply passes the configured TTL of the state.
+func (e *Enforcer) ApplyWithTTL(ip netip.Addr, oldState, newState IPState, reason string, ttl uint32) error {
 	isV6 := ip.Is6()
 	ipStr := ip.String()
 
@@ -79,8 +85,6 @@ func (e *Enforcer) Apply(ip netip.Addr, oldState, newState IPState, reason strin
 	if newSet == "" {
 		return nil // StateUnknown has no set
 	}
-
-	ttl := e.ttlSeconds(newState)
 
 	// L3b — never-ban pre-check: a BotGuard state-set ban is still a ban. Skip (with a
 	// clear log) before enqueuing an exempt admin/management/whitelist/system/live-SSH IP
