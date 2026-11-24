@@ -74,6 +74,11 @@ product	cli/lib/nftban/core/nftban_health_checks_services.sh	dd9432502d01d4fc	1	
 product	cli/lib/nftban/core/nftban_stats_format.sh	162852f14b3de3d3	1	head	E	n/a	UNVERIFIED	fn=nftban_stats_generate_dashboard; needs a producer-size probe on a representative host
 product	cli/lib/nftban/core/nftban_sync.sh	dd7eb2cc39e98694	1	grep-q	B	n/a	UNVERIFIED	-
 product	cli/lib/nftban/core/nftban_watchdog_checks.sh	ecc8b5efe8e0225a	1	head	B	n/a	UNVERIFIED	-
+product	cli/lib/nftban/exporters/nftban_unified_exporter_export.sh	1201d7cd3fe37b48	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
+product	cli/lib/nftban/exporters/nftban_unified_exporter_export.sh	1af6c1db6f1c88e4	1	awk-exit	B	n/a	UNVERIFIED	-
+product	cli/lib/nftban/exporters/nftban_unified_exporter_export.sh	380ff8e74e2e0380	1	grep-q	UNCLASSIFIED	n/a	UNVERIFIED	-
+product	cli/lib/nftban/exporters/nftban_unified_exporter_export.sh	6e150cba461b4f66	1	awk-exit	UNCLASSIFIED	n/a	UNVERIFIED	-
+product	cli/lib/nftban/exporters/nftban_unified_exporter_export.sh	d93d8dd3d15e52f3	1	head	UNCLASSIFIED	n/a	UNVERIFIED	-
 product	cli/lib/nftban/lib/nft_probe.sh	323ad0874e5c301a	1	grep-q	E	n/a	UNVERIFIED	fn=nftban_nft_probe_redact; needs a producer-size probe on a representative host; REMEDIATED v1.233.1 (in-shell [[ =~ ]], no pipe); MEASURED ~200 KiB listing: pre-fix 18/18 wrong verdicts (MALFORMED_OUTPUT / ABSENT), post-fix 45/0 x3 (typed_nft_probe arm P)
 product	cli/lib/nftban/lib/nft_probe.sh	88294984ad502035	1	grep-q	E	n/a	UNVERIFIED	fn=nftban_nft_probe_redact; needs a producer-size probe on a representative host; REMEDIATED v1.233.1 (in-shell [[ =~ ]], no pipe); MEASURED ~200 KiB listing: pre-fix 18/18 wrong verdicts (MALFORMED_OUTPUT / ABSENT), post-fix 45/0 x3 (typed_nft_probe arm P)
 product	cli/lib/nftban/lib/nft_probe.sh	a3a9c5b0b5bec270	1	grep-q	E	n/a	UNVERIFIED	fn=nftban_nft_probe_redact; needs a producer-size probe on a representative host; REMEDIATED v1.233.1 (in-shell [[ =~ ]], no pipe); MEASURED ~200 KiB listing: pre-fix 18/18 wrong verdicts (MALFORMED_OUTPUT / ABSENT), post-fix 45/0 x3 (typed_nft_probe arm P)

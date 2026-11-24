@@ -484,11 +484,32 @@ nftban_geoip_cmd_config() {
             echo "═══════════════════════════════════════════════════════════"
             echo ""
 
-            # Load config
-            local config_file="${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf"
-            if [[ -f "$config_file" ]]; then
-                source "$config_file" || true
-            fi
+            # Load config — v1.238: the same files, order and key spellings as the consumer
+            # (nftban-core loadGeoIPConfig): main.conf, main.conf.local, legacy nftban-go.conf(.local),
+            # central nftban.conf.local; later files win; GEOIP_PROVIDER / GEOIP_MAXMIND_KEY (the
+            # shipped names) are accepted, the canonical names win within one file. Before v1.238
+            # this read main.conf only and showed "dbip" while the consumer used MaxMind.
+            local _f _src="" _key="" _srcfile="" _acct=""
+            for _f in "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf" "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf.local" \
+                      "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf" "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf.local" \
+                      "${NFTBAN_CONFIG_DIR}/nftban.conf.local"; do
+                [[ -r "$_f" ]] || continue
+                local _line _k _v _fs="" _fsa="" _fk="" _fka=""
+                while IFS= read -r _line || [[ -n "$_line" ]]; do
+                    _line="${_line#"${_line%%[![:space:]]*}"}"
+                    [[ -z "$_line" || "$_line" == \#* || "$_line" != *=* ]] && continue
+                    _k="${_line%%=*}"; _v="${_line#*=}"; _v="${_v%\"}"; _v="${_v#\"}"; _v="${_v%\'}"; _v="${_v#\'}"
+                    case "$_k" in
+                        GEOIP_DB_SOURCE) _fs="$_v" ;;           GEOIP_PROVIDER) _fsa="$_v" ;;
+                        GEOIP_MAXMIND_LICENSE_KEY) _fk="$_v" ;; GEOIP_MAXMIND_KEY) _fka="$_v" ;;
+                        GEOIP_MAXMIND_ACCOUNT_ID) _acct="$_v" ;;
+                    esac
+                done < "$_f"
+                if [[ -n "$_fs" ]]; then _src="$_fs"; _srcfile="$_f"; elif [[ -n "$_fsa" ]]; then _src="$_fsa"; _srcfile="$_f"; fi
+                if [[ -n "$_fk" ]]; then _key="$_fk"; elif [[ -n "$_fka" ]]; then _key="$_fka"; fi
+            done
+            local GEOIP_DB_SOURCE="${_src:-dbip}" GEOIP_MAXMIND_LICENSE_KEY="$_key" GEOIP_MAXMIND_ACCOUNT_ID="$_acct"
+            echo "  (effective values; source set in: ${_srcfile:-default})"
 
             echo "Database Source:"
             echo "  Current: ${GEOIP_DB_SOURCE:-dbip}"

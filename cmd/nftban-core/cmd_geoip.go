@@ -120,27 +120,53 @@ func loadGeoIPConfig(cfg *nftbanconf.Config) geoipConfig {
 	}
 
 	for _, configFile := range configFiles {
-		if file, err := os.Open(configFile); err == nil {
-			scanner := bufio.NewScanner(file)
-			for scanner.Scan() {
-				line := strings.TrimSpace(scanner.Text())
-				if strings.HasPrefix(line, "#") || line == "" {
-					continue
-				}
-				if strings.HasPrefix(line, "GEOIP_DB_SOURCE=") {
-					val := strings.TrimPrefix(line, "GEOIP_DB_SOURCE=")
-					config.Source = strings.Trim(val, "\"'")
-				}
-				if strings.HasPrefix(line, "GEOIP_MAXMIND_LICENSE_KEY=") {
-					val := strings.TrimPrefix(line, "GEOIP_MAXMIND_LICENSE_KEY=")
-					config.LicenseKey = strings.Trim(val, "\"'")
-				}
-			}
-			file.Close()
-		}
+		applyGeoipConfigFile(&config, configFile)
 	}
 
 	return config
+}
+
+// applyGeoipConfigFile applies one config file over config (later files win).
+//
+// v1.238 (shipped GeoIP keys did not reach their consumer, reproduced 2026-11-23): the shipped
+// conf.d/geoip/main.conf names the keys GEOIP_PROVIDER and GEOIP_MAXMIND_KEY, while this consumer
+// read only GEOIP_DB_SOURCE and GEOIP_MAXMIND_LICENSE_KEY (the names `nftban geoip config` writes),
+// so an operator following the shipped file changed nothing. Both spellings are accepted; within
+// one file the canonical name wins over the shipped alias. The shipped conffile is not renamed.
+func applyGeoipConfigFile(config *geoipConfig, path string) {
+	file, err := os.Open(filepath.Clean(path))
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	vals := map[string]string{}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "#") || line == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		switch k = strings.TrimSpace(k); k {
+		case "GEOIP_DB_SOURCE", "GEOIP_PROVIDER", "GEOIP_MAXMIND_LICENSE_KEY", "GEOIP_MAXMIND_KEY":
+			vals[k] = strings.Trim(strings.TrimSpace(v), "\"'")
+		}
+	}
+	if v, ok := vals["GEOIP_PROVIDER"]; ok {
+		config.Source = v
+	}
+	if v, ok := vals["GEOIP_DB_SOURCE"]; ok {
+		config.Source = v
+	}
+	if v, ok := vals["GEOIP_MAXMIND_KEY"]; ok {
+		config.LicenseKey = v
+	}
+	if v, ok := vals["GEOIP_MAXMIND_LICENSE_KEY"]; ok {
+		config.LicenseKey = v
+	}
 }
 
 // getGeoipDir returns the GeoIP database directory from passed config
