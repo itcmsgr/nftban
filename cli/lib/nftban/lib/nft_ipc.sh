@@ -949,8 +949,9 @@ nftban_ipc_check_or_emergency() {
     #    follow symlinks): the directory must be root:root 0700 and a real directory, the marker a
     #    regular file owned by root. Only root can change the contents of such a directory, so
     #    what was observed is what root authorised; nothing re-tests the path afterwards.
-    dir_st=$(stat -c '%u:%g:%a:%F' -- "$gate_dir" 2>/dev/null) || dir_st=""
-    gate_st=$(stat -c '%u:%F' -- "$emergency_gate" 2>/dev/null) || gate_st=""
+    # LC_ALL=C: %F is localised ("regular file" differs under e.g. el_GR), the comparison below is not.
+    dir_st=$(LC_ALL=C stat -c '%u:%g:%a:%F' -- "$gate_dir" 2>/dev/null) || dir_st=""
+    gate_st=$(LC_ALL=C stat -c '%u:%F' -- "$emergency_gate" 2>/dev/null) || gate_st=""
     if [[ -n "$gate_st" ]]; then
         if [[ "$dir_st" == "0:0:700:directory" ]] \
            && [[ "$gate_st" == "0:regular file" || "$gate_st" == "0:regular empty file" ]]; then
