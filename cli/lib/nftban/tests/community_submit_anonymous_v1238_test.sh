@@ -103,10 +103,10 @@ run c3 yes no nftban_community_submit >/dev/null
 noleak c3 "Free host"
 
 echo "=== preview + non-vacuity ==="
-s=$(run c4 yes yes nftban_community_show)
-[[ "$s" == *'"schema_version": 3'* && "$s" == *"$IID"* && "$s" != *"$SID"* ]] && ok "community show previews the same v3 payload" || no "show differs from submit"
-v2=$(run c5 yes yes nftban_community_build_payload)
-[[ "$v2" == *"$SID"* ]] && ok "non-vacuity: the v2 builder (pre-fix submit) carries the PRO server_id" || no "non-vacuity: v2 sentinel not seen" "$(head -c 200 <<<"$v2")"
+s_rc=0; s=$(run c4 yes yes nftban_community_show) || s_rc=$?   # keep the rc: a failing builder must report, not abort the script
+[[ "$s" == *'"schema_version": 3'* && "$s" == *"$IID"* && "$s" != *"$SID"* ]] && ok "community show previews the same v3 payload" || no "show differs from submit" "rc=$s_rc $(tail -3 <<<"$s")"
+v2_rc=0; v2=$(run c5 yes yes nftban_community_build_payload) || v2_rc=$?
+[[ "$v2" == *"$SID"* ]] && ok "non-vacuity: the v2 builder (pre-fix submit) carries the PRO server_id" || no "non-vacuity: v2 sentinel not seen" "rc=$v2_rc $(tail -5 <<<"$v2")"
 
 echo ""
 echo "RESULTS: PASS=$PASS FAIL=$FAIL"
