@@ -1866,6 +1866,16 @@ for _seed_pair in \\
     fi
 done
 
+# v1.238 BUG-CONNECTOR-CONFIG-UNREADABLE-BY-EXPORTER: same repair as the DEB postinst - connector
+# files left root:root by pre-v1.238 nftban connector add become root:nftban 0640 (readable by the
+# exporter, User=nftban). Regular non-symlink root:root files only; never fails this scriptlet.
+for _cf in /etc/nftban/connectors/*.conf; do
+    [ -f "\$_cf" ] && [ ! -L "\$_cf" ] || continue
+    [ "\$(stat -c '%%U:%%G' "\$_cf" 2>/dev/null)" = "root:root" ] || continue
+    chgrp nftban "\$_cf" 2>/dev/null && chmod 0640 "\$_cf" 2>/dev/null || true
+done
+unset _cf
+
 # v1.234.0 BotScan patterns: restore/seed custom.patterns and migrate pre-v1.234 edited
 # rule files ONCE (rpm renamed a locally edited former config-noreplace file to *.rpmsave
 # when this package stopped owning it). Twin of packaging/deb/postinst. Never fails.
