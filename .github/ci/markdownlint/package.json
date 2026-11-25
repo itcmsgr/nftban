@@ -1,12 +1,13 @@
 {
   "name": "nftban-ci-markdownlint",
   "private": true,
-  "description": "Pinned markdownlint-cli2 0.17.2 for .github/ci/health_check.sh (npm ci --ignore-scripts; Scorecard PinnedDependencies). Security overrides within the same major: js-yaml 4.3.2 (GHSA-52cp-r559-cp3m, GHSA-5p4m-2wfm-xmqj, GHSA-2883-xcg3-v3hh), markdown-it 14.3.3 (GHSA-38c4-r59v-3vqw, GHSA-6v5v-wf23-fmfq, GHSA-r7fv-28h4-cvq7, GHSA-vfgh-jcmw-g37q, GHSA-gfr2-rv44-r23c, GHSA-253c-mchw-3w2r). Lint rules unchanged (markdownlint 0.37.4).",
+  "description": "Pinned markdownlint-cli2 0.17.2 for .github/ci/health_check.sh (npm ci --ignore-scripts; Scorecard PinnedDependencies). Security overrides within the same major: js-yaml 4.3.2 (GHSA-52cp-r559-cp3m, GHSA-5p4m-2wfm-xmqj, GHSA-2883-xcg3-v3hh), markdown-it 14.3.3 (GHSA-38c4-r59v-3vqw, GHSA-6v5v-wf23-fmfq, GHSA-r7fv-28h4-cvq7, GHSA-vfgh-jcmw-g37q, GHSA-gfr2-rv44-r23c, GHSA-253c-mchw-3w2r). Outside the same major: katex 0.18.2 (GHSA-238p-pmpm-9mq7; reached via micromark-extension-math; no patched 0.16.x exists; lint output verified identical). Lint rules unchanged (markdownlint 0.37.4).",
   "dependencies": {
     "markdownlint-cli2": "0.17.2"
   },
   "overrides": {
     "js-yaml": "4.3.2",
-    "markdown-it": "14.3.3"
+    "markdown-it": "14.3.3",
+    "katex": "0.18.2"
   }
 }
