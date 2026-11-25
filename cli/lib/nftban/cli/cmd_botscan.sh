@@ -105,6 +105,21 @@ HOW IT WORKS:
     4. Action:  With BOTSCAN_ACTION_MODE=ban|both, bans flagged IPs via the
                 manual blacklist; with =alert, DETECT-ONLY (logs, does not ban)
 
+WHAT A BOTSCAN DECISION DOES (v1.238):
+
+    A rule whose duration is 30 minutes or less produces a grey decision
+    (throttle); a longer one produces a ban. The result depends on whether
+    BotGuard (HTTP Guard) is enabled:
+
+      Decision   BotGuard enabled                 BotGuard disabled
+      grey       30-minute throttle (grey set),   1-hour blacklist ban
+                 no blacklist ban
+      ban        blacklist ban for the duration   24-hour blacklist ban
+                 the rule requests, up to 96 h
+
+    Disabling BotGuard therefore turns a grey decision into a 1-hour ban.
+    A ban that already exists from another source is never shortened.
+
 DETECTION CATEGORIES:
 
     Webshell Probes:
