@@ -213,13 +213,15 @@ _nftban_ddos_stats_json() {
         local mode_val
         mode_val=$(grep "^DDOS_MODE=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | xargs)
         [[ -n "$mode_val" ]] && ddos_mode="$mode_val"
-        # If mode is "auto", determine effective mode
+        # If mode is "auto", report the effective mode the reconcile root DECIDED (the plan).
+        # v1.238.1: this used to resolve auto itself (suricata.service active => suricata), a second
+        # authority that also ignored mode admission (suricata is not an admitted DDoS mode).
         if [[ "$ddos_mode" == "auto" ]]; then
-            if [[ "$suricata_available" == "true" ]]; then
-                ddos_mode="suricata"
-            else
-                ddos_mode="classic"
+            local _eff=""
+            if declare -F nftban_module_report_modes >/dev/null 2>&1; then
+                _eff=$(nftban_module_report_modes ddos 2>/dev/null | sed -n 's/^NFTBAN_REPORT_EFFECTIVE_MODE=//p')
             fi
+            ddos_mode="${_eff:-unknown}"
         fi
     fi
 

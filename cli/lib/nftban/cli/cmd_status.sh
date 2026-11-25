@@ -1314,7 +1314,18 @@ _status_section_protection() {
                 fi
             fi
             if [[ "$ddos_enabled" == "true" ]]; then
-                echo "    DDoS: Active (connection rate limiting + SYN flood protection)"
+                # v1.238.1: in suricata mode the classic rate limiting is not applied and NFTBan does not
+                # consume DDoS alerts — do not present it as active detection.
+                local _ddos_eff="" _ddos_warn=""
+                if declare -F nftban_module_report_modes >/dev/null 2>&1; then
+                    _ddos_eff=$(nftban_module_report_modes ddos 2>/dev/null | sed -n 's/^NFTBAN_REPORT_EFFECTIVE_MODE=//p')
+                fi
+                if [[ "$_ddos_eff" == suricata ]] && declare -F nftban_module_mode_unadmitted >/dev/null 2>&1 \
+                   && _ddos_warn=$(nftban_module_mode_unadmitted ddos suricata); then
+                    echo "    DDoS: suricata mode — WARN: ${_ddos_warn}"
+                else
+                    echo "    DDoS: Active (connection rate limiting + SYN flood protection)"
+                fi
             fi
             echo ""
             echo "  View details: nftban portscan status | nftban ddos status"

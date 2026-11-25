@@ -204,9 +204,12 @@ _nftban_ddos_detect_mode() {
         return 0
     fi
 
-    # Auto-detection: check if Suricata is available
+    # Auto-detection: check if Suricata is available. v1.238.1: suricata is not an admitted DDoS
+    # mode (lib/module_authority.sh nftban_module_mode_unadmitted), so auto stays classic.
     if type -t nftban_ddos_suricata_is_available &>/dev/null; then
-        if nftban_ddos_suricata_is_available; then
+        if nftban_ddos_suricata_is_available \
+           && ! { declare -F nftban_module_mode_unadmitted >/dev/null 2>&1 \
+                  && nftban_module_mode_unadmitted ddos suricata >/dev/null; }; then
             echo "suricata"
             return 0
         fi
@@ -1041,8 +1044,16 @@ _nftban_ddos_status_json() {
         if nftban_ddos_suricata_is_available; then suricata_available="available"; else suricata_available="unavailable"; fi
     fi
 
+    # v1.238.1: persistent admission warning (see nftban_module_mode_unadmitted).
+    local mode_warning=""
+    if [[ "$mode" == suricata || "$configured_mode" == suricata ]]; then
+        mode_warning=$(nftban_module_mode_unadmitted ddos suricata 2>/dev/null) || mode_warning=""
+    fi
+
     if command -v jq >/dev/null 2>&1; then
         jq -n \
+            --arg m_warn     "$mode_warning" \
+            --arg m_basis    "${NFTBAN_REPORT_EFFECTIVE_BASIS:-}" \
             --arg enabled    "${DDOS_ENABLED:-false}" \
             --arg cfg_mode   "$configured_mode" \
             --arg act_mode   "$mode" \
@@ -1056,6 +1067,8 @@ _nftban_ddos_status_json() {
                 enabled: ($enabled == "true" or $enabled == "1"),
                 configured_mode: $cfg_mode,
                 active_mode: $act_mode,
+                mode_basis: (if $m_basis == "" then null else $m_basis end),
+                mode_warning: (if $m_warn == "" then null else $m_warn end),
                 suricata: {
                     binary: $s_bin,
                     version: (if $s_ver == "" then null else $s_ver end),
@@ -1068,9 +1081,9 @@ _nftban_ddos_status_json() {
     fi
     # jq absent — emit a minimal hand-built object (still valid JSON; safe
     # because every value is a known constrained string from above).
-    printf '{"module":"ddos","enabled":%s,"configured_mode":"%s","active_mode":"%s","suricata":{"binary":"%s","service":"%s","eve_log":"%s","available":"%s","jq_unavailable":true}}\n' \
+    printf '{"module":"ddos","enabled":%s,"configured_mode":"%s","active_mode":"%s","mode_warning":%s,"suricata":{"binary":"%s","service":"%s","eve_log":"%s","available":"%s","jq_unavailable":true}}\n' \
         "$([[ "${DDOS_ENABLED:-false}" == "true" ]] && echo true || echo false)" \
-        "$configured_mode" "$mode" "$suricata_binary" "$suricata_service" "$suricata_eve" "$suricata_available"
+        "$configured_mode" "$mode" "$([[ -n "$mode_warning" ]] && printf '"%s"' "$mode_warning" || echo null)" "$suricata_binary" "$suricata_service" "$suricata_eve" "$suricata_available"
 }
 
 # v1.141 PR-B (J-DDOS): function now takes optional json_mode arg.
@@ -1114,6 +1127,14 @@ nftban_ddos_status() {
     echo "  Module Enabled:    ${DDOS_ENABLED}"
     echo "  Configured Mode:   ${configured_mode}"
     echo "  Active Mode:       ${mode}"
+    # v1.238.1: a non-admitted mode is reported as such, every time (persistent, not a one-off).
+    local _adm_warn=""
+    if [[ "$mode" == suricata || "$configured_mode" == suricata ]] \
+       && _adm_warn=$(nftban_module_mode_unadmitted ddos suricata); then
+        echo "  ⚠ WARN:            ${_adm_warn}"
+    elif [[ "${NFTBAN_REPORT_EFFECTIVE_BASIS:-}" == auto_suricata_mode_not_admitted ]]; then
+        echo "  Mode Basis:        auto — suricata is available but not an admitted DDoS mode; classic is active"
+    fi
     echo ""
 
     # Suricata availability
@@ -1161,7 +1182,11 @@ nftban_ddos_status() {
     if type -t nftban_ddos_suricata_is_available &>/dev/null; then
         echo ""
         if nftban_ddos_suricata_is_available; then
-            echo "  Suricata:  ✅ AVAILABLE (ready for use)"
+            if _adm_warn=$(nftban_module_mode_unadmitted ddos suricata 2>/dev/null); then
+                echo "  Suricata:  ✅ AVAILABLE (sensor present; ${_adm_warn})"
+            else
+                echo "  Suricata:  ✅ AVAILABLE (ready for use)"
+            fi
         else
             echo "  Suricata:  ❌ NOT AVAILABLE"
             # Explain WHY it's not available (same pattern as portscan)
