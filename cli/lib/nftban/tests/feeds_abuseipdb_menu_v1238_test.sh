@@ -149,7 +149,8 @@ J='{"feeds":[{"feed":"abuseipdb","last_success_at":"2026-11-21T03:22:10Z","next_
 short=$(bash -c 'eval "$1"; _nftban_feeds_refresh_short "$2" abuseipdb' _ "$hl" "$J")
 [[ "$short" == "last 11-21 03:22 - next 11-23 03:20 UTC (deferred)" && ${#short} -le 52 ]] && ok "list line: last and next update, deferral marked, fits the box" || no "list line" "$short"
 long=$(bash -c 'eval "$1"; _nftban_feeds_refresh_long "$2" abuseipdb' _ "$hl" "$J")
-[[ "$long" == *"Last update: 2026-11-21 03:22 UTC (last attempt failed: abuseipdb: rate_limited (HTTP 429))"* && "$long" == *"Next update: 2026-11-23 03:20"*"earlier runs skip it"* ]] && ok "status lines: last update (with a failed attempt) and the next update with its reason" || no "status lines" "$long"
+# v1.238 (owner 2026-11-23): labels Last successful refresh / Last failed attempt / Next scheduled refresh
+[[ "$long" == *"Last successful refresh: 2026-11-21 03:22 UTC"* && "$long" == *"Last failed attempt:"*"abuseipdb: rate_limited (HTTP 429)"* && "$long" == *"Next scheduled refresh:  2026-11-23 03:20"*"earlier runs skip it"* ]] && ok "status lines: last successful refresh, last failed attempt and the next scheduled refresh with its reason" || no "status lines" "$long"
 never=$(bash -c 'eval "$1"; _nftban_feeds_refresh_short "$2" spamhaus_drop' _ "$hl" "$J")
 [[ "$never" == "last never - next 11-22 03:20 UTC" ]] && ok "never-updated feed shows 'never'" || no "never" "$never"
 none=$(bash -c 'eval "$1"; _nftban_feeds_refresh_short "$2" nosuchfeed' _ "$hl" "$J")

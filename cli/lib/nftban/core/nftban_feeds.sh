@@ -208,6 +208,32 @@ _nftban_feeds_conf_value() {
     printf '%s' "$out"
 }
 
+# nftban_feeds_property_source <feed> <property> — the file whose definition is effective (the last
+# of feeds.conf, feeds.conf.local, nftban.conf.local that defines it); empty if none does. v1.238.
+nftban_feeds_property_source() {
+    local var_name="FEED_${1}_${2}" f src=""
+    for f in "$NFTBAN_FEEDS_CONFIG" "${NFTBAN_FEEDS_CONFIG}.local" "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"; do
+        _nftban_feeds_conf_value "$f" "$var_name" >/dev/null && src="$f"
+    done
+    printf '%s' "$src"
+}
+
+# _nftban_feeds_selection_readback <feed> <true|false> — v1.238 (owner 2026-11-23): after a write,
+# read the value back through the same configuration path the daemon uses (feeds.conf ->
+# feeds.conf.local -> nftban.conf.local) and report the file it comes from. "Selection saved" only
+# when the read-back matches; a later file that overrides the write is named and the call fails.
+_nftban_feeds_selection_readback() {
+    local feed="$1" want="$2" got src
+    got=$(nftban_feeds_get_property "$feed" "ENABLED")
+    src=$(nftban_feeds_property_source "$feed" "ENABLED")
+    if [[ "$got" == "$want" ]]; then
+        echo "✓ Selection saved: FEED_${feed}_ENABLED=\"${want}\" (effective, from ${src:-defaults})"
+        return 0
+    fi
+    echo "ERROR: FEED_${feed}_ENABLED is \"${got:-unset}\" in ${src:-the defaults} after the write — the selection is NOT saved as requested." >&2
+    return 1
+}
+
 nftban_feeds_get_property() {
     local feed_name="$1"
     local property="$2"  # URL, ENABLED, CATEGORY, DESCRIPTION, etc.
@@ -367,11 +393,13 @@ nftban_feeds_enable() {
 
     # Enable feed
     nftban_feeds_set_property "$feed_name" "ENABLED" "true"
+    _nftban_feeds_selection_readback "$feed_name" true >/dev/null || {
+        _nftban_feeds_selection_readback "$feed_name" true; return 1; }
     nftban_feeds_log INFO "Feed enabled: $feed_name"
 
     # Download immediately (foreground) so user can see success/failure
     if [[ "$quiet" != "true" ]]; then
-        echo "✓ Feed enabled: $feed_name"
+        _nftban_feeds_selection_readback "$feed_name" true
         echo ""
         echo "📥 Downloading feed..."
     fi
@@ -444,10 +472,10 @@ nftban_feeds_disable() {
 
     # Disable feed in config
     nftban_feeds_set_property "$feed_name" "ENABLED" "false"
+    _nftban_feeds_selection_readback "$feed_name" false || return 1
     nftban_feeds_log INFO "Feed disabled: $feed_name"
 
     # Show immediate feedback
-    echo "✓ Feed disabled in config: $feed_name"
 
     # v1.18.1 FIX: Delete cached feed file to prevent reloading on next sync
     local feed_cache_file="${NFTBAN_FEEDS_STORAGE_DIR:-/var/lib/nftban/feeds/storage}/${feed_name_lower}.txt"
@@ -1251,13 +1279,17 @@ nftban_feeds_get_stats() {
         fi
     done
 
-    echo "$enabled_count/$total_count feeds enabled | $total_ips total IPs"
+    # v1.238: "selected" (the per-feed choice) and snapshot entries (lines of the feed files —
+    # often CIDRs, not single IPs). Whether they are enforced is the feed authority's answer.
+    echo "$enabled_count/$total_count feeds selected | $total_ips snapshot entries"
 }
 
 # Export functions
 export -f nftban_feeds_discover_all
 export -f nftban_feeds_get_property
 export -f nftban_feeds_set_property
+export -f nftban_feeds_property_source
+export -f _nftban_feeds_selection_readback
 export -f nftban_feeds_get_by_category
 export -f nftban_feeds_get_categories
 export -f nftban_feeds_enable

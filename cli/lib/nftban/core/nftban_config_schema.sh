@@ -574,6 +574,14 @@ nftban_config_validate_value() {
             return 1
         fi
 
+        # v1.238: custom feed keys (same pattern as the batch validator)
+        if jq -e --arg key "$key" '(.patternProperties // {} | keys) | any(.[]; . as $re | $key | test($re))' "$schema_file" >/dev/null 2>&1; then
+            return 0
+        fi
+        if [[ "$key" == FEED_* ]]; then
+            echo "UNKNOWN: $key (not a feed setting; a feed key is FEED_<NAME>_ followed by one of: URL, ENABLED, CATEGORY, DESCRIPTION, INTERVAL, SIZE, FORMAT, MIN_INTERVAL, CONFIDENCE_MINIMUM, LIMIT, MAX_AGE)"
+            return 1
+        fi
         # Unknown key
         echo "UNKNOWN: $key (not in schema)"
         return 1
@@ -772,6 +780,7 @@ nftban_configtest() {
         ($s.properties // {}) as $props |
         ($s.deprecated // {}) as $deprecated |
         ($s.renamed // {}) as $renamed |
+        ($s.patternProperties // {} | keys) as $patterns |
 
         [
             $config_keys[] | . as $key |
@@ -780,7 +789,11 @@ nftban_configtest() {
 
             if $props[$key] then
                 $props[$key] as $prop |
-                if ($prop.enum // null) then
+                # v1.238: a property marked deprecated is reported, not counted OK
+                # (13 of 14 deprecated properties read OK before; doctor already flagged them).
+                if ($prop.deprecated // false) then
+                    {key: $key, status: "warning", msg: "DEPRECATED: \($key) - \($prop.deprecation_notice // $prop.description // "This option is deprecated")"}
+                elif ($prop.enum // null) then
                     if ($prop.enum | index($value)) then
                         {key: $key, status: "ok", value: $value}
                     else
@@ -793,6 +806,11 @@ nftban_configtest() {
                 {key: $key, status: "warning", msg: "DEPRECATED: \($key) - \($deprecated[$key].message // "This option is deprecated")"}
             elif $renamed[$key] then
                 {key: $key, status: "warning", msg: "RENAMED: \($key) -> \($renamed[$key].renamed_to) (update your config)"}
+            # v1.238: custom feeds (FEED_<NAME>_<suffix read by nftban-core / the feeds CLI>)
+            elif any($patterns[]; . as $re | $key | test($re)) then
+                {key: $key, status: "ok", value: $value}
+            elif ($key | startswith("FEED_")) then
+                {key: $key, status: "unknown", msg: "UNKNOWN: \($key) (not a feed setting; a feed key is FEED_<NAME>_ followed by one of: URL, ENABLED, CATEGORY, DESCRIPTION, INTERVAL, SIZE, FORMAT, MIN_INTERVAL, CONFIDENCE_MINIMUM, LIMIT, MAX_AGE)"}
             else
                 {key: $key, status: "unknown", msg: "UNKNOWN: \($key) (not in schema)"}
             end
