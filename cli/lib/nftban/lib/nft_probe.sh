@@ -160,6 +160,11 @@ nftban_nft_probe_redact() {
 # directory /run/nftban-writers (fhs-spec: 0700 root:root; SELinux nftban_var_run_t, which nftband_t
 # manages; in the unit's ReadWritePaths). NFTBAN_PROBE_TMPDIR overrides (tests). A caller that cannot
 # write there (a non-root CLI) keeps the previous ${TMPDIR:-/tmp}, so nothing regresses for it.
+# v1.238.1: also used by the other short-lived nft capture/batch files on daemon paths
+# (nft_fragment_observe_*, the DDoS Suricata block-rule listing, the PortScan journal batch).
+# Fallback visibility: ROOT falling back to TMPDIR means the writers dir is missing or unusable on a
+# package host — the exact condition that produced the EL Enforcing denial — so it is said on stderr
+# (the daemon's journal) with the directory chosen.
 _nftban_probe_capture_dir() {
     if [[ -n "${NFTBAN_PROBE_TMPDIR:-}" ]]; then
         printf '%s' "$NFTBAN_PROBE_TMPDIR"
@@ -169,6 +174,9 @@ _nftban_probe_capture_dir() {
     if [[ -d "$_d" && ! -L "$_d" && -w "$_d" ]]; then
         printf '%s' "$_d"
     else
+        if [[ "$(id -u 2>/dev/null)" == 0 ]]; then
+            printf 'nftban: WARN capture dir fallback: %s unusable, using %s\n' "$_d" "${TMPDIR:-/tmp}" >&2
+        fi
         printf '%s' "${TMPDIR:-/tmp}"
     fi
 }
