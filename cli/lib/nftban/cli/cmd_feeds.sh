@@ -1631,11 +1631,11 @@ USAGE:
 COMMANDS:
     select              Interactive numbered menu (recommended!)
     list                List all feeds with status
-    enable              Turn ALL feeds on (master switch NFTBAN_FEEDS_ENABLED)
-    disable             Turn ALL feeds off (master switch; removes feed-derived
-                        protection only — geoban and manual bans stay)
-    enable <feed>       Enable one feed (per-feed switch)
-    disable <feed>      Disable one feed (per-feed switch)
+    enable              Enable the selected feeds (master switch NFTBAN_FEEDS_ENABLED)
+    disable             Remove feed-derived protection; keep the selection (master
+                        switch; geoban and manual bans stay)
+    enable <feed>       Select one feed (per-feed switch)
+    disable <feed>      Unselect one feed (per-feed switch)
     enable-cat <cat>    Enable all feeds in category
     update [feed]       Update feeds (all or specific)
     status              Show detailed status
