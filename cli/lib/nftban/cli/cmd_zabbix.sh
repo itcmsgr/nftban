@@ -239,8 +239,8 @@ _cmd_zabbix_setup() {
         _zabbix_print_error "NFTBan not installed or configured"
         echo "  Config not found: ${NFTBAN_CONFIG_DIR}/nftban.conf"
         echo ""
-        echo "Please install NFTBan first:"
-        echo "  nftban install"
+        echo "Please install NFTBan first (the nftban package, DEB/RPM);"
+        echo "  there is no 'nftban install' CLI command."
         return 1
     fi
 

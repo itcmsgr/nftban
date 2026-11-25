@@ -527,8 +527,8 @@ nftban_cmd_egress() {
     local subcmd="${1:-help}"
     shift || true
 
-    # Check root
-    if [[ $EUID -ne 0 ]]; then
+    # Check root (v1.238: help needs no privileges; it only prints)
+    if [[ $EUID -ne 0 && "$subcmd" != "help" && "$subcmd" != "--help" && "$subcmd" != "-h" ]]; then
         echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges" >&2
         return 1
     fi

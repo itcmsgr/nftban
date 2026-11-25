@@ -157,7 +157,7 @@ EXAMPLES:
   nftban rbl server check --fresh
 
   # Check specific IP
-  nftban rbl check --ip 1.2.3.4
+  nftban rbl check --ip 192.0.2.10
 
   # Check with alert email
   nftban rbl check --alert

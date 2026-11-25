@@ -800,7 +800,7 @@ nftban_health_check_ssh_port() {
 
     if [[ "$current_ssh_port" != "$config_ssh_port" && "$auto_heal" != "1" ]]; then
         ssh_issues+=("SSH port mismatch: sshd_config=$current_ssh_port, nftban=$config_ssh_port")
-        ssh_issues+=("NOT CHANGED (read-only check). Applied by the maintenance cycle (every 15 min), or now with: nftban health --fix (or: nftban health check --auto-heal)")
+        ssh_issues+=("NOT CHANGED (read-only check). Applied by the maintenance cycle (every 15 min), or now with: nftban health --fix (or: nftban health diagnostics --auto-heal)")
         status=$HEALTH_WARNING
     elif [[ "$current_ssh_port" != "$config_ssh_port" && "$_ssh_fix_authority" != GRANTED* ]]; then
         ssh_issues+=("SSH port mismatch: sshd_config=$current_ssh_port, nftban=$config_ssh_port")
@@ -1479,8 +1479,6 @@ nftban_health_check_anchor_integrity() {
 nftban_health_check_kernel_parity() {
     local status=$HEALTH_OK
     local issues=()
-    local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
-
     # Module → chain name → config check
     # Format: config_path|config_key|chain_name|label
     local -a module_checks=(
@@ -1488,19 +1486,19 @@ nftban_health_check_kernel_parity() {
         "conf.d/portscan/main.conf|PORTSCAN_ENABLED|portscan_detection|Portscan"
     )
 
-    local entry config_rel config_key chain_name label
+    local entry config_rel chain_name label
     local config_val chain_exists
 
     for entry in "${module_checks[@]}"; do
-        IFS='|' read -r config_rel config_key chain_name label <<< "$entry"
+        IFS='|' read -r config_rel _ chain_name label <<< "$entry"
 
-        # Check config: .local overrides base
+        # v1.238 D1/D2: the shared module rule (module_authority.sh) — same decision as the rebuild
+        # gate and the daemon (was .local-then-base, "true" only, no central file).
         config_val="false"
-        if [[ -f "${config_dir}/${config_rel}.local" ]]; then
-            config_val=$(grep -m1 "^${config_key}=" "${config_dir}/${config_rel}.local" 2>/dev/null | cut -d'"' -f2 || echo "")
-        fi
-        if [[ -z "$config_val" || "$config_val" == "false" ]] && [[ -f "${config_dir}/${config_rel}" ]]; then
-            config_val=$(grep -m1 "^${config_key}=" "${config_dir}/${config_rel}" 2>/dev/null | cut -d'"' -f2 || echo "false")
+        local _mod="${config_rel#conf.d/}"; _mod="${_mod%%/*}"
+        if declare -F nftban_module_effective_enabled >/dev/null 2>&1 \
+           || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" 2>/dev/null; then
+            nftban_module_effective_enabled "$_mod" >/dev/null 2>&1 && config_val="true"
         fi
 
         [[ "$config_val" != "true" ]] && continue

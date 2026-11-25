@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # =============================================================================
-# NFTBan v1.0.0 - Help Generator from Registry
+# NFTBan - Help Generator from Registry (`nftban help --all`)
 # =============================================================================
 # meta:name="generate-help"
 # meta:type="script"
@@ -42,9 +42,6 @@ fi
 # CONFIGURATION
 # =============================================================================
 
-# Reserved for future profile-based filtering
-_PROFILE="${2:-operator}"
-
 # Task group names and descriptions
 declare -A GROUP_NAMES=(
     ["setup_discovery"]="0. Setup & Discovery"
@@ -73,12 +70,19 @@ declare -A GROUP_DESC=(
     ["developer_sysadmin"]="Advanced debugging and testing"
 )
 
-# Risk level colors (for future terminal coloring)
-declare -A RISK_ICONS=(
-    ["core"]="⚡"
-    ["setup"]="🛠️"
-    ["advanced"]="⚠️"
-)
+# v1.238: ONE marker meaning in both help views (this file and the short list in
+# cli/lib/nftban/nftban_help.sh, held equal by tests/help_verb_icons_v153_test.sh).
+# Derived from the registry: risk advanced -> ⚠️, risk setup -> 🛠️, otherwise
+# mutates true|conditional -> ⚡, otherwise unmarked (read-only). Before v1.238 every
+# risk=core command showed ⚡ "Core - safe", read-only ones (version, status) included.
+_marker_for() {
+    local risk="$1" mutates="$2"
+    case "$risk" in
+        advanced) printf '⚠️' ;;
+        setup)    printf '🛠️' ;;
+        *) case "$mutates" in true|conditional) printf '⚡' ;; *) printf '' ;; esac ;;
+    esac
+}
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -115,6 +119,11 @@ get_command_info() {
     local field="$2"
 
     "$YQ_BIN" -r ".\"$command\".\"$field\" // \"\"" "$REGISTRY" 2>/dev/null
+}
+
+# description, risk, mutates (one per line) in ONE yq call per command.
+get_command_row() {
+    "$YQ_BIN" -r ".\"$1\" | [(.description // \"\"), (.risk // \"\"), ((.mutates // \"\") | tostring)] | .[]" "$REGISTRY" 2>/dev/null
 }
 
 should_show_for_profile() {
@@ -188,8 +197,8 @@ EOF
 
 Quick Examples:
   nftban status                    # System overview
-  nftban ban 1.2.3.4               # Block an IP
-  nftban health check              # Run diagnostics
+  nftban ban 192.0.2.10            # Block an IP
+  nftban health                    # Protection truth table (read-only)
   nftban feeds update              # Update threat intelligence
   nftban firewall reload           # Atomic reload
 
@@ -227,17 +236,11 @@ generate_group_section() {
 
     # Display commands in this group
     for cmd in "${visible_commands[@]}"; do
-        local description
-        description=$(get_command_info "$cmd" "description")
+        local description="" risk="" mutates=""
+        { IFS= read -r description; IFS= read -r risk; IFS= read -r mutates; } < <(get_command_row "$cmd") || true
 
-        local risk
-        risk=$(get_command_info "$cmd" "risk")
-        # Note: Empty array subscript fails with set -u, so check first
-        local risk_icon=""
-        [[ -n "$risk" ]] && risk_icon="${RISK_ICONS[$risk]:-}"
-
-        # Format: command (icon) - description
-        printf "  %-20s %s  %s\n" "$cmd" "$risk_icon" "$description"
+        # Format: command (marker) - description
+        printf "  %-20s %s  %s\n" "$cmd" "$(_marker_for "${risk:-}" "${mutates:-}")" "${description:-}"
     done
 }
 
@@ -248,18 +251,20 @@ generate_help_footer() {
     cat <<EOF
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Risk Levels:
-  ⚡ Core      - Essential, safe operations
-  🛠️  Setup     - One-time configuration
-  ⚠️  Advanced  - Use with caution, may affect system state
+Markers (same meaning in 'nftban help'):
+  ⚡ changes state in some subcommands (bans, sets, config)
+  ⚠️ advanced: changes state, use with caution
+  🛠️ one-time setup
+     unmarked = read-only
 
 Exit Codes:
-  0  Success   - Command completed without errors
-  1  Error     - Command failed (check stderr for details)
-  2  Warning   - Command completed with warnings (e.g., missing deps)
+  0  Success
+  1  Error, refused, or usage error (details on stderr)
+  Other codes are command-specific (e.g. health: 1 degraded, 2 down;
+  sync: 69/74/75) - see 'nftban <command> --help'
 
 For detailed command help:
-  nftban <command> help
+  nftban help <command>     (same as: nftban <command> --help)
 
 Documentation:
   Wiki:    https://github.com/itcmsgr/nftban/wiki
@@ -287,8 +292,9 @@ main() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --profile)
-                profile="$2"
-                shift 2
+                profile="${2:-}"
+                shift
+                [[ $# -gt 0 ]] && shift
                 ;;
             --help|-h)
                 echo "Usage: $0 [--profile operator|auditor|panel]"

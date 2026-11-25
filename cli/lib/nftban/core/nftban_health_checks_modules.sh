@@ -597,13 +597,11 @@ nftban_health_check_botguard() {
     # Check if enabled - verify sets exist when enabled
     local enabled="false"
     if [[ -f "$botguard_conf" ]]; then
-        # Check local override first, then main config
-        local local_conf="$config_dir/conf.d/botguard/main.conf.local"
-        if [[ -f "$local_conf" ]]; then
-            enabled=$(grep -m1 "^HTTP_BOTGUARD_ENABLED=" "$local_conf" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || echo "")
-        fi
-        if [[ -z "$enabled" ]]; then
-            enabled=$(grep -m1 "^HTTP_BOTGUARD_ENABLED=" "$botguard_conf" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || echo "false")
+        # v1.238 D1/D2: the shared module rule (module_authority.sh), same as the rebuild gate and the
+        # daemon — was first-line of the .local, "true" only, no central file.
+        if declare -F nftban_module_effective_enabled >/dev/null 2>&1 \
+           || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" 2>/dev/null; then
+            nftban_module_effective_enabled botguard >/dev/null 2>&1 && enabled="true"
         fi
     fi
 

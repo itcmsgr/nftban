@@ -175,7 +175,20 @@ nftban_cmd_health() {
             # DOWN table). The `|| return $?` idiom keeps that exit code as
             # the dispatcher's exit while suppressing the ERR trap that would
             # otherwise print "ERROR: Script failed" on top of the table.
-            nftban_health_cmd_truth "$json_mode" "$verbose_mode" || return $?
+            #
+            # v1.238 (owner 2026-11-25): `check` stays read-only. --cache-status writes the
+            # verdict for the banner (nftban-health.service passes it; before v1.238 this
+            # path wrote nothing). --auto-heal never repaired here and is still ignored:
+            # repair is an explicit opt-in (`nftban health fix`, `health diagnostics --auto-heal`).
+            local _hc_cache=0 _hc_arg _hc_rc=0
+            for _hc_arg in "${clean_args[@]+"${clean_args[@]}"}"; do
+                [[ "$_hc_arg" == "--cache-status" ]] && _hc_cache=1
+            done
+            nftban_health_cmd_truth "$json_mode" "$verbose_mode" || _hc_rc=$?
+            if (( _hc_cache )); then
+                nftban_health_write_status_cache "$_hc_rc"
+            fi
+            return "$_hc_rc"
             ;;
 
         # =================================================================
@@ -348,11 +361,14 @@ USAGE:
     nftban health [command] [options]
 
 PROTECTION TRUTH (default):
-    (no args), check, truth
+    (no args), check, truth [--json] [--cache-status]
                             Show protection state from Go validator (default)
                             Four-axis truth table: config, structural, runtime, effective
-                            Fast, read-only, no side effects
+                            Read-only: never repairs anything
                             --json: output frozen schema JSON
+                            --cache-status: also store the verdict for the banner
+                            (--auto-heal is accepted for compatibility and ignored here;
+                            to repair, use 'health fix' or 'health diagnostics --auto-heal')
 
 DIAGNOSTICS:
     diagnostics [--auto-heal] [--quiet]
@@ -405,11 +421,11 @@ EXAMPLES:
     nftban health botguard     # HTTP Bot Guard health
     nftban health pro          # Pro subscription status
 
-    # Auto-heal during check (combines check + fix)
-    nftban health check --auto-heal
+    # Extended diagnostics, then repair what they find (explicit opt-in)
+    nftban health diagnostics --auto-heal
 
-    # Quiet mode for cron/timer
-    nftban health check --auto-heal --quiet
+    # What the periodic nftban-health.service runs (read-only + banner cache)
+    nftban health check --cache-status
 
     # Manual fix (traditional approach)
     nftban health fix all
@@ -437,6 +453,11 @@ HEALTH STATUS CODES:
     ⚠️  WARNING - Non-critical issues found
     ❌ ERROR    - Critical issues found
 
+EXIT CODES (check / default call):
+    0  protected, idle or converging
+    1  degraded
+    2  down (or the truth could not be collected)
+
 AUTO-FIX CAPABILITIES:
     - Create missing directories
     - Fix file ownership (nftban:nftban)
@@ -448,7 +469,8 @@ NOTES:
     - Most commands can run as regular user
     - 'fix' command requires elevated privileges (members of the nftban group are authorized via PolicyKit/polkit rules)
     - Run 'check' after 'fix' to verify repairs
-    - Health checks are non-destructive
+    - 'check' and the default call never change anything; only 'fix'/'enforce',
+      'diagnostics --auto-heal' and 'conflicts --fix' change state
 
 NFTBan — Open-source Linux IPS and nftables firewall manager
 EOF

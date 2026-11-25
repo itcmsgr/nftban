@@ -30,7 +30,9 @@
 #   2. false  when HTTP_BOTGUARD_ENABLED="false" in main.conf.local
 #   3. true   when HTTP_BOTGUARD_ENABLED="true" in main.conf only (no .local)
 #   4. false  when no botguard conf files exist (BotGuard-disabled hosts)
-#   5. local override wins: .local "false" beats main.conf "true"
+#   5. local override wins: .local "false" beats main.conf "true" (v1.238 D1/D2 rule;
+#      was pinned as fall-through -> enabled until that decision)
+#   5c. an explicit central nftban.conf.local value wins (v1.238 D1/D2)
 #   6. Regression guard: cmd_firewall.sh contains no occurrence of the legacy
 #      `BOTGUARD_ENABLED=` key (only HTTP_BOTGUARD_ENABLED).
 #   7. All three call sites (reload, rebuild, reset) use the helper.
@@ -79,6 +81,10 @@ load_helper() {
         exit 2
     fi
     eval "$snippet"
+    # v1.238 D1/D2: the helper delegates to the shared module rule.
+    # shellcheck source=/dev/null
+    source "$PROJECT_ROOT/cli/lib/nftban/lib/module_authority.sh" >/dev/null 2>&1 || true
+    declare -F nftban_module_effective_enabled >/dev/null || { echo "FATAL: module_authority.sh did not load" >&2; exit 2; }
 }
 
 load_helper
@@ -122,17 +128,22 @@ assert "fallback to main.conf when no .local override" "pass" "$(run_helper)"
 reset_botguard_conf
 assert "disabled when no botguard config files exist (non-BotGuard host)" "fail" "$(run_helper)"
 
-# Test 5: existing fall-through semantics preserved.
-# Pre-fix the inline blocks fell through from .local≠true to main.conf, so an
-# explicit ".local=false" with main.conf=true resolved to ENABLED. This is
-# almost certainly not what most admins would expect, but the BotGuard
-# rebuild-UX fix is not the place to change config-resolution semantics —
-# that belongs in a separate config-doctor follow-up. Pin the existing
-# behavior to keep this patch surgical and to flag any future drift.
+# Test 5: .local=false wins over main.conf=true.
+# Until v1.238 this pinned the old shell fall-through (.local≠true → main.conf → ENABLED),
+# deferring the config-resolution decision. v1.238 D1/D2 (owner 2026-11-23) made it: one
+# rule for every reader, main.conf < main.conf.local < central — which is also what the
+# daemon (internal/botguard/config.go) always did, so the rebuild gate and the daemon agree.
 reset_botguard_conf
 echo 'HTTP_BOTGUARD_ENABLED="true"'  > "$SANDBOX/conf.d/botguard/main.conf"
 echo 'HTTP_BOTGUARD_ENABLED="false"' > "$SANDBOX/conf.d/botguard/main.conf.local"
-assert "preserved fall-through: .local=false + main.conf=true → enabled" "pass" "$(run_helper)"
+assert ".local=false wins over main.conf=true (v1.238 unified rule)" "fail" "$(run_helper)"
+
+# Test 5c: an explicit central value wins over the module files (v1.238 D1/D2)
+reset_botguard_conf
+echo 'HTTP_BOTGUARD_ENABLED="true"'  > "$SANDBOX/conf.d/botguard/main.conf.local"
+echo 'HTTP_BOTGUARD_ENABLED="false"' > "$SANDBOX/nftban.conf.local"
+assert "central nftban.conf.local=false wins over module .local=true" "fail" "$(run_helper)"
+rm -f "$SANDBOX/nftban.conf.local"
 
 # Test 5b: when .local explicitly says true, that wins regardless of main.conf
 reset_botguard_conf

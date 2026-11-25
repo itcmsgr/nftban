@@ -343,7 +343,8 @@ nftban_system_disable() {
 nftban_system_restart() {
     local target="${1:-all}"
 
-    if [[ $EUID -ne 0 ]]; then
+    # v1.238: help needs no privileges (the help arm below only prints).
+    if [[ $EUID -ne 0 && "$target" != "help" && "$target" != "--help" && "$target" != "-h" ]]; then
         echo "ERROR: PolicyKit/polkit authorization failed or insufficient privileges (restart services)" >&2
         return 1
     fi

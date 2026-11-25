@@ -81,3 +81,21 @@ func ParseUint(s string, defaultVal uint64) uint64 {
 	}
 	return defaultVal
 }
+
+// ModuleSwitchValue interprets a module enable switch (DDOS_ENABLED, PORTSCAN_ENABLED,
+// HTTP_BOTGUARD_ENABLED) with the same truth table as the shell module gate
+// (lib/module_authority.sh nftban_bool_is_true): true|yes|1|on|enabled -> on;
+// false|no|0|off|disabled and empty -> off. Any other value is not valid and is treated as off
+// (never fail open into enablement); valid=false lets callers report the key and file.
+// v1.238 D1/D2 (owner 2026-11-23): the DDoS and PortScan daemons accepted only "true", so "yes"
+// ran the firewall chain while the daemon said disabled (lab4).
+func ModuleSwitchValue(raw string) (on, valid bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "true", "yes", "1", "on", "enabled":
+		return true, true
+	case "false", "no", "0", "off", "disabled", "":
+		return false, true
+	default:
+		return false, false
+	}
+}

@@ -68,7 +68,7 @@ func ApplyProfile(profile ProfileType) error {
 
 	// Check if profile template exists
 	if _, err := os.Stat(profilePath); err != nil {
-		return fmt.Errorf("profile template not found: %s (run nftban install first)", profilePath)
+		return fmt.Errorf("profile template not found: %s (reinstall the nftban package)", profilePath)
 	}
 
 	// Create symlink atomically

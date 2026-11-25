@@ -873,7 +873,7 @@ _doctor_module_audit() {
                     l4_effective=false
                     l4_detail="Config SYN rate=$_cfg_syn_rate but kernel enforces $_kern_syn_rate — stale after config change"
                     _doctor_finding "$_SEV_WARN" "module_l4_rate_limit_mismatch" \
-                        "$mod_name: SYN rate limit mismatch (config=$_cfg_syn_rate, kernel=$_kern_syn_rate) — run nftban rebuild" "nft+config" "$mod_name"
+                        "$mod_name: SYN rate limit mismatch (config=$_cfg_syn_rate, kernel=$_kern_syn_rate) — run nftban firewall rebuild" "nft+config" "$mod_name"
                 elif [[ -z "$_kern_syn_rate" ]]; then
                     l4_detail="No SYN rate meter found in kernel (module may not be active)"
                 else
@@ -1422,17 +1422,22 @@ _doctor_auto_fix() {
     if printf '%s\n' "${_DOCTOR_FINDINGS[@]}" | jq -e 'select(.type == "module_missing" or .type == "module_l4_rate_limit_mismatch" or .type == "drift_module_unapplied")' >/dev/null 2>&1; then
         needs_rebuild=true
     fi
+    # v1.238: the command is `nftban firewall rebuild`. Before v1.238 this ran `nftban rebuild`,
+    # which is not a CLI command (an inert stub / unknown command), so this fix always FAILED and
+    # never touched the firewall. It now really rebuilds. Reached ONLY through
+    # `nftban config doctor --fix` as root: nftban_cmd_config_doctor calls _doctor_auto_fix only
+    # when fix_mode=1 (set by --fix alone), and the plain doctor stays read-only.
     if [[ "$needs_rebuild" == "true" ]]; then
-        echo "  ACTION: kernel/config drift detected — running nftban rebuild..."
+        echo "  ACTION: kernel/config drift detected — running nftban firewall rebuild..."
         if command -v nftban >/dev/null 2>&1; then
-            if nftban rebuild 2>&1; then
-                echo "  FIXED: nftban rebuild completed"
+            if nftban firewall rebuild 2>&1; then
+                echo "  FIXED: nftban firewall rebuild completed"
                 ((fixed++)) || true
             else
-                echo "  FAILED: nftban rebuild returned error (manual fix required)"
+                echo "  FAILED: nftban firewall rebuild returned error (manual fix required)"
             fi
         else
-            echo "  SKIPPED: nftban not in PATH (manual fix required: nftban rebuild)"
+            echo "  SKIPPED: nftban not in PATH (manual fix required: nftban firewall rebuild)"
         fi
     fi
 
@@ -1476,7 +1481,10 @@ nftban_cmd_config_doctor() {
                 echo "OPTIONS:"
                 echo "  --json              JSON output (machine-readable)"
                 echo "  --brief             Single summary line"
-                echo "  --fix               Auto-fix fixable issues (requires elevated privileges)"
+                echo "  --fix               Auto-fix fixable issues (requires elevated privileges):"
+                echo "                      removes dead/stale .conf.local overrides and, on kernel/config"
+                echo "                      drift, runs 'nftban firewall rebuild'. Without --fix the doctor"
+                echo "                      is read-only."
                 echo "  --module <name>     Audit single module only"
                 echo "  --security          Show security gaps only"
                 echo ""

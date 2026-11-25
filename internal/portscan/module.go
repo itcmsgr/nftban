@@ -34,6 +34,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/module"
 	"github.com/itcmsgr/nftban/internal/nftbanconf"
 	"github.com/itcmsgr/nftban/internal/procenv"
+	"github.com/itcmsgr/nftban/internal/util"
 )
 
 const (
@@ -226,7 +227,8 @@ func (m *Module) parseMainConfig(content string) {
 
 		switch key {
 		case "PORTSCAN_ENABLED":
-			m.config.Enabled = strings.ToLower(value) == "true"
+			// v1.238 D1/D2: same truth table as the shell module gate (was "true" only).
+			m.config.Enabled, _ = util.ModuleSwitchValue(value)
 		case "PORTSCAN_MODE":
 			m.config.Mode = value
 		}
