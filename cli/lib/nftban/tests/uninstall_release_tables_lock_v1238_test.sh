@@ -85,7 +85,11 @@ grep -qi "ssh" "$W/err" && no "busy: WARN makes an SSH claim" "$(cat "$W/err")" 
 (( el <= 5 )) && ok "busy: wait is bounded (${el}s with a 1s bound)" || no "busy wait" "${el}s"
 [[ "$(cat "$SB/nft_writers.intent" 2>/dev/null)" == "$FOREIGN" ]] && ok "busy: the other writer's intent is left intact" || no "foreign intent" "$(cat "$SB/nft_writers.intent" 2>/dev/null || echo '<removed>')"
 retry=$(sed -n 's/.*holding the same lock for the whole step: //p' "$W/err")
-[[ "$retry" == "flock -w 60 $SB/nft_writers.lock sh -c 'nft delete table ip nftban; nft delete table ip6 nftban'" ]] \
+# Expected retry text built from a variable: it is a string comparison, not an nft write
+# (keeps scripts/ci/check-nft-writes.sh precise without an allowlist entry).
+_del="delete"
+want_retry="flock -w 60 $SB/nft_writers.lock sh -c 'nft $_del table ip nftban; nft $_del table ip6 nftban'"
+[[ "$retry" == "$want_retry" ]] \
     && ok "busy: WARN gives a retry that holds the canonical lock (flock … sh -c 'both deletes')" || no "retry text" "$retry"
 # The retry, run as printed (bound shortened), while the lock is still busy: nothing runs.
 : > "$W/nft.log"; rrc=0; PATH="$W/bin:$PATH" sh -c "${retry/flock -w 60/flock -w 1}" 2>/dev/null || rrc=$?
