@@ -1459,7 +1459,7 @@ _nftban_migrate_reports_to_log() {
         # a symlink is not ours to relocate: move the link and the target is orphaned,
         # follow it and we write outside the audited namespace.
         [ -L "\$_sib" ] && continue
-        # ⛔ NO COMMAND SUBSTITUTION HERE. A backtick or $( ) in this heredoc runs at
+        # ⛔ NO COMMAND SUBSTITUTION HERE. A backtick or \$( ) in this heredoc runs at
         # SPEC GENERATION time, not at install time — caught by
         # operator_config_not_package_owned_v1229_test. POSIX parameter expansion has
         # no such hazard.
