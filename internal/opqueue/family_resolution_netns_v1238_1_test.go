@@ -39,7 +39,7 @@ table ip6 nftban {
 func requirePrivateNetns(t *testing.T) {
 	t.Helper()
 	if os.Getenv("NFTBAN_NETNS_TEST") != "1" {
-		t.Skip("real-kernel test: run as root inside `unshare -n` with NFTBAN_NETNS_TEST=1")
+		t.Skip("real-kernel test: needs root privileges inside `unshare -n` with NFTBAN_NETNS_TEST=1")
 	}
 	if os.Geteuid() != 0 {
 		t.Skip("needs root (inside a private network namespace)")
