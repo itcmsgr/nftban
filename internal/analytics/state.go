@@ -40,13 +40,17 @@ type State struct {
 	ipOrigins map[string]*IPOrigin
 
 	// LRU eviction for ipOrigins (CWE-400 mitigation)
-	ipOriginsLRU *list.List
-	maxIPOrigins int
+	ipOriginsLRU     *list.List
+	maxIPOrigins     int
 	maxIPsPerCountry int
 
 	analyticsDir string // /var/lib/nftban/analytics
 	reportsDir   string // /var/lib/nftban/reports
 }
+
+// testHookSummaryHoldsRLock is nil in production. Tests set it to run code while GetSummary holds
+// its read lock, to queue a writer exactly between that lock and the rest of the summary.
+var testHookSummaryHoldsRLock func()
 
 var (
 	defaultState     *State
@@ -166,12 +170,13 @@ func (s *State) loadIfExists() error {
 
 // RecordBan updates in-memory stats (call this for each ban).
 // Parameters:
-//   ip       - IP address being banned
-//   country  - Country code (GeoIP)
-//   city     - City name (GeoIP)
-//   source   - Ban source: "suricata", "login-monitor", "manual", "feeds", or legacy jail name
-//   reason   - Ban reason/description
-//   t        - Timestamp
+//
+//	ip       - IP address being banned
+//	country  - Country code (GeoIP)
+//	city     - City name (GeoIP)
+//	source   - Ban source: "suricata", "login-monitor", "manual", "feeds", or legacy jail name
+//	reason   - Ban reason/description
+//	t        - Timestamp
 func (s *State) RecordBan(ip, country, city, source, reason string, t time.Time) {
 	if s == nil {
 		return
@@ -264,16 +269,17 @@ func (s *State) evictOldestIPOrigin() {
 // Parses the reason string to identify the service/filter that triggered the ban.
 //
 // Logic:
-//   1. If reason contains "_" (e.g., "ssh_brute_force"), extract first part
-//   2. If reason contains keywords, match against them
-//   3. Fallback to source-based classification
+//  1. If reason contains "_" (e.g., "ssh_brute_force"), extract first part
+//  2. If reason contains keywords, match against them
+//  3. Fallback to source-based classification
 //
 // Examples:
-//   "ssh_brute_force" -> "ssh"
-//   "wordpress_attack" -> "wordpress"
-//   "malware_c2" -> "malware"
-//   "ET MALWARE Zeus" -> "malware"
-//   "suricata:scan" -> "scan"
+//
+//	"ssh_brute_force" -> "ssh"
+//	"wordpress_attack" -> "wordpress"
+//	"malware_c2" -> "malware"
+//	"ET MALWARE Zeus" -> "malware"
+//	"suricata:scan" -> "scan"
 func extractServiceFromReason(reason, source string) string {
 	if reason == "" {
 		return extractServiceFromSource(source)
@@ -393,7 +399,12 @@ func (s *State) GetCountryStats() map[string]*CountryStats {
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	return s.countryStatsCopyLocked()
+}
 
+// countryStatsCopyLocked returns a shallow copy of the country map. The caller MUST hold s.mu
+// (read or write). It takes no lock itself, so GetSummary can use it under its own single RLock.
+func (s *State) countryStatsCopyLocked() map[string]*CountryStats {
 	out := make(map[string]*CountryStats, len(s.countries))
 	for k, v := range s.countries {
 		// shallow copy
@@ -461,6 +472,9 @@ func (s *State) GetSummary() *AnalyticsSummary {
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if testHookSummaryHoldsRLock != nil {
+		testHookSummaryHoldsRLock()
+	}
 
 	var lastUpdated time.Time
 	totalIPs := len(s.ipOrigins)
@@ -475,8 +489,11 @@ func (s *State) GetSummary() *AnalyticsSummary {
 		Success:        true,
 		TotalIPs:       totalIPs,
 		TotalCountries: len(s.countries),
-		Countries:      s.GetCountryStats(),
-		LastUpdated:    lastUpdated,
+		// v1.238: from the same view under the single RLock above. GetCountryStats() took a SECOND
+		// s.mu.RLock() — recursive read locking, which deadlocks when RecordBan's Lock() waits
+		// between the two (same defect as SetCounters.Snapshot, BUG-SETCOUNTERS-SNAPSHOT-NESTED-RLOCK-DEADLOCK).
+		Countries:   s.countryStatsCopyLocked(),
+		LastUpdated: lastUpdated,
 	}
 }
 
