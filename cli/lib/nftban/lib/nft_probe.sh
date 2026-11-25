@@ -153,6 +153,26 @@ nftban_nft_probe_redact() {
 # Every failure path routes through here so no path can accidentally leave a
 # verdict of ABSENT or a MAY_REBUILD of YES.
 # -----------------------------------------------------------------------------
+# v1.238.1 F1 (owner 2026-11-25): where the probe's capture files live. nftband runs these probes
+# (BotGuard kernel-layer apply at start) with PrivateTmp=true under SELinux nftband_t, which may not
+# create files in /tmp (tmp_t): on EL9/EL10 Enforcing the mktemp was denied, the probe failed closed
+# and BotGuard was not applied after a reboot. The captures now go to NFTBan's root-only runtime
+# directory /run/nftban-writers (fhs-spec: 0700 root:root; SELinux nftban_var_run_t, which nftband_t
+# manages; in the unit's ReadWritePaths). NFTBAN_PROBE_TMPDIR overrides (tests). A caller that cannot
+# write there (a non-root CLI) keeps the previous ${TMPDIR:-/tmp}, so nothing regresses for it.
+_nftban_probe_capture_dir() {
+    if [[ -n "${NFTBAN_PROBE_TMPDIR:-}" ]]; then
+        printf '%s' "$NFTBAN_PROBE_TMPDIR"
+        return 0
+    fi
+    local _d="${NFTBAN_WRITERS_DIR:-/run/nftban-writers}"
+    if [[ -d "$_d" && ! -L "$_d" && -w "$_d" ]]; then
+        printf '%s' "$_d"
+    else
+        printf '%s' "${TMPDIR:-/tmp}"
+    fi
+}
+
 _probe_fail_closed() {
     NFTBAN_NFT_PROBE_VERDICT="$NFTBAN_NFT_PROBE_CANNOT_READ"
     NFTBAN_NFT_PROBE_SESSION_DEGRADED=1
@@ -218,10 +238,11 @@ nftban_nft_probe_table() {
     # authorised a rebuild on a healthy firewall. Correctness over cleverness.
     # Capture files: unpredictable names, mode 0600, removed on every exit path
     # including early return. A capture failure is CANNOT_READ — NEVER ABSENT.
-    local _fo _fe
-    _fo=$(mktemp "${TMPDIR:-/tmp}/.nftban-probe.XXXXXXXXXX" 2>/dev/null) \
+    local _fo _fe _pd
+    _pd=$(_nftban_probe_capture_dir)
+    _fo=$(mktemp "${_pd}/.nftban-probe.XXXXXXXXXX" 2>/dev/null) \
         || { _probe_fail_closed "PROBE_CAPTURE_FAILED" "mktemp stdout failed"; return 1; }
-    _fe=$(mktemp "${TMPDIR:-/tmp}/.nftban-probe.XXXXXXXXXX" 2>/dev/null) \
+    _fe=$(mktemp "${_pd}/.nftban-probe.XXXXXXXXXX" 2>/dev/null) \
         || { rm -f "$_fo"; _probe_fail_closed "PROBE_CAPTURE_FAILED" "mktemp stderr failed"; return 1; }
     chmod 600 "$_fo" "$_fe" 2>/dev/null || true
 
@@ -304,16 +325,17 @@ nftban_nft_probe_set() {
     local _family="$1" _table="$2" _set="$3" _component="${4:-${NFTBAN_COMPONENT:-unknown}}"
     NFTBAN_NFT_PROBE_VERDICT=""; NFTBAN_NFT_PROBE_RC=""; NFTBAN_NFT_PROBE_CLASS=""
     NFTBAN_NFT_PROBE_STDERR=""
-    local _nft="${NFTBAN_NFT_BIN:-nft}" _out _err _rc=0 _fo _fe
+    local _nft="${NFTBAN_NFT_BIN:-nft}" _out _err _rc=0 _fo _fe _pd
 
     NFTBAN_NFT_PROBE_FAMILY="$_family"
     NFTBAN_NFT_PROBE_TABLE="$_table/$_set"
     NFTBAN_NFT_PROBE_COMPONENT="$_component"
     NFTBAN_NFT_PROBE_ARGV="$_nft list sets $_family"
 
-    _fo=$(mktemp "${TMPDIR:-/tmp}/.nftban-probe.XXXXXXXXXX" 2>/dev/null) \
+    _pd=$(_nftban_probe_capture_dir)
+    _fo=$(mktemp "${_pd}/.nftban-probe.XXXXXXXXXX" 2>/dev/null) \
         || { _probe_fail_closed "PROBE_CAPTURE_FAILED" "mktemp stdout failed"; return 1; }
-    _fe=$(mktemp "${TMPDIR:-/tmp}/.nftban-probe.XXXXXXXXXX" 2>/dev/null) \
+    _fe=$(mktemp "${_pd}/.nftban-probe.XXXXXXXXXX" 2>/dev/null) \
         || { rm -f "$_fo"; _probe_fail_closed "PROBE_CAPTURE_FAILED" "mktemp stderr failed"; return 1; }
     chmod 600 "$_fo" "$_fe" 2>/dev/null || true
 
@@ -462,7 +484,7 @@ nftban_nft_generation_read() {
     return 0
 }
 
-export -f nftban_nft_probe_session_degraded nftban_nft_probe_session_reset \
+export -f nftban_nft_probe_session_degraded nftban_nft_probe_session_reset _nftban_probe_capture_dir \
           nftban_nft_probe_table nftban_nft_probe_set nftban_nft_probe_error_class \
           nftban_nft_probe_redact nftban_nft_probe_diagnostic \
           nftban_nft_probe_may_rebuild nftban_nft_generation_read 2>/dev/null || true
