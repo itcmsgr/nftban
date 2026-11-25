@@ -47,7 +47,8 @@ world() { # fresh sandbox: <ddos_mode> <portscan_mode>
 }
 ENV=(env -i PATH=/usr/bin:/bin HOME="$W" TMPDIR="$W" NFTBAN_LIB_DIR="$LIBDIR" NFTBAN_DDOS_LIB_DIR="$LIBDIR"
      NFTBAN_CONFIG_DIR="$W/w/etc" NFTBAN_RUN_DIR="$W/w/run" NFTBAN_WRITERS_DIR="$W/w/run"
-     NFTBAN_PLAN_RECORD_DIR="$W/w/run" NFTBAN_LOG_DIR="$W/w/log" NFTBAN_DATA_DIR="$W/w/data"
+     NFTBAN_PLAN_RECORD_DIR="$W/w/run" NFTBAN_PLAN_GENERATION_FILE="$W/w/run/convergence-generation"
+     NFTBAN_LOG_DIR="$W/w/log" NFTBAN_DATA_DIR="$W/w/data"
      NFTBAN_STATE_DIR="$W/w/data/state" CALLS="$W/w/calls")
 
 resolve() { # <module> <available:0|1> -> "effective basis"
@@ -76,6 +77,7 @@ world auto auto
 reconcile() { # <available:0|1>
     "${ENV[@]}" AVAIL="$1" bash -c '
         source "$NFTBAN_LIB_DIR/core/nftban_ddos.sh" >/dev/null 2>&1 || exit 9
+        set +e   # the module enables errexit; the harness must record the rc, not die on it
         rec() { echo "$1" >> "$CALLS"; return 0; }
         nftban_ddos_suricata_is_available() { return "$AVAIL"; }
         nftban_ddos_classic_enable()   { rec classic_enable; }
