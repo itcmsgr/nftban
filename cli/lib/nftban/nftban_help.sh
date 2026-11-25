@@ -13,7 +13,7 @@
 # meta:type="module"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2025-11-05"
-# meta:updated_date="2026-03-27"
+# meta:updated_date="2026-11-25"
 #
 # meta:description="Wrapper that calls generate-help.sh for CLI help"
 # meta:input="None (called from main router)"
@@ -86,51 +86,51 @@ nftban_print_help() {
 # =============================================================================
 
 _nftban_help_essential() {
-    # v1.153 UX-A7: surface the same ⚡/⚠️ risk markers the `help --all` view
-    # carries, so the short list flags state-changing verbs at a glance.
-    #   ⚡ = state-changing (mutates kernel/config); ⚠️ = advanced / use with
-    #   caution. Unmarked = read-only. Markers mirror the registry risk class
-    #   (commands.registry.yml) and scripts/generate-help.sh RISK_ICONS, no
-    #   behavior change.
+    # v1.238: ONE marker meaning in both views. The marker of each command here is the
+    # one `nftban help --all` derives from commands.registry.yml (scripts/generate-help.sh
+    # _marker_for: risk advanced -> ⚠️, setup -> 🛠️, else mutates true|conditional -> ⚡,
+    # else unmarked). tests/help_verb_icons_v153_test.sh holds the two views equal.
     cat <<'EOF'
 USAGE:
   nftban <command> [subcommand] [options]
 
 ESSENTIAL COMMANDS:
      status        System status overview
-     health        Diagnostics and auto-repair
+  ⚡ health        Protection truth table (read-only); repair is opt-in: health fix
   ⚡ ban           Ban an IP address
   ⚡ unban         Remove IP ban
      list          List banned/whitelisted IPs
      search        Search IP across all sets
   ⚡ blacklist     Blacklist management (add/remove/list/flush)
   ⚡ whitelist     Whitelist management (add/remove/list)
-  ⚡ feeds         Threat intelligence feeds
+  ⚠️ feeds         Threat intelligence feeds (list/status; enable/disable [feed])
   ⚠️ firewall      Firewall management (reload/rebuild/record)
 
 PROTECTION MODULES:
-  ⚡ ddos          DDoS protection (enable/disable/status)
-  ⚡ portscan      Port scan detection (enable/disable/status)
-  ⚡ login         Login monitor — SSH brute-force protection
-  ⚡ botguard      HTTP Guard — live request-time HTTP bot guard (enable/disable/status/list)
-  🔍 botscan       HTTP Exploit Scanner — periodic access-log exploit scanner (status/enable/disable)
+  ⚠️ ddos          DDoS protection (enable/disable/status)
+  ⚠️ portscan      Port scan detection (enable/disable/status)
+  ⚠️ login         Login monitor — SSH brute-force protection
+  ⚠️ botguard      HTTP Guard — live request-time HTTP bot guard (enable/disable/apply/status)
+  ⚠️ botscan       HTTP Exploit Scanner — periodic access-log exploit scanner (status/enable/disable)
                    NOTE: BotScan is independent of BotGuard — it can ban via the manual blacklist
                    even when BotGuard is disabled.
-  ⚡ geoban        Geographic IP blocking (enable/disable/list)
+  ⚠️ geoban        Geographic IP blocking (enable/disable/list)
 
 SYSTEM:
-  ⚡ config        Configuration management
-     version       Version information
+  ⚠️ config        Configuration management
+  ⚠️ enable        Enable NFTBan services (also: disable, restart)
+     version       Version information (also: nftban --version, -V)
   ⚠️ update        Update NFTBan
 
-LEGEND:
-  ⚡ state-changing    ⚠️ advanced / use with caution    (unmarked = read-only)
+MARKERS (same meaning in 'nftban help --all'):
+  ⚡ changes state in some subcommands   ⚠️ advanced: changes state, use with caution
+  🛠️ one-time setup                      (unmarked = read-only)
 
 EXIT CODES:
-  0  Success    1  Error    2  Warning
+  0  Success    1  Error    other codes are command-specific (see the command's help)
 
-Run 'nftban help --all' for all commands (60+)
-Run 'nftban <command> help' for command-specific help
+Run 'nftban help --all' for all commands (70+)
+Run 'nftban help <command>' (same as 'nftban <command> --help') for command help
 EOF
 }
 
@@ -146,7 +146,7 @@ USAGE:
 
 CORE COMMANDS:
   status      System status overview
-  health      Diagnostics and auto-repair
+  health      Protection truth table (read-only); repair: health fix
   ban         Ban an IP address
   unban       Remove IP ban
   blacklist   Blacklist management (add/remove/list/files/flush)
@@ -165,11 +165,11 @@ PROTECTION MODULES:
   geoip       GeoIP database management
 
 EXIT CODES:
-  0  Success   - Command completed without errors
-  1  Error     - Command failed (check stderr for details)
-  2  Warning   - Command completed with warnings (e.g., missing deps)
+  0  Success
+  1  Error (check stderr for details)
+  Other codes are command-specific (see 'nftban <command> --help')
 
-Run 'nftban <command> help' for command-specific help.
+Run 'nftban help <command>' for command-specific help.
 
 Documentation: https://github.com/itcmsgr/nftban/wiki
 EOF

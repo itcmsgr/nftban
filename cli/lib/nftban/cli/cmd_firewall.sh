@@ -6358,7 +6358,7 @@ Examples:
   nftban firewall conflicts
 
   # Quick checks
-  nftban firewall check 1.2.3.4
+  nftban firewall check 192.0.2.10
   nftban firewall stats
 
   # Schema audit
@@ -6554,7 +6554,7 @@ The command:
   4. Displays available actions (block, unblock, whitelist, etc.)
 
 Arguments:
-  IP|PORT       IP address (1.2.3.4 or 2001:db8::1) or port number (22)
+  IP|PORT       IP address (192.0.2.10 or 2001:db8::1) or port number (22)
 
 Options:
   --json        Output results as JSON
@@ -6566,13 +6566,13 @@ Exit codes:
 
 Examples:
   # Check if IP is blocked
-  nftban firewall check 1.2.3.4
+  nftban firewall check 192.0.2.10
 
   # Check if port is allowed
   nftban firewall check 22
 
   # JSON output (for scripts/API)
-  nftban firewall check 1.2.3.4 --json
+  nftban firewall check 192.0.2.10 --json
 
 Processing Path:
   Priority: ip/ip6 nftban input_temp_whitelist (temp whitelist)

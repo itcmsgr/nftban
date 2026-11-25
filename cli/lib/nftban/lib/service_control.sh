@@ -1008,7 +1008,7 @@ nftban_enable_all() {
             echo "  ❌ $failure"
         done
         echo ""
-        echo "  Run 'nftban health check --auto-heal' to attempt repair"
+        echo "  Run 'nftban health fix' to attempt repair"
 
         # Return failure only for critical issues
         if [[ $critical_failures -gt 0 ]]; then

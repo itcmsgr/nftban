@@ -800,7 +800,7 @@ nftban_health_check_ssh_port() {
 
     if [[ "$current_ssh_port" != "$config_ssh_port" && "$auto_heal" != "1" ]]; then
         ssh_issues+=("SSH port mismatch: sshd_config=$current_ssh_port, nftban=$config_ssh_port")
-        ssh_issues+=("NOT CHANGED (read-only check). Applied by the maintenance cycle (every 15 min), or now with: nftban health --fix (or: nftban health check --auto-heal)")
+        ssh_issues+=("NOT CHANGED (read-only check). Applied by the maintenance cycle (every 15 min), or now with: nftban health --fix (or: nftban health diagnostics --auto-heal)")
         status=$HEALTH_WARNING
     elif [[ "$current_ssh_port" != "$config_ssh_port" && "$_ssh_fix_authority" != GRANTED* ]]; then
         ssh_issues+=("SSH port mismatch: sshd_config=$current_ssh_port, nftban=$config_ssh_port")

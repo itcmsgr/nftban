@@ -6,7 +6,7 @@
 # meta:type="systemd"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2025-10-26"
-# meta:description="Periodic health check with auto-heal"
+# meta:description="Periodic read-only health check; stores the verdict for the banner"
 # meta:input="None"
 # meta:output="Systemd unit"
 # meta:depends=""
@@ -25,28 +25,30 @@
 ConditionKernelCommandLine=!nftban=disabled
 # v1.235 D10: while a commit-confirm rollback has FAILED, nothing may apply another state.
 ConditionPathExists=!/var/lib/nftban/state/commit-confirm.rollback-failed
-Description=NFTBan Periodic Health Check with Auto-Heal
+Description=NFTBan Periodic Health Check
 Documentation=man:nftban(8)
 After=network.target nftables.service
 
 [Service]
 Type=oneshot
 
-# Runs as nftban; auto-heal actions are constrained by systemd + polkit + CAP_NET_ADMIN.
-# Polkit allowlist (10-nftban-systemd.rules) controls which units can be restarted.
-# Root-only operations (chown, system config) are skipped gracefully.
-# For full root-level fixes: systemctl start nftban-health-fix.service (manual)
+# Runs as nftban. The periodic check is DIAGNOSTIC only (owner decision v1.238): it repairs
+# nothing. Repair is an explicit opt-in: `nftban health fix`, `nftban health diagnostics
+# --auto-heal`, or (root-level) systemctl start nftban-health-fix.service.
 User=nftban
 Group=nftban
 
-# --auto-heal: Fix what nftban user can (services via polkit, nftables via CAP_NET_ADMIN)
-# --cache-status: Write health result for banner display
+# health check: Go validator truth table, read-only.
+# --cache-status: write the verdict to /var/cache/nftban/health/health_status.cache for the
+#   banner (honoured by `health check` since v1.238; before, this path wrote no cache).
+# v1.238: --auto-heal removed from this call. `health check` never applied it (the
+#   check arm ignores it), so removing it changes no behaviour.
 # flock: Prevent timer+manual overlap (non-blocking, exit if already running)
 # NOTE: Lock file in /var/cache/nftban (owned by nftban:nftban) NOT /run/nftban
 #       to avoid chicken-and-egg: health check can't run if /run/nftban perms broken
-# v1.235: skipped (not failed) without firewall authority — auto-heal never grants itself authority.
+# v1.235: skipped (not failed) without firewall authority.
 ExecCondition=+/usr/lib/nftban/bin/nftband --authority-check
-ExecStart=/usr/bin/flock -n /var/cache/nftban/health.lock /usr/sbin/nftban health check --auto-heal --cache-status
+ExecStart=/usr/bin/flock -n /var/cache/nftban/health.lock /usr/sbin/nftban health check --cache-status
 
 # NOTE: Root-level permission fixes (nftban-health-fix.service) are NOT
 # auto-triggered from the periodic health check. The fix-all service runs
@@ -57,7 +59,7 @@ ExecStart=/usr/bin/flock -n /var/cache/nftban/health.lock /usr/sbin/nftban healt
 #   2. Manual operator invocation (systemctl start nftban-health-fix)
 # Future: introduce a bounded 'nftban health fix safe' target if needed.
 
-# CAP_NET_ADMIN required for nft list/add operations (health checks + auto-heal)
+# CAP_NET_ADMIN required for the validator's nft list (read) operations
 AmbientCapabilities=CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_ADMIN
 

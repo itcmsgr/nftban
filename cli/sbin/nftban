@@ -1050,6 +1050,18 @@ unprotect
 EOF
 }
 
+# v1.238: is <topic> a command `nftban help <topic>` can open? The canonical list above
+# (every dispatchable top-level token) plus the two aliases it omits. Excluded: help and
+# hello (no per-command help) and analytics (nftban-core passthrough with no help guard).
+_nftban_help_topic_known() {
+    local t="$1"
+    case "$t" in
+        ""|help|hello|analytics) return 1 ;;
+        service|support-bundle) return 0 ;;
+    esac
+    grep -qxF -- "$t" <<< "$(_nftban_canonical_commands)"
+}
+
 # Suggest the closest canonical command for an unknown user input.
 # Echoes the best suggestion to stdout, or nothing if no good match exists.
 # Implements the V127 UX-5 thresholds described above.
@@ -1170,6 +1182,15 @@ main() {
     # subcommand args ("$@") are left untouched so case-sensitive values
     # (IPs, country codes, file paths, etc.) are preserved.
     cmd="${cmd,,}"
+
+    # v1.238: `nftban --version` and `nftban -V` (lower-cased above to -v) are the same
+    # path as `nftban version`; `nftban help --all` lists them as global options.
+    case "$cmd" in
+        --version|-v)
+            cmd="version"
+            set -- version "${@:2}"
+            ;;
+    esac
 
     # v1.153 PR-B (UX-A3/UX-C4): export the resolved top-level subcommand so the
     # unified banner renderer can label "Cmd:" with the REAL subcommand instead
@@ -1603,6 +1624,24 @@ main() {
         help|--help|-h)
             # v1.46.0: Pass remaining args so --all works (nftban help --all)
             shift
+            # v1.238: `nftban help <command> [verb]` opens that command's own help (the
+            # same output as `nftban <command> [verb] --help`). Before v1.238 the topic was
+            # dropped and the short list printed with rc 0. An unknown topic is an error.
+            if [[ $# -gt 0 && "$1" != -* && "${1,,}" != "help" ]]; then
+                local _help_topic="${1,,}"
+                shift
+                if _nftban_help_topic_known "$_help_topic"; then
+                    main "$_help_topic" "$@" --help
+                    return $?
+                fi
+                local _help_sugg=""
+                _help_sugg=$(_nftban_suggest_command "$_help_topic")
+                echo "ERROR: No help topic '${_help_topic}' (not an nftban command)" >&2
+                [[ -n "$_help_sugg" ]] && echo "Did you mean: nftban help ${_help_sugg}" >&2
+                echo "Run 'nftban help --all' for all commands" >&2
+                return 1
+            fi
+            [[ $# -gt 0 && "${1,,}" == "help" ]] && shift
             if declare -f nftban_print_help >/dev/null 2>&1; then
                 nftban_print_help "$@"
             else

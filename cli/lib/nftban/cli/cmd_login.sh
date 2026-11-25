@@ -1336,7 +1336,7 @@ COMMANDS:
     install [TARGET]    Install/provision login monitoring
     help                Show this help message
 
-NOTE: Login health checks are handled by 'nftban health check --auto-heal'
+NOTE: Login health is part of 'nftban health check' (read-only); repairs: 'nftban health fix'
 
 MONITORED SERVICES (auto-detected):
     System:
@@ -1498,7 +1498,7 @@ nftban_cmd_login() {
         health-fix)
             echo "NOTE: Login health checks are now part of the main autoheal system."
             echo ""
-            echo "Use: nftban health check --auto-heal"
+            echo "Use: nftban health check (read-only) — repairs: nftban health fix"
             echo ""
             ;;
         logs)

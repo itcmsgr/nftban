@@ -53,12 +53,18 @@ Confidence: HIGH / MEDIUM / LOW
 
 ### Valid CLI Commands
 ```
-ban, unban, status, whitelist, blacklist, feeds,
-watchdog, stats, health, version, install, uninstall,
-update, rebuild, login, metrics, export, portscan,
-ddos, suricata, config, service, services, timers, geoip, geoban,
-emulate, search, list, fhs, botguard, tunnel, sync
+ban, unban, status, whitelist, whitelist-system, blacklist, feeds, watchdog, stats,
+health, version, update, rollback, login, metrics, export, portscan, ddos, suricata,
+config, service, services, timers, geoip, geoban, country, emulate, verify, explain,
+search, list, check, fhs, botguard, botscan, tunnel, sync, cleanup, flush, protect,
+unprotect, firewall, firewall-logs, logs, nftables, port, profile, panel, permissions,
+polkit, trust, cloudflare, rbl, report, scale, zabbix, connector, pro, mail, queue,
+system, enable, disable, restart, modes, module, debug, selftest, smoke, snapshot,
+test, benchmark, support, support-bundle, setup, wizard, menu, preflight, validate
 ```
+Dispatcher truth (`_nftban_canonical_commands` + alias arms in `cli/sbin/nftban`): `install`,
+`uninstall` and `rebuild` are NOT CLI commands (inert help stubs; the package installs, and the
+rebuild command is `nftban firewall rebuild`).
 
 ### Current Version
 
