@@ -64,6 +64,7 @@ The known issues of v1.237.0 still apply, except where an item below fixes them.
 
 ### Fixed
 
+- **A daemon lock-ordering bug could stop configuration changes until `nftband` was restarted.** Reading the set counters (every 10 s for the status cache, and for `nftban stats`) took a read lock twice; if the hourly reconciliation queued its write between the two, both waited forever while the reconciliation held the firewall convergence lock. Bans kept being applied, but `nftban <module> enable|disable`, `firewall rebuild` and `reload` were refused ("convergence already in progress") and the reconciliation and the counters stopped. The counters now take the lock once. On an affected host, `systemctl restart nftband` restores operation; the upgrade restarts it.
 - **A failed BotGuard re-apply makes a runtime rebuild return rc 1; the installer and `update apply` keep the warning and their existing result** (#1514 via #1525). Rebuild child processes now receive the probe constants they need (before: `NFTBAN_NFT_PROBE_PRESENT: unbound variable`).
 - **A very large configured BotGuard ban TTL can no longer wrap around to a short ban**; the value passed to nftables is capped at the maximum element timeout (#1520 via #1526).
 - **`nftban botguard status --json`** prints a JSON boolean; **`nftban ddos stats --json`** uses the module decision (#1512 via #1525).
