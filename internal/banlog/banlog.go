@@ -50,12 +50,15 @@ import (
 
 // Source constants for ban log entries
 const (
-	SourceManual    = "manual"
-	SourceLogin     = "login"
-	SourcePortscan  = "portscan"
-	SourceDDoS      = "ddos"
-	SourceFeeds     = "feeds"
-	SourceSuricata  = "suricata"
+	SourceManual   = "manual"
+	SourceLogin    = "login"
+	SourcePortscan = "portscan"
+	SourceDDoS     = "ddos"
+	SourceFeeds    = "feeds"
+	SourceSuricata = "suricata"
+	// SourceBotScan: v1.238 BUG-BANS-LOG-LABELS-BOTSCAN-ESCALATION-AS-DDOS — BotScan bans were written as
+	// "ddos" (signal path) or "manual" (direct path). Same label as internal/bansource's detector vocabulary.
+	SourceBotScan = "botscan"
 )
 
 // Status constants
