@@ -220,6 +220,7 @@ NFTBan Emulate - Simulate packet decision
 USAGE:
     nftban emulate <ip> [proto] [port] [direction]
     nftban emulate <ip> [options]
+    (aliases: nftban verify ..., nftban explain ...)
 
 DESCRIPTION:
     Simulates what nftban would do with a packet from the specified IP.
@@ -255,7 +256,7 @@ EXAMPLES:
     nftban emulate 8.8.8.8 --proto tcp --port 22
 
     # Check outbound traffic
-    nftban emulate 1.2.3.4 --direction out
+    nftban emulate 192.0.2.10 --direction out
 
     # JSON output for scripts/API
     nftban emulate 8.8.8.8 --json

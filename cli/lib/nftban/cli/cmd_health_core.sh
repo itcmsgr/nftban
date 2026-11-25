@@ -35,6 +35,27 @@ _CMD_HEALTH_CORE_LOADED="true"
 # COMMAND: check
 # =============================================================================
 
+# Banner health cache, read by cmd_status.sh and the banner:
+# ${NFTBAN_CACHE_DIR}/health/health_status.cache. Arg: verdict 0=OK, 1=WARNING, 2=ERROR,
+# anything else=UNKNOWN. Used by `health diagnostics --cache-status` and, since v1.238, by
+# `health check --cache-status` (the nftban-health.service call, which before wrote nothing).
+nftban_health_write_status_cache() {
+    local result="${1:-}"
+    local cache_dir="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/health"
+    local _hc_tmp="${cache_dir}/health_status.cache.tmp"
+    local _hc_val
+    case "$result" in
+        0) _hc_val="PROTECTED" ;;
+        1) _hc_val="WARNING" ;;
+        2) _hc_val="ERROR" ;;
+        *) _hc_val="UNKNOWN" ;;
+    esac
+    mkdir -p "$cache_dir" 2>/dev/null || true
+    { printf '%s\n' "$_hc_val" > "$_hc_tmp"; } 2>/dev/null || return 0
+    chmod 644 "$_hc_tmp" 2>/dev/null || true
+    mv -f "$_hc_tmp" "${cache_dir}/health_status.cache" 2>/dev/null || true
+}
+
 nftban_health_cmd_check() {
     # Run comprehensive health check
     # Args: [--auto-heal] [--quiet] [--cache-status] [--strict]
@@ -67,7 +88,7 @@ nftban_health_cmd_check() {
                 ;;
             *)
                 echo "ERROR: Unknown option: $1" >&2
-                echo "Usage: nftban health check [--auto-heal] [--quiet] [--cache-status] [--strict]" >&2
+                echo "Usage: nftban health diagnostics [--auto-heal] [--quiet] [--cache-status] [--strict]" >&2
                 return 1
                 ;;
         esac
@@ -136,30 +157,8 @@ nftban_health_cmd_check() {
 
     # Write health status to cache file (for banner display)
     if [[ $cache_status -eq 1 ]]; then
-        # Load output module for cache write function
-        if ! declare -f nftban_health_cache_write >/dev/null 2>&1; then
-            if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
-                source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" 2>/dev/null || true
-            fi
-        fi
-        # Write cache (0=OK, 1=WARNING, 2=ERROR)
-        if declare -f nftban_health_cache_write >/dev/null 2>&1; then
-            nftban_health_cache_write "$result"
-        else
-            # Fallback: write directly
-            local cache_dir="${NFTBAN_CACHE_DIR}/health"
-            mkdir -p "$cache_dir" 2>/dev/null || true
-            # Status codes: 0=OK, 1=WARNING, 2=ERROR
-            local _hc_tmp="${cache_dir}/health_status.cache.tmp"
-            case "$result" in
-                0) echo "PROTECTED" > "$_hc_tmp" ;;
-                1) echo "WARNING" > "$_hc_tmp" ;;
-                2) echo "ERROR" > "$_hc_tmp" ;;
-                *) echo "UNKNOWN" > "$_hc_tmp" ;;
-            esac
-            chmod 644 "$_hc_tmp" 2>/dev/null || true
-            mv -f "$_hc_tmp" "${cache_dir}/health_status.cache" 2>/dev/null || true
-        fi
+        # (nftban_health_cache_write never existed; the direct write was always the path taken.)
+        nftban_health_write_status_cache "$result"
     fi
 
     # Render results (unless quiet)
@@ -512,7 +511,7 @@ nftban_health_cmd_fix() {
             nftban_health_fix_nftables
 
             # v1.236 D3: the SSH-port fix (00-ssh.conf + both sets) runs HERE and in
-            # `health check --auto-heal`, never in a read-only check. This path is
+            # `health diagnostics --auto-heal` (nftban_health_cmd_check), never in a read-only check. This path is
             # already authority-gated above; the check re-checks before writing.
             if declare -f nftban_health_check_ssh_port >/dev/null 2>&1; then
                 echo "  Checking SSH port..."

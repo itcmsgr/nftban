@@ -824,7 +824,7 @@ EXAMPLES:
     nftban firewall logs show --live --port 22
 
     # Search for specific IP
-    nftban firewall logs show --ip 1.2.3.4 --since "1 hour ago"
+    nftban firewall logs show --ip 192.0.2.10 --since "1 hour ago"
 
     # Export to JSON
     nftban firewall logs show --since "24 hours ago" --json > logs.json

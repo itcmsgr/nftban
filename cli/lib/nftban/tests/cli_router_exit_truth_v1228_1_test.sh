@@ -271,6 +271,55 @@ else
     fi
 fi
 
+# -----------------------------------------------------------------------------
+# T-H1..T-H4 (v1.238 help truth) — public help paths.
+#   H1: `nftban help <command>` prints exactly what `nftban <command> --help` prints.
+#   H2: `nftban help <not-a-command>` is an error: rc 1, ERROR on stderr, nothing on stdout.
+#   H3: `nftban --version` and `nftban -V` are the `nftban version` path (rc 0, same text).
+#   H4: `nftban help` / `nftban help help` still print the short list (rc 0).
+# -----------------------------------------------------------------------------
+echo "--- T-H1..T-H4: help <topic>, --version/-V (v1.238) ---"
+for t in ddos botguard firewall enable search install; do
+    run "$REAL_LIB" "$t" --help; want_rc=$RC; want="$OUT"
+    run "$REAL_LIB" help "$t"
+    if (( RC == want_rc )) && [[ -n "$OUT" && "$OUT" == "$want" ]]; then
+        ok "T-H1 'nftban help $t' == 'nftban $t --help' (rc=$RC, ${#OUT}B)"
+    else
+        no "T-H1 'nftban help $t' == 'nftban $t --help'" "rc=$RC want_rc=$want_rc same=$([[ "$OUT" == "$want" ]] && echo y || echo n)"
+    fi
+done
+run "$REAL_LIB" help firewall rebuild; got="$OUT"; grc=$RC
+run "$REAL_LIB" firewall rebuild --help
+[[ $grc -eq $RC && "$got" == "$OUT" && -n "$got" ]] \
+    && ok "T-H1b 'nftban help firewall rebuild' == 'nftban firewall rebuild --help' (rc=$RC)" \
+    || no "T-H1b help <cmd> <verb>" "rc=$grc vs $RC"
+for t in nosuchcommand analytics; do
+    run "$REAL_LIB" help "$t"
+    if (( RC == 1 )) && [[ "$ERRTXT" == *"No help topic"* && -z "$OUT" ]]; then
+        ok "T-H2 'nftban help $t' -> rc=1, ERROR on stderr, empty stdout"
+    else
+        no "T-H2 'nftban help $t' is an error" "rc=$RC stdout=${#OUT}B stderr=${ERRTXT:0:80}"
+    fi
+done
+run "$REAL_LIB" version; vref="$OUT"; vrc=$RC
+for f in --version -V; do
+    run "$REAL_LIB" "$f"
+    if (( RC == 0 && vrc == 0 )) && [[ -n "$OUT" && "$OUT" == "$vref" ]]; then
+        ok "T-H3 'nftban $f' == 'nftban version' (rc=0)"
+    else
+        no "T-H3 'nftban $f' == 'nftban version'" "rc=$RC vrc=$vrc same=$([[ "$OUT" == "$vref" ]] && echo y || echo n) err=${ERRTXT:0:80}"
+    fi
+done
+run "$REAL_LIB" --version --short; s1="$OUT"; run "$REAL_LIB" version --short
+[[ -n "$s1" && "$s1" == "$OUT" ]] && ok "T-H3b 'nftban --version --short' == 'nftban version --short'" \
+    || no "T-H3b --version passes its options" "got '${s1:0:40}' want '${OUT:0:40}'"
+for a in "help" "help help"; do
+    IFS=' ' read -ra _a <<< "$a"
+    run "$REAL_LIB" "${_a[@]}"
+    (( RC == 0 )) && [[ "$OUT" == *"ESSENTIAL COMMANDS"* ]] \
+        && ok "T-H4 'nftban $a' -> short list, rc=0" || no "T-H4 'nftban $a'" "rc=$RC"
+done
+
 echo "=========================================================="
 echo "RESULTS: PASS=$PASS FAIL=$FAIL"
 if (( FAIL > 0 )); then

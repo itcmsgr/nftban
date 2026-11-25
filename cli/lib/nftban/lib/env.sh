@@ -31,6 +31,10 @@ NFTBAN_ENV_LOADED="true"
 [[ -z "${NFTBAN_LOG_DIR:-}" ]] && export NFTBAN_LOG_DIR="/var/log/nftban"
 [[ -z "${NFTBAN_CACHE_DIR:-}" ]] && export NFTBAN_CACHE_DIR="/var/cache/nftban"
 [[ -z "${NFTBAN_DATA_DIR:-}" ]] && export NFTBAN_DATA_DIR="/var/lib/nftban"
+# v1.238 (BUG-CLI-QUEUE-CRASHES-WHEN-NFTBAN-RUN-DIR-UNSET): same value as nftban.conf's
+# `: "${NFTBAN_RUN_DIR:=/run/nftban}"`, for callers that cannot read nftban.conf (a user
+# outside the nftban group): `nftban queue --help` crashed on an unbound variable.
+[[ -z "${NFTBAN_RUN_DIR:-}" ]] && export NFTBAN_RUN_DIR="/run/nftban"
 
 # =============================================================================
 # CONFIG-LOCAL OVERRIDE LOADER (v1.201.x CONFIG_LOCAL_RECOVERY IMPL-1)

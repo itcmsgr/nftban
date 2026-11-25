@@ -63,9 +63,9 @@ USAGE:
     nftban botguard <command> [options]
 
 COMMANDS:
-    enable              Enable HTTP Bot Guard protection
-    disable             Disable HTTP Bot Guard protection
-    apply               Load the BotGuard rules if enabled (never changes the setting)
+    enable              SAVE the setting ON, then load the rules and restart nftband
+    disable             SAVE the setting OFF, then remove the rules and restart nftband
+    apply               RE-APPLY the rules if the setting is ON (never changes the setting)
     status              Show bot guard status and statistics
     config              Show bot guard configuration
     stats               Show bot guard set statistics
@@ -75,12 +75,19 @@ COMMANDS:
     help                Show this help message
 
 DESCRIPTION:
-    HTTP Bot Guard provides automated crawler detection and protection
-    using a three-clock hybrid architecture:
+    HTTP Bot Guard provides automated crawler detection and protection:
 
-      Clock 1 (Kernel):  nft meter marks suspect IPs per-packet
-      Clock 2 (Go 60s):  Classification + FCrDNS verification loop
-      Clock 3 (Shell):   Botscan batch pattern matching (10 min)
+      Kernel:      nft meter marks suspect IPs per-packet
+      Go (60s):    Classification + FCrDNS verification loop
+
+    BotScan (nftban botscan, the periodic access-log scanner) is a separate
+    module: it runs and bans whether or not BotGuard is enabled. See
+    'nftban botscan help' for how its decisions differ with BotGuard on/off.
+
+    Which command to use:
+      change the setting           nftban botguard enable | disable
+      rules missing, setting ON    nftban botguard apply
+      whole ruleset damaged        nftban firewall rebuild
 
     Bot Guard is a SEPARATE module from DDoS protection. Both can run
     independently. Bot Guard adds HTTP-specific bot classification on
@@ -95,7 +102,7 @@ CONFIGURATION:
 EXAMPLES:
     nftban botguard enable                # Enable bot guard
     nftban botguard status                # Show current status
-    nftban botguard test 1.2.3.4          # Test IP classification
+    nftban botguard test 192.0.2.10       # Test IP classification
     nftban botguard list --set=allow      # Show verified crawlers
     nftban botguard verify 66.249.79.1    # FCrDNS check (Googlebot)
     nftban botguard status --json         # JSON output for scripting
@@ -405,7 +412,7 @@ _nftban_botguard_enable() {
     # v1.150 (MOD-05): capture the fragment rc. Previously a fragment failure
     # only warned, then the function unconditionally claimed "enabled" + rc=0
     # while HTTP_BOTGUARD_ENABLED=true was already persisted → BotGuard inert
-    # but reported active. Keep the config write (so a later `nftban rebuild`
+    # but reported active. Keep the config write (so a later `nftban botguard apply` or `nftban firewall rebuild`
     # picks it up) but make the result honest: do NOT claim "enabled", and
     # return non-zero so callers/automation see the failure.
     local fragment_rc=0
@@ -415,11 +422,12 @@ _nftban_botguard_enable() {
 
     if [[ $fragment_rc -ne 0 ]]; then
         if [[ "$json_mode" == "true" ]]; then
-            printf '{"status":"error","message":"HTTP Bot Guard configured but rules NOT applied","hint":"run: nftban rebuild","rules_applied":false}\n'
+            printf '{"status":"error","message":"HTTP Bot Guard configured but rules NOT applied","hint":"run: nftban botguard apply (re-applies BotGuard only; on repeated failure: nftban firewall rebuild)","rules_applied":false}\n'
         else
             echo "ERROR: HTTP Bot Guard configured but rules were NOT applied." >&2
             echo "       The config is saved (HTTP_BOTGUARD_ENABLED=true) but the firewall" >&2
-            echo "       rules failed to load. Run: nftban rebuild" >&2
+            echo "       rules failed to load. Run: nftban botguard apply (shows the reason);" >&2
+            echo "       if that fails again: nftban firewall rebuild" >&2
         fi
         return 1
     fi
@@ -1014,7 +1022,7 @@ nftban_cmd_botguard() {
             _nftban_botguard_help
             ;;
         *)
-            cmd_error "Unknown command: $action. Use: enable, disable, status, config, stats, test, list, verify, help" "$json_mode"
+            cmd_error "Unknown command: $action. Use: enable, disable, apply, status, config, stats, test, list, verify, help" "$json_mode"
             return 1
             ;;
     esac
