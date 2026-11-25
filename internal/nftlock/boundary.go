@@ -161,6 +161,51 @@ func (b *Boundary) tryShared() (*os.File, error) {
 	return f, nil
 }
 
+// BeginExclusive takes the write boundary EXCLUSIVE for a writer outside nftband, with the same
+// protocol as the shell (cli/lib/nftban/lib/nft_writers.sh nftban_writers_acquire): publish the
+// intent (new daemon sections wait), then wait at most Wait for LOCK_EX, i.e. for every daemon
+// write section in flight to finish. Returns ErrBusy (nothing held) after Wait. The returned func
+// releases the lock and removes the intent if it is still ours. v1.238 (audit V2): the installer's
+// SSH-port add to nftban tcp_ports_in used no boundary at all.
+func (b *Boundary) BeginExclusive() (func(), error) {
+	if err := os.MkdirAll(filepath.Dir(b.LockPath), 0700); err != nil {
+		return nil, fmt.Errorf("mkdir %s: %w", filepath.Dir(b.LockPath), err)
+	}
+	f, err := os.OpenFile(b.LockPath, os.O_CREATE|os.O_RDWR, 0640) // #nosec G302 G304 -- fixed path
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", b.LockPath, err)
+	}
+	boot, _ := os.ReadFile("/proc/sys/kernel/random/boot_id")
+	own := fmt.Sprintf("pid=%d ", os.Getpid())
+	intent := fmt.Sprintf("%sboot=%s\n", own, strings.TrimSpace(string(boot)))
+	_ = os.WriteFile(b.IntentPath, []byte(intent), 0600) // best effort, as the shell does
+	dropIntent := func() {
+		if data, err := os.ReadFile(b.IntentPath); err == nil && strings.HasPrefix(string(data), own) {
+			_ = os.Remove(b.IntentPath)
+		}
+	}
+	deadline := time.Now().Add(b.Wait)
+	poll := 20 * time.Millisecond
+	for {
+		if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err == nil {
+			return func() {
+				_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN) // #nosec G104
+				_ = f.Close()                                   // #nosec G104
+				dropIntent()
+			}, nil
+		}
+		if time.Now().After(deadline) {
+			_ = f.Close()
+			dropIntent()
+			return nil, fmt.Errorf("%w after %v", ErrBusy, b.Wait)
+		}
+		time.Sleep(poll)
+		if poll < 200*time.Millisecond {
+			poll *= 2
+		}
+	}
+}
+
 // intentActive: an intent record whose process is alive in this boot.
 func (b *Boundary) intentActive() bool {
 	data, err := os.ReadFile(b.IntentPath)

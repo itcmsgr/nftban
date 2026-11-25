@@ -22,9 +22,11 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/itcmsgr/nftban/internal/installer/executor"
 	"github.com/itcmsgr/nftban/internal/installer/logging"
+	"github.com/itcmsgr/nftban/internal/nftlock"
 )
 
 // emergencyTable is the name of the last-resort SSH safety table.
@@ -80,12 +82,26 @@ func RemoveEmergencySSH(exec executor.Executor, log *logging.Logger) {
 	}
 }
 
+// sshPortWriteBoundary takes the nftables write boundary EXCLUSIVE for the installer's own
+// write into the nftban table (a variable so tests can simulate busy / free).
+var sshPortWriteBoundary = func() (func(), error) {
+	return nftlock.NewBoundary(30 * time.Second).BeginExclusive()
+}
+
 // AssertSSHInLiveSet verifies the SSH port exists in the live nft tcp_ports_in
 // sets for both ip and ip6. If missing, adds it.
 // Call after EnableNftables (nftban tables must exist) and before/after rebuild.
+//
+// v1.238 (owner 2026-11-24, audit KERNEL_WRITER_AUDIT_d016f838 V2): the add is a write into the
+// nftban table, made while nftband or a timer-driven writer may run (it is called before
+// QuiesceReplacedDaemon on upgrade, cmd/nftban-installer/phases.go), so it now holds the write
+// boundary EXCLUSIVE (bounded). If the boundary stays busy nothing is added and the emergency SSH
+// table stays: HandOffEmergencySSH removes that table only after SSHHandoffProven, which requires
+// the port in tcp_ports_in — SSH recovery access is never reduced.
 func AssertSSHInLiveSet(exec executor.Executor, sshPort int, log *logging.Logger) {
 	portStr := strconv.Itoa(sshPort)
 
+	var missing []string
 	for _, family := range []string{"ip", "ip6"} {
 		if !exec.NftTableExists(family, "nftban") {
 			continue
@@ -99,6 +115,20 @@ func AssertSSHInLiveSet(exec executor.Executor, sshPort int, log *logging.Logger
 			log.Debug("SSH port %d already in %s nftban tcp_ports_in", sshPort, family)
 			continue
 		}
+		missing = append(missing, family)
+	}
+	if len(missing) == 0 {
+		return
+	}
+
+	release, err := sshPortWriteBoundary()
+	if err != nil {
+		log.Warn("SSH port %d NOT added to nftban tcp_ports_in (%s): %v; the emergency SSH table stays until the handoff is proven",
+			sshPort, strings.Join(missing, ","), err)
+		return
+	}
+	defer release()
+	for _, family := range missing {
 		// Port missing — add it
 		if err := exec.NftAddElement(family, "nftban", "tcp_ports_in", portStr); err != nil {
 			log.Warn("add SSH port %d to %s nftban tcp_ports_in: %v", sshPort, family, err)
