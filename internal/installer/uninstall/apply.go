@@ -119,12 +119,22 @@ type StepResult struct {
 	Detail  string
 }
 
+// TableWriterUnits are the units that write or recreate the nftban tables once nftband.service is
+// stopped: the socket (re-activates the daemon) and the table-touching timers. Same set as the CSF
+// restore (cmd/nftban-installer/restore_deps_csf.go nftbandSocketUnit + nftbanTableTouchingTimers);
+// a test in that package keeps the two lists equal.
+var TableWriterUnits = []string{
+	"nftband.socket",
+	"nftban-rebuild-recovery.timer",
+	"nftban-maintenance.timer",
+}
+
 // Apply runs the v1.100.4 authority release mutation sequence.
 //
 // The sequence is 12 explicit steps, executed in order:
 //
 //	 1. Inject emergency SSH safety table (inet nftban_install_emergency)
-//	 2. Stop nftband.service (prevent it from fighting kernel mutation)
+//	 2. Stop nftband.service, then stop+mask TableWriterUnits (v1.238, step 2b)
 //	 3. Flush ip nftban table
 //	 4. Flush ip6 nftban table (if present)
 //	 5. Delete ip nftban table
@@ -193,6 +203,31 @@ func Apply(exec executor.Executor, cfg *ApplyConfig, log *logging.Logger) *Apply
 	} else {
 		r.Steps = append(r.Steps, StepResult{Name: "stop_nftband", Success: true})
 	}
+
+	// Step 2b — v1.238 (owner 2026-11-24, audit KERNEL_WRITER_AUDIT_d016f838 V2): stopping the
+	// service alone does not stop the table writers. nftband.socket re-activates the daemon and the
+	// table-touching timers reconcile/recreate the nftban tables. Stop and mask them BEFORE the
+	// flush/delete, as the CSF restore does (cmd/nftban-installer/restore_deps_csf.go A.6b). Best
+	// effort, like step 2: a failure is recorded, the release continues. Steps 1/12 (emergency SSH)
+	// are unchanged.
+	log.Info("uninstall apply: step 2b/12 — stopping and masking nftband.socket and the table-touching timers")
+	quiesced := true
+	var qdetail []string
+	for _, u := range TableWriterUnits {
+		if exec.ServiceActive(u) {
+			if err := exec.ServiceStop(u); err != nil {
+				quiesced = false
+				qdetail = append(qdetail, fmt.Sprintf("stop %s: %v", u, err))
+				log.Warn("stop %s: %v (continuing)", u, err)
+			}
+		}
+		if err := exec.ServiceMask(u); err != nil {
+			quiesced = false
+			qdetail = append(qdetail, fmt.Sprintf("mask %s: %v", u, err))
+			log.Warn("mask %s: %v (continuing)", u, err)
+		}
+	}
+	r.Steps = append(r.Steps, StepResult{Name: "quiesce_table_writers", Success: quiesced, Detail: strings.Join(qdetail, "; ")})
 
 	// Step 3 — flush ip nftban.
 	log.Info("uninstall apply: step 3/12 — flushing ip nftban table")

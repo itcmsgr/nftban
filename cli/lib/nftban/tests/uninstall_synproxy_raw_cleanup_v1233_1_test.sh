@@ -111,7 +111,9 @@ code(){ sed 's/[[:space:]]#.*$//; /^[[:space:]]*#/d'; }
 first_ln(){ awk -v re="$1" '!n && $0 ~ re {n = NR} END {if (n) print n}'; }
 # The anchor statement, as an ERE (spelled so check-nft-writes does not read the
 # test's own pattern as a writer).
-DEL_IP6_TABLE='nft[[:space:]]delete table ip6 nftban'
+# v1.238: the scriptlets delete the nftban tables inside _nftban_release_tables (canonical write
+# boundary; see uninstall_release_tables_lock_v1238_test.sh), so its call is the anchor too.
+DEL_IP6_TABLE='(nft[[:space:]]delete table ip6 nftban|^[[:space:]]+_nftban_release_tables$)'
 body="$(code < "$W/fn.deb")"
 if grep -qE '(^|[;[:space:]])(source|\.)[[:space:]]+/|/usr/lib/nftban|NFTBAN_LIB_DIR' <<<"$body"; then
     no "P1 function references product libraries (payload is gone at postrm/%postun time)"
