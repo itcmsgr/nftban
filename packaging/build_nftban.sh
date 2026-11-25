@@ -1980,10 +1980,12 @@ _nftban_release_tables() {
         echo "nftban: WARN: the nft write boundary (\$_nrt_dir/nft_writers.lock) stayed busy for 60s - nftban tables NOT removed; the existing nftban rules stay active. To remove them later, as root, holding the same lock for the whole step: \$_nrt_retry" >&2
         return 0
     fi
-    for _nrt_fam in ip ip6; do
-        nft flush table "\$_nrt_fam" nftban 2>/dev/null || true  # nftban:held
-        nft delete table "\$_nrt_fam" nftban 2>/dev/null || true  # nftban:held
-    done
+    # Literal per family (not a loop variable) so scripts/ci/check-uninstall-firewall-safety.sh
+    # sees every flush paired with its delete.
+    nft flush table ip nftban 2>/dev/null || true  # nftban:held
+    nft delete table ip nftban 2>/dev/null || true  # nftban:held
+    nft flush table ip6 nftban 2>/dev/null || true  # nftban:held
+    nft delete table ip6 nftban 2>/dev/null || true  # nftban:held
     if [ "\$(cat "\$_nrt_dir/nft_writers.intent" 2>/dev/null)" = "\$_nrt_intent" ]; then
         rm -f "\$_nrt_dir/nft_writers.intent" 2>/dev/null || true
     fi
