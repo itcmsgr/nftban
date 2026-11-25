@@ -36,6 +36,13 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 # The SUBJECT's libraries, never /usr/lib/nftban (audit I24, 2026-10-08: same class as I23).
 export NFTBAN_LIB_DIR="$ROOT/cli/lib/nftban"
+# v1.238.1 (owner 2026-11-25): the test also runs against an INSTALLED package, from a layout whose
+# cli/lib/nftban resolves to /usr/lib/nftban (rc_acceptance render_proof). The checkout's
+# install/nftables/nftables.conf is not there; STAGE 3 then composes the PACKAGED base,
+# /usr/lib/nftban/templates/nftables.conf.tpl (both packages ship it, packaging/build_nftban.sh:601,
+# :2781), rendered with the renderer's placeholders. A missing base is a FAIL in either mode.
+MODE="source"
+if [[ "$(readlink -f "$NFTBAN_LIB_DIR" 2>/dev/null)" == "/usr/lib/nftban" ]]; then MODE="installed"; fi
 PASS=0; FAIL=0
 ok()  { printf '  [PASS] %s\n' "$1"; PASS=$((PASS+1)); }
 bad() { printf '  [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); }
@@ -69,7 +76,7 @@ nft() {
     echo "Error: No such file or directory" >&2
     return 1
 }
-RENDERED=()
+RENDERED=(); BG_VERDICT=0
 # v1.238 BUG-BOTGUARD-FRAGMENT-HEREDOC-BACKTICK-COMMENT: backticks in the unquoted heredoc of the
 # BotGuard renderer ran `accept` as a command (as root in production) at every render. A harmless
 # `accept` / `return` placed FIRST on a temporary PATH writes a witness file and exits 0 silently;
@@ -103,6 +110,7 @@ for fn in nft_fragment_render_ddos_classic nft_fragment_render_ddos_prefix \
         ok "RENDER_NO_COMMAND_EXECUTED $fn"
     fi
     if [[ "$fn" == nft_fragment_render_http_botguard && -n "$out" && -f "$out" ]]; then
+        BG_VERDICT=1
         if grep -qF '# SYN-rate checks, its pass verdicts are return (exempt from the rest of BotGuard only), not' "$out" \
            && grep -qF '# accept — verified crawlers and in-rate grey/pending sources still go through the DDoS' "$out"; then
             ok "BOTGUARD_COMMENT_COMPLETE (full phrase rendered)"
@@ -112,6 +120,10 @@ for fn in nft_fragment_render_ddos_classic nft_fragment_render_ddos_prefix \
     fi
 done
 PATH="$_OLDPATH"; rm -rf "$_witdir"
+echo "  renderer: $(readlink -f "$NFTBAN_LIB_DIR/lib/nft_fragment.sh") (mode $MODE)"
+# Mandatory named results: a render that failed before the check still needs an explicit verdict.
+[[ "$BG_VERDICT" -eq 1 ]] \
+    || bad "BOTGUARD_COMMENT_COMPLETE: the BotGuard fragment did not render — no verdict possible"
 unset -f nft   # STAGE 3 parses under the real nft
 
 # ---------------------------------------------------------------------------
@@ -186,11 +198,18 @@ done
 # ---------------------------------------------------------------------------
 echo ""
 echo "--- STAGE 3: composed ruleset parses under a real nft ---"
-if command -v nft >/dev/null 2>&1; then
+if [[ "$MODE" == installed ]]; then BASE="/usr/lib/nftban/templates/nftables.conf.tpl"
+else BASE="$ROOT/install/nftables/nftables.conf"; fi
+echo "  base: $BASE"
+if [[ ! -r "$BASE" ]]; then
+    bad "NFT_PARSE base config missing or unreadable ($MODE mode): $BASE"
+elif command -v nft >/dev/null 2>&1; then
     COMPOSED="$WORK/composed.nft"
+    # Placeholders as the renderer fills them (cmd_firewall.sh): no forwarding records -> empty element lines.
     sed -e 's/__SSH_PORT__/22/g' -e 's/__CT_LIMIT_SSH__/15/g' \
         -e 's/__CT_LIMIT_HTTP__/150/g' -e 's/__CT_LIMIT_MAIL__/150/g' \
-        "$ROOT/install/nftables/nftables.conf" > "$COMPOSED"
+        -e '/^__FWD_EGRESS_ELEMENTS__$/d' -e '/^__FWD_UPLINK_ELEMENTS__$/d' \
+        "$BASE" > "$COMPOSED"
     for f in "${RENDERED[@]}"; do cat "$f" >> "$COMPOSED"; done
     if out=$(nft -c -f "$COMPOSED" 2>&1); then
         ok "NFT_PARSE composed base+fragments ($(nft --version | awk '{print $2}'))"
