@@ -1035,6 +1035,9 @@ func phaseValidate(ctx context.Context, exec executor.Executor, sf *state.StateF
 
 	// 2. Run permissions enforce (G10 — full FHS permissions fix)
 	validate.RunPermissionsEnforce(exec, log)
+	// 2b. v1.238 D5: one advisory line for operator *.conf.local settings that need attention
+	// (CLI update, DEB and RPM all reach this phase). Never fails the run.
+	validate.RunConfigLocalNotice(exec, log)
 
 	// 3. Run assertions (VALIDATE_1)
 	// PR26.2: derive panel-survival policy from operator flags. The

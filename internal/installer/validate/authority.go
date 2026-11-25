@@ -19,6 +19,7 @@
 package validate
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 	"time"
@@ -128,6 +129,45 @@ func SetImmutableFlags(exec executor.Executor, log *logging.Logger) {
 }
 
 // RunPermissionsEnforce calls `nftban permissions enforce` for full FHS fix (G10 parity).
+// RunConfigLocalNotice — v1.238 (owner 2026-11-23, D5): ONE advisory line when operator settings in
+// *.conf.local need attention after an install or upgrade (unknown, deprecated or invalid keys, as
+// classified by `nftban config local doctor`, the same lint the operator runs). It lists at most five
+// "file:line KEY" locations — never values, so secrets are not printed — and points to the command.
+// Advisory only: it never fails or blocks the run; a doctor that cannot run is logged at debug level.
+func RunConfigLocalNotice(exec executor.Executor, log *logging.Logger) {
+	res := exec.RunTimeout(30*time.Second, fhs.NftbanCLI, "config", "local", "doctor", "--json")
+	var files []struct {
+		Path string `json:"path"`
+		Keys []struct {
+			Key   string `json:"key"`
+			Line  int    `json:"line"`
+			Class string `json:"class"`
+		} `json:"keys"`
+	}
+	if err := json.Unmarshal([]byte(res.Stdout), &files); err != nil {
+		log.Debug("config local doctor not available for the upgrade notice: %v", err)
+		return
+	}
+	var where []string
+	n := 0
+	for _, f := range files {
+		for _, k := range f.Keys {
+			if k.Class == "OK" {
+				continue
+			}
+			n++
+			if len(where) < 5 {
+				where = append(where, f.Path+":"+strconv.Itoa(k.Line)+" "+k.Key)
+			}
+		}
+	}
+	if n == 0 {
+		return
+	}
+	log.Warn("%d setting(s) in your *.conf.local files need attention (%s) — your files were not changed; details: nftban config local doctor",
+		n, strings.Join(where, ", "))
+}
+
 func RunPermissionsEnforce(exec executor.Executor, log *logging.Logger) {
 	res := exec.RunTimeout(30*time.Second, fhs.NftbanCLI, "permissions", "enforce")
 	if res.ExitCode == 0 {

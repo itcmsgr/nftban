@@ -609,7 +609,7 @@ nftban_nft_get_set_name() {
             echo "blacklist_${suffix}"
             ;;
         # v1.33.0: Manual/auto-detect sources go to hash set (O(1))
-        login|portscan|ddos|suricata|auto|manual|cli|ban|unban|blacklist|tempban|fail2ban|*)
+        login|portscan|ddos|suricata|auto|manual|cli|ban|unban|blacklist|tempban|*)
             echo "blacklist_manual_${suffix}"
             ;;
     esac
@@ -1587,7 +1587,7 @@ export -f nftban_nft_report_status
 #   set temp_ban_ipv4 {
 #     type ipv4_addr
 #     timeout 1h
-#     comment "Temporary bans from fail2ban"
+#     comment "Temporary bans"
 #   }
 #
 #   set tcp_ports_in {
@@ -1627,7 +1627,7 @@ export -f nftban_nft_report_status
 #     # 4. PERMANENT BLACKLIST (manual bans)
 #     ip saddr @blacklist_ipv4 drop comment "blacklist"
 #
-#     # 5. TEMPORARY BANS (fail2ban)
+#     # 5. TEMPORARY BANS
 #     ip saddr @temp_ban_ipv4 drop comment "temporary ban"
 #
 #     # 6. NOW allow established connections (safe after all bans checked)
@@ -1729,7 +1729,7 @@ export -f nftban_nft_report_status
 #
 # 3. TEMP_BAN (temporary automatic bans) - HYBRID APPROACH
 #    - Management:
-#      * fail2ban (automatic via nftban-tempban action)
+#      * (fail2ban integration was removed in v1.0; NFTBan only detects a co-installed fail2ban as a conflict)
 #      * nftban tempban <ip> [duration] (manual temporary ban)
 #      * nftban tempban stats (view stats from file)
 #
@@ -1755,7 +1755,7 @@ export -f nftban_nft_report_status
 #           ✅ No sync daemon needed (timeout is automatic)
 #
 #    - Workflow:
-#      1. fail2ban bans IP → writes to /var/lib/nftban/temp_bans.db
+#      1. a temporary ban is written to /var/lib/nftban/temp_bans.db (pre-v1.0 this came from fail2ban)
 #      2. nftban-core sync reads file, loads to temp_ban_ipv4/ipv6 with timeout
 #      3. Kernel automatically expires after timeout (1h default)
 #      4. File keeps historical record for stats
