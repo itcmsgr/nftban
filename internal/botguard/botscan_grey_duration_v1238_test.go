@@ -168,3 +168,23 @@ func TestBotScanBanDurationsFollowRequest(t *testing.T) {
 		}
 	}
 }
+
+// gosec G115 (v1.238 review): the ban TTL handed to nft is clamped to the uint32 range, so an
+// oversized configured BanTTL cannot wrap around to a short ban; zero/negative give 0.
+func TestTTLSecondsU32Clamp(t *testing.T) {
+	for _, c := range []struct {
+		in   time.Duration
+		want uint32
+	}{
+		{-time.Second, 0},
+		{0, 0},
+		{1500 * time.Millisecond, 1},
+		{24 * time.Hour, 86400},
+		{time.Duration(1<<32) * time.Second, 1<<32 - 1},
+		{time.Duration(1 << 62), 1<<32 - 1}, // ~146 years: far above the uint32 range
+	} {
+		if got := ttlSecondsU32(c.in); got != c.want {
+			t.Errorf("ttlSecondsU32(%v) = %d, want %d", c.in, got, c.want)
+		}
+	}
+}

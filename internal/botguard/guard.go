@@ -39,6 +39,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -778,6 +779,19 @@ func botscanSignalTTL(sig *BatchSignal) uint32 {
 // enabled): the producer's requested duration (BatchSignal.RequestedTTLSec, from the matched rule) when
 // present, never longer than max (BanTTL). Without a requested duration: max (previous behaviour).
 // The BotGuard-disabled blacklist_manual path keeps its fixed v1.234 mapping (botscanSignalTTL).
+// ttlSecondsU32 converts a TTL to whole seconds for the nft element timeout, clamped to the
+// uint32 range (an oversized configured BanTTL must not wrap to a short ban; negative → 0).
+func ttlSecondsU32(d time.Duration) uint32 {
+	secs := int64(d / time.Second)
+	if secs <= 0 {
+		return 0
+	}
+	if secs > math.MaxUint32 {
+		return math.MaxUint32
+	}
+	return uint32(secs)
+}
+
 func botscanEffectiveBanTTL(sig *BatchSignal, max time.Duration) time.Duration {
 	if sig != nil && sig.RequestedTTLSec > 0 {
 		if req := time.Duration(sig.RequestedTTLSec) * time.Second; req < max {
@@ -1400,7 +1414,7 @@ func (m *Module) applyBatchSignal(sig *BatchSignal) {
 		reason := fmt.Sprintf("batch_signal:%s", sig.Action)
 		var err error
 		if newState == StateBan {
-			err = m.enforcer.ApplyWithTTL(record.IP, oldState, newState, reason, uint32(banTTL/time.Second))
+			err = m.enforcer.ApplyWithTTL(record.IP, oldState, newState, reason, ttlSecondsU32(banTTL))
 		} else {
 			err = m.enforcer.Apply(record.IP, oldState, newState, reason)
 		}

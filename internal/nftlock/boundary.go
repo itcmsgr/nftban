@@ -150,7 +150,7 @@ func (b *Boundary) tryShared() (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(b.LockPath), 0700); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", filepath.Dir(b.LockPath), err)
 	}
-	f, err := os.OpenFile(b.LockPath, os.O_CREATE|os.O_RDWR, 0640) // #nosec G302 G304 -- fixed path
+	f, err := os.OpenFile(b.LockPath, os.O_CREATE|os.O_RDWR, 0600) // #nosec G304 -- fixed path
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", b.LockPath, err)
 	}
@@ -171,7 +171,7 @@ func (b *Boundary) BeginExclusive() (func(), error) {
 	if err := os.MkdirAll(filepath.Dir(b.LockPath), 0700); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", filepath.Dir(b.LockPath), err)
 	}
-	f, err := os.OpenFile(b.LockPath, os.O_CREATE|os.O_RDWR, 0640) // #nosec G302 G304 -- fixed path
+	f, err := os.OpenFile(b.LockPath, os.O_CREATE|os.O_RDWR, 0600) // #nosec G304 -- fixed path
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", b.LockPath, err)
 	}
