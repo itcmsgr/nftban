@@ -11,6 +11,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.238.0] - 2026-11-25 — Feed integration (AbuseIPDB), configuration and CLI truth, write-boundary and privacy fixes
+
+NFTBan v1.238 adds the optional AbuseIPDB blacklist feed. Manual incident reporting and IP reputation lookup are planned for v1.239.
+The known issues of v1.237.0 still apply, except where an item below fixes them.
+
+### Security
+
+- **Credentials no longer appear in error messages or process arguments** (#1504).
+  - The MaxMind licence key is removed from the error text of a failed GeoIP database download; before, the full download address including the key could reach the terminal and the journal of `nftban-core-geoip.service`.
+  - The portal API key and the Pro token are passed to `curl` in a temporary owner-only file, not on the command line, where other local users could read them.
+  - The portal export refuses non-`https` addresses.
+  - Fixing the code does not revoke a key that was already exposed. If an affected feature was in use and untrusted local users had access, or logs were shared, rotate the credential after upgrading.
+- **Root lock files moved out of the service account's directory** (#1498). `nft_operations.lock`, `session_whitelist.lock` and `maintenance.lock` now live in the root-only `/run/nftban-writers`. For this release every holder also takes the old path, so a v1.237 process still running during the upgrade stays excluded; that compatibility step is removed in v1.239.
+- **Emergency direct-write marker moved to a root-only directory** (#1521 via #1526). The marker is `/run/nftban-writers/.emergency_unlock` and is honoured only as a regular root-owned file in that `root:root 0700` directory; `/run/nftban/.emergency_unlock` no longer enables anything. Emergency mode lets only `nftban whitelist add|remove` and `nftban flush` write directly; `nftban ban`/`unban` always go through the daemon. Remove the marker after recovery: `rm -f /run/nftban-writers/.emergency_unlock` (as root).
+- **Rendering the BotGuard rules no longer runs a command** (via #1526). Two words in a comment of the BotGuard fragment template were in backticks, so every BotGuard render (`botguard enable`/`apply`, and `firewall rebuild` with BotGuard on) ran `accept` from root's `PATH` — printing `accept: command not found`, or silently running a program of that name if one was installed. The rules themselves were not affected.
+- **NFTBan sends the installation result only with explicit consent** (#1507).
+- **The daily Community report uses a random installation identifier instead of the machine-id** (#1516). Successive reports remain linkable while the same ID is reused.
+- **Connector files are readable by the exporter** (#1503). `nftban connector add` saves `root:nftban 0640` (root writes, the `nftban` group reads, others have no access); upgrades change existing `root:root` connector files to that mode.
+- **DEB purge keeps a private configuration backup** (#1508). The backup directory is created with `mktemp -d` (`root:root 0700`) and holds `0600` archives; configuration is deleted only when a backup exists. See Upgrade and operator notes.
+- **CI:** least-privilege workflow tokens and pinned tool installs (#1495); the markdownlint toolchain overrides `katex` to 0.18.2 (#1518 via #1526).
+
+### Added
+
+- **AbuseIPDB blacklist feed** (#1488, #1489, #1490). Optional and off by default; needs your own AbuseIPDB API key.
+  - `sudo nftban feeds abuseipdb setup` stores the key (read from standard input, kept in `/etc/nftban/abuseipdb.key`, `root:root 0600`), tests it, and enables the feed after confirmation.
+  - `nftban feeds abuseipdb status` shows the last successful refresh, the last attempt and failures, whether the feed was included in the last successful full sync, and the download quota as the provider reports it for your key.
+  - Settings: `FEED_ABUSEIPDB_CONFIDENCE_MINIMUM`, `_LIMIT`, `_MIN_INTERVAL`, `_MAX_AGE` (`nftban feeds abuseipdb config set`).
+- **Opt-in per-feed expiry** `FEED_<NAME>_MAX_AGE` (#1489). An expired snapshot is no longer selected; its addresses leave the kernel sets at the next successful full sync.
+- **Feed status shows when each feed was last updated and when the next update is due** (#1490, #1492).
+- **`nftban help <command> [verb]`** opens that command's help; an unknown topic is an error (rc 1) (help truth, via #1525).
+- **`nftban --version` and `nftban -V`** print the version (help truth, via #1525).
+- **`nftban botguard apply`** re-applies the BotGuard rules without changing the saved setting (#1513 via #1525).
+
+### Changed
+
+- **Help markers have one meaning in both help views**, derived from the command registry; the undefined BotScan marker is removed. "Global Options" lists only the flags every command accepts. `enable`, `disable`, `restart` and `pro community` are listed. Help examples use documentation addresses (192.0.2.10) (help truth, via #1525).
+- **Recovery hints name real commands:** `nftban firewall rebuild` and `nftban botguard apply` instead of `nftban rebuild` or `nftban install`, which are not CLI commands (help truth, via #1525).
+- **The periodic health check is diagnostic only.** `nftban-health.service` runs `nftban health check --cache-status` (the `--auto-heal` flag it carried was never applied by `check`), and `--cache-status` now writes the status cache. Repairs stay explicit: `nftban health fix …` or `nftban health diagnostics --auto-heal` (help truth, via #1525).
+- **`nftban config doctor --fix` runs `nftban firewall rebuild`** when it repairs (before, it ran `nftban rebuild`, which always failed). Only `--fix` as root can do this; the plain doctor stays read-only (help truth, via #1525).
+- **One enable-switch rule for DDoS, PortScan and BotGuard** in every reader: `conf.d/<module>/main.conf` < `main.conf.local` < central `nftban.conf.local`; true values are `true|yes|1|on|enabled`. `enable`/`disable` write one operator file and print the effective value and its file. An upgrade from an earlier release stops before any change if the new rule would change a module's decision on the host, and says what to edit (#1513 via #1525).
+- **`nftban login enable` / `disable`** write `LOGIN_ENABLED` (creating `conf.d/login/main.conf.local` if needed), restart `nftband`, and report success only when the daemon confirms the module state (#1500). Help, config schema and shipped comments state which login keys the daemon applies (#1497).
+- **LoginMon `wp-login.php`:** only credential posts score; a confirmed successful login clears the address's score (it does not lift an existing ban) (#1491).
+- **GeoBan country exceptions** (`nftban geoban whitelist <CC>`) apply to GeoBan blocking only; feeds, detection modules and manual bans still apply. A country cannot be both blocked and excepted (#1502).
+- **Feeds:** one downloader for every path; nothing is downloaded while the master switch is off; `nftban feeds update <feed>` refreshes only that feed; every update ends with the daemon's full sync; the update exits non-zero when a download or the sync fails; the shell reads `conf.d/feeds.conf.local` (#1487, #1489, #1490, #1493). The daemon reads the master switch at each sync, so `nftban feeds enable|disable` takes effect without a restart; an unreadable configuration refuses the sync and keeps current protection (#1499).
+- **Feeds CLI** reports the master switch, the feed selection and kernel enforcement separately in `status`, `list`, `--help` and JSON, and reads every write back with its source file (#1509, via #1524).
+- **Zabbix:** health and `nftban zabbix status` say that TLS/PSK is not applied and that metrics are sent unencrypted; setup no longer offers TLS/PSK (#1494).
+- **`nftban wizard` / profile** update only their own keys in `nftban.conf.local` and keep a backup of the previous file (#1511, via #1524).
+- **`nftban config validate`** accepts the keys NFTBan ships or writes, custom feed keys and deprecated-key notices; `config local list/doctor` cover module `.local` files and print `file:line`; the installer logs one advisory when operator `.local` settings need attention (#1510, via #1524).
+- **BotScan through BotGuard:** a grey decision stays a throttle (no blacklist ban); a BotScan ban lasts the requested duration, capped at BotGuard's ban TTL (#1520 via #1526).
+- **`bans.log` records BotScan bans as `botscan`** (they were recorded as `ddos`, or `manual` for a direct BotScan ban). `src_ddos` no longer includes BotScan bans; total bans are unchanged; there is no separate `src_botscan` counter yet (#1517 via #1526).
+
+### Fixed
+
+- **A failed BotGuard re-apply makes a runtime rebuild return rc 1; the installer and `update apply` keep the warning and their existing result** (#1514 via #1525). Rebuild child processes now receive the probe constants they need (before: `NFTBAN_NFT_PROBE_PRESENT: unbound variable`).
+- **A very large configured BotGuard ban TTL can no longer wrap around to a short ban**; the value passed to nftables is capped at the maximum element timeout (#1520 via #1526).
+- **`nftban botguard status --json`** prints a JSON boolean; **`nftban ddos stats --json`** uses the module decision (#1512 via #1525).
+- **Reporting and config corrections** (#1505): portal payload is valid JSON and its module status uses the real enable decision; Prometheus module status likewise; `nftban stats --json` temporary count excludes permanent bans; `nftban feeds status` includes feeds defined in `feeds.conf.local`; `nftban geoip config show` honours `.local`; shipped GeoIP key names reach the consumer; the GeoBan finding names `nftban geoip update`; `ddos config` removed from the registry.
+- **Connectors** (#1503): the timer sends Elasticsearch credentials and counts only a `2xx` answer as delivered; a Kafka failure is recorded; `syslog`/`webhook` are reported as not sent by the timer; an unreadable connector file fails the export cycle.
+- **Feeds:** the daemon's full-sync record is written (`/var/lib/nftban/feeds` is `2750 root:nftban`) (#1499); feed snapshots are `root:nftban` (#1487).
+- **Installer:** the SSH-port add to `tcp_ports_in` holds the firewall write lock; if the lock stays busy nothing is written and the emergency SSH table is kept (#1522 via #1526).
+- **Package removal** deletes the nftban tables only while it holds the firewall write lock (`/run/nftban-writers/nft_writers.lock`, up to 60 s). If the lock stays busy the tables are kept, the existing nftban rules stay active, and removal prints a command for root that removes them later under the same lock. The Go uninstall stops and masks `nftband.socket` and the table timers before it releases the tables (#1523 via #1526).
+
+### Upgrade and operator notes
+
+- **DEB remove/purge (#1508).** `apt remove` takes the configuration backup (it is the last step that still sees the shipped config files); `apt purge` reuses it if valid, adds `etc-nftban-at-purge.tar`, and prints the backup location, contents, removal command and a restore command that checks ownership and mode. Edits to shipped config files made after `apt remove` are deleted by dpkg before the purge runs. The backup is kept until you delete it.
+- **Module enable switches (#1513 via #1525).** If the upgrade stops with a module-switch message, edit the named file as instructed and repeat the upgrade.
+- **Feeds master switch (#1499).** `NFTBAN_FEEDS_ENABLED` is read from `nftban.conf` then `nftban.conf.local` by the CLI and the daemon; the line in `conf.d/feeds.conf` is no longer a master-switch source. Use `nftban feeds enable|disable`.
+- **Locks (#1498).** Scripts that waited on `/run/nftban/nft_operations.lock`, `session_whitelist.lock` or `maintenance.lock` should use `/run/nftban-writers/`.
+
+### Tests
+
+- Test-only changes; no product behaviour change: BotScan inter-cycle resume check no longer depends on runner speed (#1496).
+
+### Known issues
+
+- **Suricata alert input.** On hosts with the Suricata integration enabled, bans already in the firewall stay enforced, but if the alert input (`/var/log/nftban/suricata/eve-alerts.json`) is lost or stalls, new Suricata-driven bans can stop. The package does not create or rotate that file, and the reader does not keep its read position across a `copytruncate` rotation. Rotating the file by hand with `copytruncate` is **not** a verified workaround. A repair is planned for v1.239.
+- **A module enabled and then disabled can leave empty helper chains**, and status shows DEGRADED until the next `nftban firewall rebuild`. Planned for v1.239.
+- **The update logs do not yet record who started an update and where the package came from.** Planned for v1.239.
+
+---
+
 ## [v1.237.0] - 2026-11-16 — Stability release: state ownership, cleanup repair, commit-confirm recovery
 
 A stability release. v1.236.2's known issues still apply, except where an item below fixes them.
