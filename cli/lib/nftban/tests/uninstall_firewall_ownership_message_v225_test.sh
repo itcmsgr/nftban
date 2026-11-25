@@ -86,7 +86,9 @@ grep -qF "$RESTORE" <<<"$REMOVE" && ok "DEB remove: includes restore guidance"  
 grep -qF "$CORE" <<<"$PURGE" && no "DEB purge duplicates the ownership message" "should appear only in remove" || ok "DEB purge does NOT duplicate the message (no double-print)"
 
 # ---- DEB: cleanup precedes the message (delete table before the echo) ----
-if awk '/delete table ip nftban/{d=NR} /'"$CORE"'/{m=NR} END{exit !(d>0 && m>0 && d<m)}' <<<"$REMOVE"; then
+# v1.238: the deletion runs inside _nftban_release_tables (canonical write boundary), so its call
+# in the remove arm is the cleanup anchor too.
+if awk '/delete table ip nftban|^[[:space:]]+_nftban_release_tables$/{d=NR} /'"$CORE"'/{m=NR} END{exit !(d>0 && m>0 && d<m)}' <<<"$REMOVE"; then
     ok "DEB remove: NFTBan table deletion precedes the message"
 else
     no "DEB remove: message not printed after table-deletion cleanup"

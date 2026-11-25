@@ -468,13 +468,24 @@ unset FAKE_NFT_READ_FAIL
 # prefix is stripped, the statement executed is the same direct table deletion.
 _RM_RE='^[[:space:]]*(flock -w [0-9]+ [^[:space:]]+ )?nft (flush|delete) table '
 _RM_SED='s/^[[:space:]]*//; s/^flock -w [0-9]+ [^[:space:]]+ //; s/[[:space:]]*2>.*$//'
+# v1.238 (#1523): the arm may delegate to _nftban_release_tables (it takes the canonical write
+# lock first); the delegated function body is part of the removal population.
+_release_fn_body(){ # <file> -> body of _nftban_release_tables, if defined there
+    awk '/^_nftban_release_tables\(\)[[:space:]]*\{/{p=1} p{print} p&&/^}/{exit}' "$1"
+}
 extract_removals(){ # <postrm> -> DEB remove) arm nft table statements
-    awk '/^    remove\)/{i=1;next} i&&/^        ;;/{exit} i{print}' "$1" \
-        | grep -E "$_RM_RE" | sed -E "$_RM_SED" || true
+    local arm; arm="$(awk '/^    remove\)/{i=1;next} i&&/^        ;;/{exit} i{print}' "$1")"
+    grep -qE '^[[:space:]]*_nftban_release_tables([[:space:]]|$)' <<<"$arm" && arm="${arm}
+$(_release_fn_body "$1")"
+    grep -E "$_RM_RE" <<<"$arm" | sed -E "$_RM_SED" || true
 }
 extract_rpm_removals(){
-    awk '/^%postun/{i=1;next} i&&/^%[a-z]/{exit} i{print}' "$ROOT/packaging/build_nftban.sh" \
-        | grep -E "$_RM_RE" | sed -E "$_RM_SED" || true
+    local arm; arm="$(awk '/^%postun/{i=1;next} i&&/^%[a-z]/{exit} i{print}' "$ROOT/packaging/build_nftban.sh")"
+    if grep -qE '^[[:space:]]*_nftban_release_tables([[:space:]]|$)' <<<"$arm" && ! grep -qE '^_nftban_release_tables\(\)' <<<"$arm"; then
+        arm="${arm}
+$(_release_fn_body "$ROOT/packaging/build_nftban.sh")"
+    fi
+    grep -E "$_RM_RE" <<<"$arm" | sed -E "$_RM_SED" || true
 }
 for pkg in DEB RPM; do
     reset_converged; listener_closed

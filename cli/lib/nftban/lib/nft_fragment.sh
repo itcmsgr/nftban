@@ -2145,8 +2145,8 @@ nft_fragment_render_http_botguard() {
 # v1.236 (BUG-BOTGUARD-JUMP-AFTER-SYN-RATE-ACCEPT-BAN-NEVER-ENFORCED): the jump now sits before
 # ANCHOR_DETECT, ahead of the base SYN-rate "accept" that used to take every new HTTP(S)
 # connection before BotGuard saw it. Because the chain now runs BEFORE the DDoS / connlimit /
-# SYN-rate checks, its pass verdicts are `return` (exempt from the rest of BotGuard only), not
-# `accept` — verified crawlers and in-rate grey/pending sources still go through the DDoS
+# SYN-rate checks, its pass verdicts are return (exempt from the rest of BotGuard only), not
+# accept — verified crawlers and in-rate grey/pending sources still go through the DDoS
 # checks and the service-port accept, exactly as when the chain ran after them.
 #
 # Chain order (most permissive → most restrictive):

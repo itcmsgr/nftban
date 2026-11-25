@@ -87,7 +87,7 @@ func TestApply_HappyPath_KernelAndServiceReleased(t *testing.T) {
 	// "remove_synproxy_raw" right after the nftban tables are deleted. The
 	// 12-step sequence is documented in apply.go's docstring.
 	wantSteps := []string{
-		"inject_emergency_ssh", "stop_nftband",
+		"inject_emergency_ssh", "stop_nftband", "quiesce_table_writers",
 		"flush_ip_nftban", "flush_ip6_nftban",
 		"delete_ip_nftban", "delete_ip6_nftban",
 		"remove_synproxy_raw",
@@ -174,12 +174,12 @@ func TestApply_FlushFail_MidFlight_FailedRelease(t *testing.T) {
 	if !strings.Contains(r.Reason, "flush ip nftban") {
 		t.Errorf("Reason = %q; want explanation mentioning flush ip nftban", r.Reason)
 	}
-	// Exactly 3 steps recorded: inject, stop, flush-fail.
-	if len(r.Steps) != 3 {
-		t.Fatalf("step count = %d; want 3 (halt after flush failure)", len(r.Steps))
+	// Exactly 4 steps recorded: inject, stop, quiesce (v1.238), flush-fail.
+	if len(r.Steps) != 4 {
+		t.Fatalf("step count = %d; want 4 (halt after flush failure)", len(r.Steps))
 	}
-	if r.Steps[2].Name != "flush_ip_nftban" || r.Steps[2].Success {
-		t.Errorf("step[2] = %+v; want failed flush_ip_nftban", r.Steps[2])
+	if r.Steps[3].Name != "flush_ip_nftban" || r.Steps[3].Success {
+		t.Errorf("step[3] = %+v; want failed flush_ip_nftban", r.Steps[3])
 	}
 }
 

@@ -70,16 +70,48 @@ nft() {
     return 1
 }
 RENDERED=()
+# v1.238 BUG-BOTGUARD-FRAGMENT-HEREDOC-BACKTICK-COMMENT: backticks in the unquoted heredoc of the
+# BotGuard renderer ran `accept` as a command (as root in production) at every render. A harmless
+# `accept` / `return` placed FIRST on a temporary PATH writes a witness file and exits 0 silently;
+# the render must leave no witness, write nothing to stderr, exit 0, and keep the comment text.
+_witdir="$(mktemp -d)"; _witness="$_witdir/EXECUTED"
+for _w in accept return; do
+    printf '#!/bin/sh\necho "%s" >> "%s"\nexit 0\n' "$_w" "$_witness" > "$_witdir/$_w"
+    chmod 0755 "$_witdir/$_w"
+done
+_OLDPATH="$PATH"; PATH="$_witdir:$PATH"
 for fn in nft_fragment_render_ddos_classic nft_fragment_render_ddos_prefix \
           nft_fragment_render_http_botguard_sets nft_fragment_render_http_botguard; do
-    out="$($fn 2>/dev/null)"
-    if [[ -n "$out" && -f "$out" ]]; then
-        ok "RENDERED $fn -> $(basename "$out")"
+    _errf="$(mktemp)"
+    _rc=0; out="$($fn 2>"$_errf")" || _rc=$?
+    _err="$(cat "$_errf")"; rm -f "$_errf"
+    if [[ "$_rc" -eq 0 && -n "$out" && -f "$out" ]]; then
+        ok "RENDERED $fn -> $(basename "$out") (rc 0)"
         RENDERED+=("$out")
     else
-        bad "RENDER FAILED: $fn"
+        bad "RENDER FAILED: $fn (rc=$_rc)"
+    fi
+    if [[ -z "$_err" ]]; then
+        ok "RENDER_STDERR_EMPTY $fn"
+    else
+        bad "RENDER_STDERR $fn: $(head -c 300 <<<"$_err" | tr '\n' ' ')"
+    fi
+    if [[ -e "$_witness" ]]; then
+        bad "RENDER_EXECUTED_COMMAND $fn: $(tr '\n' ' ' < "$_witness")(witness $_witness)"
+        rm -f "$_witness"
+    else
+        ok "RENDER_NO_COMMAND_EXECUTED $fn"
+    fi
+    if [[ "$fn" == nft_fragment_render_http_botguard && -n "$out" && -f "$out" ]]; then
+        if grep -qF '# SYN-rate checks, its pass verdicts are return (exempt from the rest of BotGuard only), not' "$out" \
+           && grep -qF '# accept — verified crawlers and in-rate grey/pending sources still go through the DDoS' "$out"; then
+            ok "BOTGUARD_COMMENT_COMPLETE (full phrase rendered)"
+        else
+            bad "BOTGUARD_COMMENT_COMPLETE: expected comment phrase missing from $(basename "$out")"
+        fi
     fi
 done
+PATH="$_OLDPATH"; rm -rf "$_witdir"
 unset -f nft   # STAGE 3 parses under the real nft
 
 # ---------------------------------------------------------------------------

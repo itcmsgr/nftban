@@ -39,6 +39,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -587,15 +588,19 @@ func (m *Module) classify(r *IPRecord) {
 		}
 		m.mu.Unlock()
 
-		// Publish event
-		m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
-			WithIP(r.IP.String()).
-			WithMessage(fmt.Sprintf("Bot guard: %s → %s", oldState, r.State)).
-			WithData("old_state", oldState.String()).
-			WithData("new_state", r.State.String()).
-			WithData("hit_count", r.HitCount).
-			WithData("reason", reason).
-			WithData("bot_name", result.BotName))
+		// Publish the ban event only for a Ban decision. v1.238
+		// (BUG-BOTGUARD-REALTIME-EVENTBAN-ON-ANY-STATE-CHANGE-INCL-ALLOW): the daemon turns every
+		// EventBan into a blacklist ban, so Allow/Pending/Grey transitions also created one.
+		if r.State == StateBan {
+			m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
+				WithIP(r.IP.String()).
+				WithMessage(fmt.Sprintf("Bot guard: %s → %s", oldState, r.State)).
+				WithData("old_state", oldState.String()).
+				WithData("new_state", r.State.String()).
+				WithData("hit_count", r.HitCount).
+				WithData("reason", reason).
+				WithData("bot_name", result.BotName))
+		}
 	}
 }
 
@@ -675,15 +680,19 @@ func (m *Module) applyVerification(vr VerifyResult) {
 		}
 		m.mu.Unlock()
 
-		m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
-			WithIP(record.IP.String()).
-			WithMessage(fmt.Sprintf("Bot guard verify: %s → %s", oldState, record.State)).
-			WithData("old_state", oldState.String()).
-			WithData("new_state", record.State.String()).
-			WithData("verify_status", vr.Status.String()).
-			WithData("bot_name", result.BotName).
-			WithData("hostname", vr.Hostname).
-			WithData("reason", result.Reason))
+		// Ban event only for a Ban decision (v1.238): a verified crawler (Allow) or a failed
+		// verification (Grey) must not create or refresh a blacklist ban.
+		if record.State == StateBan {
+			m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
+				WithIP(record.IP.String()).
+				WithMessage(fmt.Sprintf("Bot guard verify: %s → %s", oldState, record.State)).
+				WithData("old_state", oldState.String()).
+				WithData("new_state", record.State.String()).
+				WithData("verify_status", vr.Status.String()).
+				WithData("bot_name", result.BotName).
+				WithData("hostname", vr.Hostname).
+				WithData("reason", result.Reason))
+		}
 	}
 }
 
@@ -764,6 +773,32 @@ func botscanSignalTTL(sig *BatchSignal) uint32 {
 		return botscanManualGreyTTLSec
 	}
 	return botscanManualBanTTLSec
+}
+
+// botscanEffectiveBanTTL is the duration of a BotScan ban decision on the BotGuard path (BotGuard
+// enabled): the producer's requested duration (BatchSignal.RequestedTTLSec, from the matched rule) when
+// present, never longer than max (BanTTL). Without a requested duration: max (previous behaviour).
+// The BotGuard-disabled blacklist_manual path keeps its fixed v1.234 mapping (botscanSignalTTL).
+// ttlSecondsU32 converts a TTL to whole seconds for the nft element timeout, clamped to the
+// uint32 range (an oversized configured BanTTL must not wrap to a short ban; negative → 0).
+func ttlSecondsU32(d time.Duration) uint32 {
+	secs := int64(d / time.Second)
+	if secs <= 0 {
+		return 0
+	}
+	if secs > math.MaxUint32 {
+		return math.MaxUint32
+	}
+	return uint32(secs)
+}
+
+func botscanEffectiveBanTTL(sig *BatchSignal, max time.Duration) time.Duration {
+	if sig != nil && sig.RequestedTTLSec > 0 {
+		if req := time.Duration(sig.RequestedTTLSec) * time.Second; req < max {
+			return req
+		}
+	}
+	return max
 }
 
 // batchSignalConsumingSuffix is appended to the signal file to form the private, consumer-owned
@@ -1364,9 +1399,12 @@ func (m *Module) applyBatchSignal(sig *BatchSignal) {
 	}
 
 	// Set expiry
+	// v1.238: a ban lasts what BotScan requested (capped at BanTTL), in the BotGuard set and in the
+	// blacklist ban below alike (was BanTTL here and 3600 s there, whatever BotScan requested).
+	banTTL := botscanEffectiveBanTTL(sig, m.config.BanTTL)
 	switch newState {
 	case StateBan:
-		record.ExpiresAt = time.Now().Add(m.config.BanTTL)
+		record.ExpiresAt = time.Now().Add(banTTL)
 	case StateGrey:
 		record.ExpiresAt = time.Now().Add(m.config.GreyTTL)
 	}
@@ -1374,7 +1412,13 @@ func (m *Module) applyBatchSignal(sig *BatchSignal) {
 	// Enforce state change
 	if newState != oldState {
 		reason := fmt.Sprintf("batch_signal:%s", sig.Action)
-		if err := m.enforcer.Apply(record.IP, oldState, newState, reason); err != nil {
+		var err error
+		if newState == StateBan {
+			err = m.enforcer.ApplyWithTTL(record.IP, oldState, newState, reason, ttlSecondsU32(banTTL))
+		} else {
+			err = m.enforcer.Apply(record.IP, oldState, newState, reason)
+		}
+		if err != nil {
 			log.Printf("[botguard] enforce error for batch %s: %v", record.IP, err)
 			if m.logger != nil {
 				m.logger.LogError("batch_enforce", err)
@@ -1397,15 +1441,22 @@ func (m *Module) applyBatchSignal(sig *BatchSignal) {
 		}
 		m.mu.Unlock()
 
-		// Publish event
-		m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
-			WithIP(record.IP.String()).
-			WithMessage(fmt.Sprintf("Bot guard batch: %s → %s", oldState, newState)).
-			WithData("old_state", oldState.String()).
-			WithData("new_state", newState.String()).
-			WithData("score", sig.Score).
-			WithData("reason", reason).
-			WithData("source", "clock3_batch"))
+		// Publish the ban event only for a ban decision. v1.238
+		// (BUG-BOTSCAN-GREY-SIGNAL-ALSO-CREATES-1H-BLACKLIST-BAN): the daemon turns every EventBan
+		// into a blacklist ban, so publishing it for grey added a 1 h blacklist ban to a 30 min
+		// throttle. Grey stays a throttle (http_bot_grey set above). The duration travels with the
+		// event so the blacklist ban lasts as long as the BotGuard ban (was the subscriber's 3600 s).
+		if newState == StateBan {
+			m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
+				WithIP(record.IP.String()).
+				WithMessage(fmt.Sprintf("Bot guard batch: %s → %s", oldState, newState)).
+				WithData("old_state", oldState.String()).
+				WithData("new_state", newState.String()).
+				WithData("score", sig.Score).
+				WithData("reason", reason).
+				WithData("duration", fmt.Sprintf("%ds", int64(banTTL/time.Second))).
+				WithData("source", "clock3_batch"))
+		}
 	}
 }
 

@@ -80,6 +80,16 @@ check_flush_paired "packaging/build_nftban.sh" || FAIL=1
 #    (this is the exact path that was defective in <= v1.221.2).
 echo "[remove-deletes] packaging/deb/postrm remove) case must delete tables"
 remove_block="$(awk '/^[[:space:]]*remove\)/{p=1} p{print} p&&/;;/{exit}' packaging/deb/postrm)"
+# v1.238 (#1523): the removal may delegate to _nftban_release_tables (it takes the canonical write
+# lock first). Follow the call: the delegated body must itself delete both tables.
+if grep -qE '^[[:space:]]*_nftban_release_tables([[:space:]]|$)' <<<"$remove_block"; then
+    _rt_body="$(awk '/^_nftban_release_tables\(\)[[:space:]]*\{/{p=1} p{print} p&&/^}/{exit}' packaging/deb/postrm)"
+    if [[ -z "$_rt_body" ]]; then
+        echo "::error::packaging/deb/postrm remove) calls _nftban_release_tables but the function is not defined in the file"; FAIL=1
+    fi
+    remove_block="${remove_block}
+${_rt_body}"
+fi
 if grep -qE "nft delete table ip nftban" <<<"$remove_block" && grep -qE "nft delete table ip6 nftban" <<<"$remove_block"; then
     echo "  OK: remove) deletes ip + ip6 nftban tables"
 else
