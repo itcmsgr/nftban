@@ -579,8 +579,9 @@ if [[ -f "${REPO_ROOT}/${IPC_LIB}" ]]; then
     fi
 
     # Verify emergency gate file path is defined
-    if grep -q '/run/nftban/.emergency_unlock' "${REPO_ROOT}/${IPC_LIB}"; then
-        check "Emergency gate file path defined (/run/nftban/.emergency_unlock)" 0
+    # v1.238: the marker lives in the root-only /run/nftban-writers
+    if grep -q 'gate_dir="/run/nftban-writers"' "${REPO_ROOT}/${IPC_LIB}"; then
+        check "Emergency gate file path defined (/run/nftban-writers/.emergency_unlock)" 0
     else
         check "Emergency gate file path defined" 1
     fi

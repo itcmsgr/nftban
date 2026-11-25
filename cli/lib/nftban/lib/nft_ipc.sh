@@ -927,24 +927,46 @@ export -f nft_ipc_delete_port
 # Called by cmd_whitelist.sh and cmd_flush.sh before any nft operations
 
 nftban_ipc_check_or_emergency() {
-    local emergency_gate="/run/nftban/.emergency_unlock"
+    # v1.238 (owner 2026-11-24, audit KERNEL_WRITER_AUDIT_d016f838 V3): the marker lives in the
+    # root-only /run/nftban-writers (build/fhs-spec.yaml, tmpfiles.d: d 0700 root root), so the
+    # nftban service account controls no part of the path. The old /run/nftban/.emergency_unlock
+    # (service-owned directory) no longer enables anything.
+    local gate_dir="/run/nftban-writers"
+    local emergency_gate="$gate_dir/.emergency_unlock"
+    local legacy_gate="/run/nftban/.emergency_unlock"
+    local dir_st gate_st
 
     # 1. Check if daemon is running (preferred path)
     if nft_ipc_is_daemon_running; then
         return 0
     fi
 
-    # 2. Check emergency unlock gate file
-    if [[ -f "$emergency_gate" ]]; then
-        echo "WARNING: Daemon not running. Using emergency direct access." >&2
-        logger -t nftban "EMERGENCY GATE: Direct nft access via $emergency_gate"
-        export NFTBAN_EMERGENCY_MODE=1
-        return 1
+    if [[ -e "$legacy_gate" || -L "$legacy_gate" ]]; then
+        echo "WARNING: $legacy_gate is ignored since v1.238 (use $emergency_gate, created by root)" >&2
     fi
 
-    # 3. No daemon, no emergency gate — fail
+    # 2. Emergency marker. Decided ONCE from one lstat of each object (stat without -L does not
+    #    follow symlinks): the directory must be root:root 0700 and a real directory, the marker a
+    #    regular file owned by root. Only root can change the contents of such a directory, so
+    #    what was observed is what root authorised; nothing re-tests the path afterwards.
+    # LC_ALL=C: %F is localised ("regular file" differs under e.g. el_GR), the comparison below is not.
+    dir_st=$(LC_ALL=C stat -c '%u:%g:%a:%F' -- "$gate_dir" 2>/dev/null) || dir_st=""
+    gate_st=$(LC_ALL=C stat -c '%u:%F' -- "$emergency_gate" 2>/dev/null) || gate_st=""
+    if [[ -n "$gate_st" ]]; then
+        if [[ "$dir_st" == "0:0:700:directory" ]] \
+           && [[ "$gate_st" == "0:regular file" || "$gate_st" == "0:regular empty file" ]]; then
+            echo "WARNING: Daemon not running. Using emergency direct access." >&2
+            logger -t nftban "EMERGENCY GATE: Direct nft access via $emergency_gate"
+            export NFTBAN_EMERGENCY_MODE=1
+            return 1
+        fi
+        echo "WARNING: ignoring $emergency_gate (dir '$dir_st', marker '$gate_st'): needs a root:root 0700 directory and a regular root-owned file" >&2
+        logger -t nftban "EMERGENCY GATE IGNORED: $emergency_gate dir=$dir_st marker=$gate_st" 2>/dev/null || true
+    fi
+
+    # 3. No daemon, no valid emergency gate — fail
     echo "ERROR: nftband daemon is not running. Start with: systemctl start nftband" >&2
-    echo "       For emergency access: touch $emergency_gate" >&2
+    echo "       For emergency access (as root): touch $emergency_gate   (remove it after recovery: rm $emergency_gate)" >&2
     return 2
 }
 
