@@ -529,7 +529,16 @@ _nftban_ddos_suricata_block_rule() {
 
     # shellcheck disable=SC2086 # table is "<family> <name>"
     local nerr
-    nerr=$(mktemp) || return 1
+    # v1.238.1: nftband runs this at start (apply/teardown) under nftband_t with PrivateTmp, which may not
+    # create in /tmp — capture in the labelled runtime dir (lib/nft_probe.sh _nftban_probe_capture_dir).
+    if ! declare -F _nftban_probe_capture_dir >/dev/null 2>&1 \
+       && [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_probe.sh" ]]; then
+        # shellcheck source=/usr/lib/nftban/lib/nft_probe.sh
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_probe.sh" || return 1
+    fi
+    local _cd="${TMPDIR:-/tmp}"
+    declare -F _nftban_probe_capture_dir >/dev/null 2>&1 && _cd=$(_nftban_probe_capture_dir)
+    nerr=$(mktemp "${_cd}/.nftban-ddos-suricata.XXXXXXXXXX") || return 1
     if ! listing=$(timeout 10s nft -a list chain $table input 2>"$nerr"); then
         # Only nft's own "No such file or directory" (no table/chain) means there is no rule
         # to remove; any other failure is UNKNOWN and refused (nft parser contract).

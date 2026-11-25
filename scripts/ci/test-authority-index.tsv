@@ -267,11 +267,13 @@ module_reapply_warning_precedence_test	cli/lib/nftban/tests/module_reapply_warni
 module_switch_unified_v1238_test	cli/lib/nftban/tests/module_switch_unified_v1238_test.sh	core	test	module-authority	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 mutation_rc_suppression_guard_v1233_1_test	cli/lib/nftban/tests/mutation_rc_suppression_guard_v1233_1_test.sh	cli	test	claim-truth	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
 nft_bounded_limiter_render_v1228_6_test	cli/lib/nftban/tests/nft_bounded_limiter_render_v1228_6_test.sh	firewall	test	nft-bounded-limiters	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
+nft_capture_dir_daemon_sites_v1238_1_test	cli/lib/nftban/tests/nft_capture_dir_daemon_sites_v1238_1_test.sh	cli	test	nft-probe-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nft_consumer_authority_guard_v1228_4_test	cli/lib/nftban/tests/nft_consumer_authority_guard_v1228_4_test.sh	packaging	test	systemd-execution-authority	CI_STATIC	ci-bash	true	false	false	false	false	false			
 nft_counting_model_guard_v190_test	cli/lib/nftban/tests/nft_counting_model_guard_v190_test.sh	metrics	test	nft-counting-model	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nft_loopback_before_invalid_v217_test	cli/lib/nftban/tests/nft_loopback_before_invalid_v217_test.sh	firewall	test	nft-schema-rule-order	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nft_ndp_rfc4861_source_scope_test	cli/lib/nftban/tests/nft_ndp_rfc4861_source_scope_test.sh	firewall	test	nft-schema-ndp	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nft_parser_compat_v1228_8_test	cli/lib/nftban/tests/nft_parser_compat_v1228_8_test.sh	health	test	nft-parser-contract	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
+nft_probe_capture_dir_v1238_1_test	cli/lib/nftban/tests/nft_probe_capture_dir_v1238_1_test.sh	cli	test	nft-probe-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nft_shipped_conf_cold_load_idiom_test	cli/lib/nftban/tests/nft_shipped_conf_cold_load_idiom_test.sh	firewall	test	nft-schema-load-idiom	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nft_writer_authority_v150_test	cli/lib/nftban/tests/nft_writer_authority_v150_test.sh	firewall	test	nft-writer-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nftables_conf_ownership_transition_v1229_12_test	cli/lib/nftban/tests/nftables_conf_ownership_transition_v1229_12_test.sh	packaging	test	packaging-ownership	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

@@ -414,7 +414,11 @@ nft_fragment_observe_chain() {
     fi
 
     local ef out rc=0 line in_tbl=0 seen_tbl=0 found=0
-    ef="$(mktemp "${TMPDIR:-/tmp}/.nftban-obs.XXXXXXXXXX" 2>/dev/null)" || {
+    # v1.238.1: nftband reaches observe at start (PortScan/DDoS apply/teardown) under nftband_t with
+    # PrivateTmp, which may not create in /tmp — capture in the probe's labelled dir (lib/nft_probe.sh).
+    local _cd="${TMPDIR:-/tmp}"
+    declare -F _nftban_probe_capture_dir >/dev/null 2>&1 && _cd=$(_nftban_probe_capture_dir)
+    ef="$(mktemp "${_cd}/.nftban-obs.XXXXXXXXXX" 2>/dev/null)" || {
         NFT_FRAGMENT_OBS_REASON="capture_failed"; return 1; }
 
     # STEP 2 — chain membership, from a listing that SUCCEEDED.
@@ -499,7 +503,11 @@ nft_fragment_observe_jumps() {
         NFT_FRAGMENT_OBS_JUMPS=0; NFT_FRAGMENT_OBS_REASON="table_absent"; return 0
     fi
     local ef out rc=0 line hdr=0 closed=0 n=0 depth=0 opens closes
-    ef="$(mktemp "${TMPDIR:-/tmp}/.nftban-obs.XXXXXXXXXX" 2>/dev/null)" || {
+    # v1.238.1: nftband reaches observe at start (PortScan/DDoS apply/teardown) under nftband_t with
+    # PrivateTmp, which may not create in /tmp — capture in the probe's labelled dir (lib/nft_probe.sh).
+    local _cd="${TMPDIR:-/tmp}"
+    declare -F _nftban_probe_capture_dir >/dev/null 2>&1 && _cd=$(_nftban_probe_capture_dir)
+    ef="$(mktemp "${_cd}/.nftban-obs.XXXXXXXXXX" 2>/dev/null)" || {
         NFT_FRAGMENT_OBS_REASON="capture_failed"; return 1; }
     out="$(nft list chain "$fam" "$tbl" input 2>"$ef")" || rc=$?
     if (( rc != 0 )); then
@@ -558,7 +566,11 @@ nft_fragment_observe_set() {
         NFT_FRAGMENT_OBS_REASON="set_verdict_unrecognised"; return 1
     fi
     local ef out rc=0 line hdr=0 closed=0 depth=0 opens closes elems=0
-    ef="$(mktemp "${TMPDIR:-/tmp}/.nftban-obs.XXXXXXXXXX" 2>/dev/null)" || {
+    # v1.238.1: nftband reaches observe at start (PortScan/DDoS apply/teardown) under nftband_t with
+    # PrivateTmp, which may not create in /tmp — capture in the probe's labelled dir (lib/nft_probe.sh).
+    local _cd="${TMPDIR:-/tmp}"
+    declare -F _nftban_probe_capture_dir >/dev/null 2>&1 && _cd=$(_nftban_probe_capture_dir)
+    ef="$(mktemp "${_cd}/.nftban-obs.XXXXXXXXXX" 2>/dev/null)" || {
         NFT_FRAGMENT_OBS_REASON="capture_failed"; return 1; }
     out="$(nft list set "$fam" "$tbl" "$set" 2>"$ef")" || rc=$?
     if (( rc != 0 )); then

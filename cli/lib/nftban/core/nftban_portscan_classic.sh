@@ -911,7 +911,18 @@ nftban_portscan_classic_process_logs() {
         # Use journalctl for kernel logs on systemd systems
         _nftban_portscan_classic_log "DEBUG" "Reading from journalctl (kernel logs)"
         local _ps_jbatch _ps_jcursor=""
-        _ps_jbatch=$(mktemp "${TMPDIR:-/tmp}/nftban-portscan-journal.XXXXXX" 2>/dev/null) || _ps_jbatch=""
+        # v1.238.1: this runs every detection cycle inside nftband (nftband_t, PrivateTmp), which may
+        # not create in /tmp — batch in the labelled runtime dir (lib/nft_probe.sh _nftban_probe_capture_dir).
+        if ! declare -F _nftban_probe_capture_dir >/dev/null 2>&1 \
+           && [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_probe.sh" ]]; then
+            # shellcheck source=/usr/lib/nftban/lib/nft_probe.sh
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_probe.sh" 2>/dev/null || true
+        fi
+        if declare -F _nftban_probe_capture_dir >/dev/null 2>&1; then
+            _ps_jbatch=$(mktemp "$(_nftban_probe_capture_dir)/nftban-portscan-journal.XXXXXX" 2>/dev/null) || _ps_jbatch=""
+        else
+            _ps_jbatch=""
+        fi
         if [[ -z "$_ps_jbatch" ]]; then
             # DEGRADED, NOT BLIND. An earlier version pointed the batch at
             # /dev/null here: it logged a warning and then processed nothing,
