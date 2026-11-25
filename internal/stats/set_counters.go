@@ -118,6 +118,10 @@ type SetCountEntry struct {
 }
 
 // NewSetCounters creates a new counter tracker
+// testHookSnapshotHoldsRLock is nil in production. Tests set it to run code while Snapshot holds
+// its read lock, to place a waiting writer exactly between Snapshot's lock and the rest of its body.
+var testHookSnapshotHoldsRLock func()
+
 func NewSetCounters(cacheDir string) *SetCounters {
 	return &SetCounters{
 		counts:       make(map[string]*atomic.Int64),
@@ -220,7 +224,12 @@ func (sc *SetCounters) GlobalScale() string {
 
 // RecommendedExporterInterval returns the recommended exporter interval based on global scale
 func (sc *SetCounters) RecommendedExporterInterval() time.Duration {
-	scale := sc.GlobalScale()
+	return exporterIntervalForScale(sc.GlobalScale())
+}
+
+// exporterIntervalForScale maps a global scale to the exporter interval. It takes no lock, so a
+// caller that already holds sc.mu (Snapshot) can use it without a second RLock.
+func exporterIntervalForScale(scale string) time.Duration {
 	switch scale {
 	case ScaleNormal:
 		return 60 * time.Second
@@ -259,6 +268,9 @@ func (sc *SetCounters) ReconcileInterval() time.Duration {
 func (sc *SetCounters) Snapshot() SetCountSnapshot {
 	sc.mu.RLock()
 	defer sc.mu.RUnlock()
+	if testHookSnapshotHoldsRLock != nil {
+		testHookSnapshotHoldsRLock()
+	}
 
 	sets := make(map[string]SetCountEntry, len(sc.counts))
 	for name, counter := range sc.counts {
@@ -278,12 +290,20 @@ func (sc *SetCounters) Snapshot() SetCountSnapshot {
 		}
 	}
 
-	interval := sc.RecommendedExporterInterval()
+	// v1.238 BUG-SETCOUNTERS-SNAPSHOT-NESTED-RLOCK-DEADLOCK: the scale and the interval come from
+	// the same consistent view under the ONE RLock taken above. The previous code called
+	// RecommendedExporterInterval() -> GlobalScale(), a SECOND sc.mu.RLock() while the first was
+	// held; sync.RWMutex forbids recursive read locking — a writer (Set/Add/SetReconciled) waiting
+	// between the two blocks the second RLock while the first is never released, so the writer and
+	// this reader wait for each other forever (monitor, 2026-11-24: the reconciliation writer held
+	// nft_operations.lock for 30 h and every CLI convergence op was REFUSED).
+	scale := sc.globalScaleLocked()
+	interval := exporterIntervalForScale(scale)
 
 	return SetCountSnapshot{
 		Timestamp:        time.Now().UTC().Format(time.RFC3339),
 		DaemonPID:        sc.daemonPID,
-		ScaleMode:        sc.globalScaleLocked(),
+		ScaleMode:        scale,
 		ExporterInterval: int(interval.Seconds()),
 		Sets:             sets,
 	}
