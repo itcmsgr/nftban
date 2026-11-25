@@ -159,6 +159,7 @@ botguard_env() {
     cat <<'STUBS'
 NFTBAN_LIB_DIR_REAL="$NFTBAN_LIB_DIR"
 _botguard_config_set() { return 0; }          # config write is a no-op success
+_botguard_save_switch() { return 0; }         # v1.238 D1/D2 writer: same no-op success
 systemctl() { return 1; }                     # daemon "not active"
 # The function sources lib/nft_fragment.sh; pre-define the symbol so the source
 # is a no-op and our stub wins. The stub FAILS (rc=1) to drive the error path.
@@ -174,7 +175,7 @@ T4_RC=0
 T4_OUT=$(call_botguard_enable 2>&1) || T4_RC=$?
 assert_eq "$T4_RC" "1"                                  "T4.1 fragment failure -> rc=1"
 assert_contains "$T4_OUT" "NOT applied"                 "T4.2 says rules NOT applied"
-assert_contains "$T4_OUT" "nftban rebuild"              "T4.3 points operator at rebuild"
+assert_contains "$T4_OUT" "nftban firewall rebuild"     "T4.3 points operator at the real rebuild command (v1.238: 'nftban rebuild' is not a CLI command)"
 if printf '%s' "$T4_OUT" | grep -F -q "Bot Guard enabled."; then
     printf "  [FAIL] %s\n" "T4.4 must NOT claim 'enabled' on failure"
     FAIL=$((FAIL + 1)); FAILED_TESTS+=("T4.4")

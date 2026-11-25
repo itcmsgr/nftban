@@ -11,7 +11,7 @@
 #   - RBAC enforcement
 #
 # Schema Version: 1.2
-# Last Updated: 2026-03-02
+# Last Updated: 2026-11-25
 # =============================================================================
 
 # =============================================================================
@@ -42,43 +42,33 @@
 # =============================================================================
 
 # =============================================================================
-# GLOBAL OPTIONS (inherited by all commands)
+# GLOBAL OPTIONS (handled by the dispatcher for every command)
 # =============================================================================
-# These options are available to ALL commands and don't need to be repeated
-# in each command's options section. CLI parsers should handle these first.
+# v1.238: only options the dispatcher (cli/sbin/nftban main) really handles for EVERY
+# command are listed here; `nftban help --all` renders this block. Per-command options
+# (--yes, --force, --dry-run, --verbose, -j, -q ...) belong to the command's own options and
+# its `nftban <command> --help`; they were listed here before v1.238 without being global.
 
 global_options:
   --help:
     aliases: ["-h", "help"]
     type: bool
-    description: "Show command help and usage information"
+    description: "Show help (nftban help <command> = nftban <command> --help)"
     pattern: "help|-h|--help"
   --version:
     aliases: ["-V"]
     type: bool
-    description: "Show version information"
-    note: "Use -V to avoid conflict with -v for verbose"
+    description: "Same as 'nftban version' (first argument only)"
   --json:
-    aliases: ["-j"]
     type: bool
-    description: "Output in JSON format (machine-readable)"
-    pattern: "--json|-j"
+    description: "Suppress the banner; JSON output where the command supports it"
   --quiet:
-    aliases: ["-q"]
+    aliases: ["--plain"]
     type: bool
-    description: "Suppress informational messages and tips"
-    pattern: "--quiet|-q"
-  --verbose:
+    description: "Suppress the banner (and tips where the command supports it)"
+  --no-banner:
     type: bool
-    description: "Enable verbose/debug output"
-  --dry-run:
-    type: bool
-    description: "Preview changes without executing (where supported)"
-  --force:
-    aliases: ["-f"]
-    type: bool
-    description: "Skip confirmation prompts"
-    pattern: "--force|-f"
+    description: "Suppress the banner"
 
 # Standard parameter patterns (for reference in command definitions)
 standard_params:
@@ -173,7 +163,7 @@ status:
 
 health:
   category: setup_discovery
-  description: "System health check and auto-repair diagnostics"
+  description: "Protection truth table (read-only); repair is opt-in: health fix, health diagnostics --auto-heal"
   risk: core
   audience: [cli, auditor, panel]
   capability: status_read
@@ -397,6 +387,52 @@ preflight:
       mutates: false
       description: "Validate network configuration"
 
+enable:
+  category: setup_discovery
+  description: "Enable NFTBan services (all, or one target: nftables, suricata, login, timers). Same as 'nftban system enable'"
+  risk: advanced
+  audience: [cli]
+  capability: service_control
+  mutates: true
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  examples:
+    - "nftban enable"
+    - "nftban enable login"
+
+disable:
+  category: setup_discovery
+  description: "Disable NFTBan services (all, or one target). Same as 'nftban system disable'"
+  risk: advanced
+  audience: [cli]
+  capability: service_control
+  mutates: true
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  examples:
+    - "nftban disable suricata"
+
+restart:
+  category: setup_discovery
+  description: "Restart NFTBan services (all, or one target). Same as 'nftban system restart'"
+  risk: advanced
+  audience: [cli]
+  capability: service_control
+  mutates: true
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  examples:
+    - "nftban restart"
+
 # =============================================================================
 # GROUP 1: IMMEDIATE ACTION
 # =============================================================================
@@ -434,10 +470,10 @@ ban:
       default: "manual"
       description: "Ban source (login, portscan, ddos, manual)"
   examples:
-    - "nftban ban 1.2.3.4"
-    - "nftban ban 1.2.3.4 --timeout 3600"
-    - "nftban ban 1.2.3.4 --reason 'brute force attack'"
-    - "nftban ban 1.2.3.4 --source manual --json"
+    - "nftban ban 192.0.2.10"
+    - "nftban ban 192.0.2.10 --timeout 3600"
+    - "nftban ban 192.0.2.10 --reason 'brute force attack'"
+    - "nftban ban 192.0.2.10 --source manual --json"
 
 unban:
   category: immediate_action
@@ -462,8 +498,8 @@ unban:
       required: false
       description: "Output in JSON format"
   examples:
-    - "nftban unban 1.2.3.4"
-    - "nftban unban 1.2.3.4 --json"
+    - "nftban unban 192.0.2.10"
+    - "nftban unban 192.0.2.10 --json"
 
 check:
   category: immediate_action
@@ -488,9 +524,9 @@ check:
       required: false
       description: "Output in JSON format"
   examples:
-    - "nftban check 1.2.3.4"
+    - "nftban check 192.0.2.10"
     - "nftban check port 22"
-    - "nftban check 1.2.3.4 --json"
+    - "nftban check 192.0.2.10 --json"
 
 search:
   category: immediate_action
@@ -515,8 +551,8 @@ search:
       required: false
       description: "Output in JSON format"
   examples:
-    - "nftban search 1.2.3.4"
-    - "nftban search 1.2.3.4 --json"
+    - "nftban search 192.0.2.10"
+    - "nftban search 192.0.2.10 --json"
 
 list:
   category: immediate_action
@@ -740,8 +776,8 @@ protect:
   arguments:
     ip: {type: string, required: true, description: "IP address to protect"}
   examples:
-    - "nftban protect 1.2.3.4"
-    - "nftban protect 1.2.3.4 --json"
+    - "nftban protect 192.0.2.10"
+    - "nftban protect 192.0.2.10 --json"
 
 unprotect:
   category: immediate_action
@@ -758,8 +794,8 @@ unprotect:
   arguments:
     ip: {type: string, required: true, description: "IP address to unprotect"}
   examples:
-    - "nftban unprotect 1.2.3.4"
-    - "nftban unprotect 1.2.3.4 --json"
+    - "nftban unprotect 192.0.2.10"
+    - "nftban unprotect 192.0.2.10 --json"
 
 # =============================================================================
 # GROUP 2: ACTIVE PROTECTION
@@ -957,7 +993,7 @@ botguard:
     - "nftban botguard enable"
     - "nftban botguard disable"
     - "nftban botguard status"
-    - "nftban botguard test 1.2.3.4"
+    - "nftban botguard test 192.0.2.10"
     - "nftban botguard list --set=allow"
     - "nftban botguard verify 66.249.79.1"
     - "nftban botguard status --json"
@@ -1154,7 +1190,7 @@ rbl:
   examples:
     - "nftban rbl status"
     - "nftban rbl check"
-    - "nftban rbl check --ip 1.2.3.4"
+    - "nftban rbl check --ip 192.0.2.10"
     - "nftban rbl check --fresh --verbose"
     - "nftban rbl server check"
     - "nftban rbl server check --alert"
@@ -1165,9 +1201,9 @@ rbl:
     - "nftban rbl cache show"
     - "nftban rbl cache purge"
     - "nftban rbl critical list"
-    - "nftban rbl critical add 1.2.3.4 mail"
-    - "nftban rbl critical remove 1.2.3.4"
-    - "nftban rbl alert test --ip 1.2.3.4"
+    - "nftban rbl critical add 192.0.2.10 mail"
+    - "nftban rbl critical remove 192.0.2.10"
+    - "nftban rbl alert test --ip 192.0.2.10"
     - "nftban rbl watchlist list"
     - "nftban rbl watchlist add 198.51.100.5 'Customer ABC mail'"
     - "nftban rbl watchlist check --alert"
@@ -1533,7 +1569,7 @@ firewall:
   has_json: true
   examples:
     - "nftban firewall validate"
-    - "nftban firewall check 1.2.3.4"
+    - "nftban firewall check 192.0.2.10"
     - "nftban firewall check 22"
     - "nftban firewall stats"
     - "nftban firewall logs show --live"
@@ -2253,7 +2289,7 @@ stats:
         --json: {type: bool, description: "Output in JSON format"}
   examples:
     - "nftban stats top"
-    - "nftban stats ip 1.2.3.4"
+    - "nftban stats ip 192.0.2.10"
     - "nftban stats recent"
     - "nftban stats monitor"
     - "nftban stats export --json"
@@ -2908,7 +2944,7 @@ geoip:
           description: "Test database download"
   examples:
     - "nftban geoip status"
-    - "nftban geoip lookup 1.2.3.4"
+    - "nftban geoip lookup 192.0.2.10"
     - "nftban geoip update"
     - "nftban geoip config --json"
 
@@ -3020,7 +3056,7 @@ debug:
     - "nftban debug trace"
 
 smoke:
-  category: diagnostics
+  category: developer_sysadmin
   description: "Registry-driven non-destructive smoke tests for system integrity"
   risk: none
   audience: [cli, ci]
@@ -3175,8 +3211,8 @@ emulate:
       type: bool
       description: "Output in JSON format"
   examples:
-    - "nftban emulate 1.2.3.4                    # Test inbound from IP"
-    - "nftban emulate 1.2.3.4 --proto tcp --port 22  # Test SSH from IP"
+    - "nftban emulate 192.0.2.10                    # Test inbound from IP"
+    - "nftban emulate 192.0.2.10 --proto tcp --port 22  # Test SSH from IP"
     - "nftban emulate --out 8.8.8.8:443         # Test outbound HTTPS"
     - "nftban emulate --out :3306               # Test outbound MySQL (any dest)"
     - "nftban emulate --out 10.0.0.1:25         # Test outbound SMTP to IP"
@@ -3307,8 +3343,7 @@ system:
     - "nftban system status"
     - "nftban system enable"
     - "nftban system disable"
-    - "nftban system install"
-    - "nftban system uninstall"
+    - "nftban system restart"
 
 update:
   category: developer_sysadmin
@@ -3553,7 +3588,7 @@ _metadata:
   # T1-4 in cli/lib/nftban/tests/cli_no_gui_doc_drift_v144_test.sh, which measures the
   # registry instead of pinning a literal. Bump this whenever a command key is added
   # or removed; the guard fails if it drifts.
-  total_commands: 71
+  total_commands: 74  # v1.238: +3 (enable, disable, restart registered)
   commands_with_json: 46
   commands_without_json: 10  # v1.144.0 PR-A: -1 (gui retired)
   commands_with_full_options: 27

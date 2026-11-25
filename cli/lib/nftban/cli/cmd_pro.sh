@@ -895,6 +895,8 @@ nftban_cmd_pro_help() {
     echo "  inventory show      Display current inventory"
     echo "  inventory run       Collect and submit inventory"
     echo "  inventory submit    Force submit inventory"
+    echo "  community <cmd>     Anonymous community stats, opt-in (enable, disable, show,"
+    echo "                      show-v3, send-test, status, submit): nftban pro community help"
     echo ""
     echo "Enrollment Options:"
     echo "  --token-file PATH   Read token from file (recommended)"

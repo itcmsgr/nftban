@@ -321,6 +321,11 @@ case "$method" in
             (( pr == 11 )) && exit 1
             jq -nc --arg e "nft apply ruleset failed: exit status 1: $out" '{success:false,error:$e}'
         fi ;;
+    # v1.238 D1/D2: status asks which modules the daemon runs; the daemon reports what it read
+    # at its last start (enabled_at_start, written by the fake systemctl below).
+    modules)
+        jq -nc --argjson e "$([[ "$(cat "$FAKE_K/enabled_at_start" 2>/dev/null)" == true ]] && echo true || echo false)" \
+            '{success:true,data:[{name:"portscan",enabled:$e}]}' ;;
     *) echo "UNSUPPORTED ipc method: $method" >> "$FAKE_T/unsupported"
        echo '{"success":false,"error":"fake daemon: unsupported method"}' ;;
 esac

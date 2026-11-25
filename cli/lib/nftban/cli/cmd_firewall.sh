@@ -2846,8 +2846,10 @@ FIREWALL_RELOAD_HELP
     # jump rule) and restarts nftband.
     if _firewall_botguard_is_enabled; then
         [[ "$quiet" == "false" ]] && echo "Re-applying BotGuard rules..."
-        nftban botguard enable --quiet 2>/dev/null || {
-            [[ "$quiet" == "false" ]] && echo "Warning: Failed to re-apply BotGuard rules. Run: nftban botguard enable" || true
+        # v1.238 D1/D2: apply, never write the operator's choice
+        # stderr stays suppressed (support-bundle redaction is P12-R02-B); `nftban botguard apply` shows the reason.
+        nftban botguard apply >/dev/null 2>/dev/null || {
+            [[ "$quiet" == "false" ]] && echo "Warning: Failed to re-apply BotGuard rules. Run: nftban botguard apply (shows the reason)" || true
         }
     fi
 
@@ -2946,15 +2948,10 @@ _REBUILD_VALIDATOR_BIN="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-validate"
 # This helper centralises the read of the canonical key so the wrong-key bug
 # cannot recur in any of the three call sites.
 _firewall_botguard_is_enabled() {
-    local conf_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/botguard"
-    local val=""
-    if [[ -f "$conf_dir/main.conf.local" ]]; then
-        val=$(grep -oP '^HTTP_BOTGUARD_ENABLED="\K[^"]+' "$conf_dir/main.conf.local" 2>/dev/null || true)
-    fi
-    if [[ "$val" != "true" && -f "$conf_dir/main.conf" ]]; then
-        val=$(grep -oP '^HTTP_BOTGUARD_ENABLED="\K[^"]+' "$conf_dir/main.conf" 2>/dev/null || true)
-    fi
-    [[ "$val" == "true" ]]
+    # v1.238 D1/D2: the shared module rule (base < module .local < central nftban.conf.local; truth
+    # table nftban_bool_is_true). Before, a "false" in the .local fell back to the base, so an edited
+    # base could re-enable BotGuard over the operator's choice (and the rebuild then wrote "true").
+    nftban_module_effective_enabled botguard >/dev/null 2>&1
 }
 
 _rebuild_get_validator_state() {
@@ -4862,10 +4859,13 @@ _firewall_rebuild_core() {
     # against the wrong config key and silently skipped on BotGuard hosts.
     [[ "$quiet" == "false" ]] && echo "  [10/12] Re-applying BotGuard..."
     if _firewall_botguard_is_enabled; then
-        if nftban botguard enable --quiet 2>/dev/null; then
+        # v1.238 D1/D2: re-apply without writing the operator's choice (was `botguard enable`, which
+        # wrote HTTP_BOTGUARD_ENABLED="true"); the failure reason is shown, not discarded.
+        # stderr stays suppressed (support-bundle redaction is P12-R02-B); `nftban botguard apply` shows the reason.
+        if nftban botguard apply >/dev/null 2>/dev/null; then
             declare -f _rebuild_classify_module_result &>/dev/null && _rebuild_classify_module_result "botguard" "$MR_OK"
         else
-            [[ "$quiet" == "false" ]] && echo "    Warning: BotGuard enable failed. Run: nftban botguard enable" || true
+            [[ "$quiet" == "false" ]] && echo "    Warning: BotGuard apply failed. Run: nftban botguard apply (shows the reason)" || true
             declare -f _rebuild_classify_module_result &>/dev/null && _rebuild_classify_module_result "botguard" "$MR_FAILED"
         fi
     else
@@ -5229,6 +5229,18 @@ _firewall_rebuild_core() {
                 echo "  could not be published; this operation cannot be reported as complete." >&2
                 return 2
             fi
+            # v1.238 (owner GO 2026-11-23, option "runtime only"): a BotGuard re-apply that failed
+            # is a failed rebuild for the operator — name it and return non-zero. Scope: runtime
+            # context WITHOUT a result-file consumer only. Installer and `update apply` read the
+            # record, where COMPLETE must pair with rc 0 (switchop ContradictsExitCode); they keep
+            # rc 0 and the step-10 warning. Generation and record above are unchanged.
+            if [[ -z "${_NFTBAN_REBUILD_RESULT_FILE:-}" && "${_NFTBAN_REBUILD_CONTEXT:-runtime-required}" == "runtime-required" \
+                  && "${_REBUILD_MODULE_BOTGUARD:-}" == "${MR_FAILED:-RESTORE_FAILED}" ]]; then
+                # v1.238 group g2 (owner wording): state the failure, do not assume which rules remain.
+                echo "REBUILD INCOMPLETE: BotGuard rule re-apply failed." >&2
+                echo "  Run: nftban botguard apply   (shows the reason)" >&2
+                return 1
+            fi
             return 0
             ;;
         degraded)
@@ -5435,8 +5447,10 @@ firewall_reset() {
     # Step 8 (v1.50.1, v1.81.0 key fix): Re-apply botguard if enabled
     [[ "$quiet" == "false" ]] && echo "  [8/11] Re-applying BotGuard..."
     if _firewall_botguard_is_enabled; then
-        nftban botguard enable --quiet 2>/dev/null || {
-            [[ "$quiet" == "false" ]] && echo "    Warning: BotGuard enable failed" || true
+        # v1.238 D1/D2: apply, never write the operator's choice
+        # stderr stays suppressed (support-bundle redaction is P12-R02-B); `nftban botguard apply` shows the reason.
+        nftban botguard apply >/dev/null 2>/dev/null || {
+            [[ "$quiet" == "false" ]] && echo "    Warning: BotGuard apply failed. Run: nftban botguard apply (shows the reason)" || true
         }
     fi
 
@@ -6344,7 +6358,7 @@ Examples:
   nftban firewall conflicts
 
   # Quick checks
-  nftban firewall check 1.2.3.4
+  nftban firewall check 192.0.2.10
   nftban firewall stats
 
   # Schema audit
@@ -6540,7 +6554,7 @@ The command:
   4. Displays available actions (block, unblock, whitelist, etc.)
 
 Arguments:
-  IP|PORT       IP address (1.2.3.4 or 2001:db8::1) or port number (22)
+  IP|PORT       IP address (192.0.2.10 or 2001:db8::1) or port number (22)
 
 Options:
   --json        Output results as JSON
@@ -6552,13 +6566,13 @@ Exit codes:
 
 Examples:
   # Check if IP is blocked
-  nftban firewall check 1.2.3.4
+  nftban firewall check 192.0.2.10
 
   # Check if port is allowed
   nftban firewall check 22
 
   # JSON output (for scripts/API)
-  nftban firewall check 1.2.3.4 --json
+  nftban firewall check 192.0.2.10 --json
 
 Processing Path:
   Priority: ip/ip6 nftban input_temp_whitelist (temp whitelist)

@@ -41,14 +41,14 @@ We have **two channels** for bug reports:
 
 3. **Check the documentation:**
    - README: https://github.com/itcmsgr/nftban#readme
-   - Man page: `man nftban`
+   - Built-in help: `nftban help` and `nftban help <command>` (no man page is shipped)
    - Docs: https://github.com/itcmsgr/nftban/tree/main/docs
 
 4. **Run health check:**
    ```bash
-   nftban health check --auto-heal
+   nftban health check
    ```
-   - This fixes common issues automatically
+   - Read-only. To repair common issues: `nftban health fix` (needs elevated privileges)
 
 ---
 

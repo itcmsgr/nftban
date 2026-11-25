@@ -9,12 +9,12 @@
 # meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-06-06"
-# meta:description="Locks v1.153 PR-F UX-A7: the short 'nftban help' (_nftban_help_essential) now carries the same ⚡/⚠️ risk markers as 'help --all' on state-changing verbs. Asserts: state-changing verbs (ban, unban, blacklist, whitelist, feeds, ddos, portscan, login, botguard, geoban, config) are marked ⚡; advanced/caution verbs (firewall, update) are marked ⚠️; read-only verbs (status, health, list, search, version) are NOT marked; a LEGEND explains the markers. WORDING-TRUTH guard: the short help does not introduce an unproven 'protected/validated' posture claim. Hermetic: sources nftban_help.sh and inspects the rendered text; no host/nft/IPC."
+# meta:description="Locks the marker contract of the two help views (v1.153 PR-F UX-A7, rebased v1.238 help truth). v1.238: ONE meaning per marker in both views. The marker of every command in the short 'nftban help' (_nftban_help_essential) must equal the marker 'nftban help --all' derives from commands.registry.yml (risk advanced -> ⚠️, setup -> 🛠️, otherwise mutates true|conditional -> ⚡, otherwise unmarked), read here with awk (no yq); generate-help.sh must implement that same rule; both legends must carry the same four definitions; no undefined marker (🔍) may appear; read-only verbs (status, list, search, version) stay unmarked; the --all global options list only dispatcher-global flags; the quick ban example uses a documentation address. WORDING-TRUTH guard: no unproven 'protected/validated' posture claim. Hermetic: sources nftban_help.sh and reads the registry and generate-help.sh as text; no host/nft/IPC."
 # meta:input="cli/lib/nftban/nftban_help.sh"
 # meta:output="Pass/fail assertions; exit 0 on all-pass"
-# meta:depends="bash,grep"
-# meta:inventory.files="cli/lib/nftban/nftban_help.sh"
-# meta:inventory.binaries="bash,grep"
+# meta:depends="bash,grep,awk"
+# meta:inventory.files="cli/lib/nftban/nftban_help.sh,commands.registry.yml,scripts/generate-help.sh"
+# meta:inventory.binaries="bash,grep,awk"
 # meta:inventory.env_vars="NFTBAN_LIB_DIR"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -52,43 +52,68 @@ OUT="$(
     _nftban_help_essential 2>&1
 )" || true
 
-# Helper: assert a verb's line begins (after leading spaces) with a marker.
-line_for() { printf '%s\n' "$OUT" | grep -E "[[:space:]]$1([[:space:]]|$)" | head -1; }
+REG="$REPO/commands.registry.yml"
+GEN="$REPO/scripts/generate-help.sh"
 
-echo "=== UX-A7: state-changing verbs carry the ⚡ marker ==="
-for v in ban unban blacklist whitelist feeds ddos portscan login botguard geoban config; do
-    l="$(line_for "$v")"
-    if [[ "$l" == *"⚡ $v"* ]]; then
-        ok "⚡ marks state-changing verb '$v'"
-    else
-        no "verb '$v' not marked ⚡" "$l"
-    fi
+# Registry marker for a top-level command (same rule as generate-help.sh _marker_for).
+reg_marker() {
+    local risk mutates
+    risk=$(awk -v c="$1" '$0 ~ "^"c":[[:space:]]*$" {f=1; next} f && /^[^[:space:]#]/ {exit} f && /^  risk:/ {print $2; exit}' "$REG")
+    mutates=$(awk -v c="$1" '$0 ~ "^"c":[[:space:]]*$" {f=1; next} f && /^[^[:space:]#]/ {exit} f && /^  mutates:/ {print $2; exit}' "$REG")
+    case "$risk" in
+        advanced) printf '⚠️' ;;
+        setup)    printf '🛠️' ;;
+        *) case "$mutates" in true|conditional) printf '⚡' ;; *) printf 'none' ;; esac ;;
+    esac
+}
+# Marker printed in the short list for a command ('none' when unmarked).
+short_marker() {
+    local l
+    l=$(grep -m1 -E "^  (⚡|⚠️|🛠️|🔍| ) ? *$1 " <<< "$OUT" || true)
+    case "$l" in
+        "  ⚡ $1 "*) printf '⚡' ;;
+        "  ⚠️ $1 "*) printf '⚠️' ;;
+        "  🛠️ $1 "*) printf '🛠️' ;;
+        "     $1 "*) printf 'none' ;;
+        *) printf 'MISSING' ;;
+    esac
+}
+
+echo "=== v1.238: every short-list marker equals the registry-derived --all marker ==="
+SHORT_CMDS=$(awk '/^MARKERS/{exit} {print}' <<< "$OUT" | grep -oE '^  (⚡ |⚠️ |🛠️ |🔍 |   )[a-z][a-z-]+ ' | awk '{print $NF}' | sort -u)
+n=0
+for c in $SHORT_CMDS; do
+    n=$((n+1))
+    want=$(reg_marker "$c"); got=$(short_marker "$c")
+    [[ "$got" == "$want" ]] && ok "'$c' marker $got == registry" || no "'$c' marker differs from 'help --all'" "short=$got registry=$want"
+done
+(( n >= 15 )) && ok "short list parsed ($n commands)" || no "short list parse" "only $n commands"
+
+echo "=== read-only verbs stay unmarked ==="
+for v in status list search version; do
+    [[ "$(short_marker "$v")" == none ]] && ok "read-only verb '$v' is unmarked" || no "read-only verb '$v' marked" "$(short_marker "$v")"
 done
 
-echo "=== UX-A7: advanced/caution verbs carry the ⚠️ marker ==="
-for v in firewall update; do
-    l="$(line_for "$v")"
-    if [[ "$l" == *"⚠️ $v"* ]]; then
-        ok "⚠️ marks advanced verb '$v'"
-    else
-        no "verb '$v' not marked ⚠️" "$l"
-    fi
+echo "=== one legend, same four definitions in both views; no undefined marker ==="
+for d in '⚡ changes state in some subcommands' '⚠️ advanced: changes state, use with caution' '🛠️ one-time setup' 'unmarked = read-only'; do
+    grep -qF -- "$d" <<< "$OUT" && ok "short legend: $d" || no "short legend missing" "$d"
+    grep -qF -- "$d" "$GEN" && ok "--all legend: $d" || no "--all legend missing" "$d"
 done
+grep -q '🔍' <<< "$OUT" && no "short help uses the undefined marker 🔍" || ok "no undefined marker (🔍) in the short help"
+grep -q 'Core      - Essential, safe operations' "$GEN" && no "--all still defines ⚡ as 'Core, safe'" || ok "--all no longer defines ⚡ as 'Core, safe'"
+grep -qE '^_marker_for\(\)' "$GEN" && grep -qF 'advanced) printf' "$GEN" && grep -qF 'true|conditional) printf' "$GEN" \
+    && ok "generate-help.sh derives markers by the same rule (_marker_for)" || no "generate-help.sh marker rule" "_marker_for missing or changed"
 
-echo "=== UX-A7: read-only verbs are NOT marked ==="
-for v in status health list search version; do
-    l="$(line_for "$v")"
-    if [[ "$l" == *"⚡ $v"* || "$l" == *"⚠️ $v"* ]]; then
-        no "read-only verb '$v' wrongly marked" "$l"
-    else
-        ok "read-only verb '$v' is unmarked"
-    fi
+echo "=== --all global options are dispatcher-global only; example IP ==="
+go=$(awk '/^global_options:/{f=1;next} f&&/^[^[:space:]#]/{exit} f&&/^  --?[a-z-]+:/{sub(":","",$1); print $1}' "$REG" | tr '\n' ' ')
+for bad in --force --dry-run --verbose; do
+    [[ " $go " == *" $bad "* ]] && no "global_options lists per-command flag $bad" "$go" || ok "global_options does not list $bad"
 done
-
-echo "=== UX-A7: a legend explains the markers ==="
-printf '%s\n' "$OUT" | grep -qi 'LEGEND' && ok "LEGEND header present" || no "LEGEND missing"
-printf '%s\n' "$OUT" | grep -q 'state-changing' && ok "legend defines ⚡ = state-changing" || no "state-changing legend text missing"
-printf '%s\n' "$OUT" | grep -qi 'use with caution' && ok "legend defines ⚠️ = advanced/caution" || no "caution legend text missing"
+for good in --help --version --json --quiet --no-banner; do
+    [[ " $go " == *" $good "* ]] && ok "global_options lists $good" || no "global_options missing $good" "$go"
+done
+grep -qF 'nftban ban 192.0.2.10' "$GEN" && ! grep -qF 'nftban ban 1.2.3.4' "$GEN" \
+    && ok "quick example bans a documentation address (192.0.2.10)" || no "quick ban example IP" "not 192.0.2.10"
 
 echo "=== WORDING-TRUTH: short help makes no unproven posture claim ==="
 printf '%s\n' "$OUT" | grep -qiE 'PROTECTED|fully protected|validated' \

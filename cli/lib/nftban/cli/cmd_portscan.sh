@@ -447,7 +447,14 @@ nftban_cmd_portscan() {
             # v1.141 PR-B (J-PORT): pass json_mode so the core function
             # short-circuits to a JSON payload instead of decorative chrome
             # on `nftban portscan status --json` (cruel-judge §3 E_J7).
-            nftban_portscan_status "$json_mode"
+            # v1.238 D1/D2 option A: plus configuration / daemon / kernel (and .enable_state in JSON)
+            declare -F nftban_module_status_with_state >/dev/null 2>&1 \
+                || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" 2>/dev/null || true
+            if declare -F nftban_module_status_with_state >/dev/null 2>&1; then
+                nftban_module_status_with_state portscan "$json_mode" nftban_portscan_status
+            else
+                nftban_portscan_status "$json_mode"
+            fi
             ;;
 
         stats)

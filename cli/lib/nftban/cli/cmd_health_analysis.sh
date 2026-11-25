@@ -1126,12 +1126,10 @@ nftban_health_cmd_botguard() {
 
     # Enabled status
     local enabled="false"
-    local local_conf="$config_dir/conf.d/botguard/main.conf.local"
-    if [[ -f "$local_conf" ]]; then
-        enabled=$(grep -m1 "^HTTP_BOTGUARD_ENABLED=" "$local_conf" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || echo "")
-    fi
-    if [[ -z "$enabled" && -f "$botguard_conf" ]]; then
-        enabled=$(grep -m1 "^HTTP_BOTGUARD_ENABLED=" "$botguard_conf" 2>/dev/null | cut -d'=' -f2- | tr -d '"' || echo "false")
+    # v1.238 D1/D2: the shared module rule (module_authority.sh) — was first-line, "true" only, no central.
+    if declare -F nftban_module_effective_enabled >/dev/null 2>&1 \
+       || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" 2>/dev/null; then
+        nftban_module_effective_enabled botguard >/dev/null 2>&1 && enabled="true"
     fi
 
     if [[ "$enabled" == "true" ]]; then

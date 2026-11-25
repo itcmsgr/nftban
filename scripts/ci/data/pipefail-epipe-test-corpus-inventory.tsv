@@ -101,7 +101,7 @@ cli/lib/nftban/tests/govulncheck_native_sarif_v1229_4_test.sh	1
 cli/lib/nftban/tests/health_resource_dropin_packaging_guard_v1222_1_test.sh	3
 cli/lib/nftban/tests/health_resources_cli_registration_v1222_1_test.sh	2
 cli/lib/nftban/tests/health_timers_truth_v150_test.sh	2
-cli/lib/nftban/tests/help_verb_icons_v153_test.sh	5
+cli/lib/nftban/tests/help_verb_icons_v153_test.sh	1
 cli/lib/nftban/tests/http_log_discovery_v177_test.sh	3
 cli/lib/nftban/tests/install_update_observability_v215_test.sh	4
 cli/lib/nftban/tests/l3a_never_ban_add_element_guard_test.sh	1

@@ -326,6 +326,11 @@ _nftban_mtxn_locked() {
     fi
     _nftban_mtxn_set_intent_var "$_MT_WANT"
     _nftban_mtxn_phase "INTENT_PERSISTED" || _MT_RECORD_OK="false"
+    # v1.238 D1/D2: read the effective value back and name the file it comes from.
+    local _mt_rb _mt_rb_src
+    _mt_rb=$(nftban_module_enable_resolve "$_MT_MOD" 2>/dev/null) || _mt_rb=""
+    _mt_rb_src=$(cut -f2 <<<"$_mt_rb")
+    echo "  Selection saved: $(_nftban_module_enable_var "$_MT_MOD")=\"$(cut -f1 <<<"$_mt_rb")\" (effective, from ${_mt_rb_src:-defaults})"
 
     # STEP 4 — THE reconcile root, against the saved intent, joining our lock.
     _nftban_mtxn_reconcile || rrc=$?

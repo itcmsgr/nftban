@@ -63,8 +63,9 @@ USAGE:
     nftban botguard <command> [options]
 
 COMMANDS:
-    enable              Enable HTTP Bot Guard protection
-    disable             Disable HTTP Bot Guard protection
+    enable              SAVE the setting ON, then load the rules and restart nftband
+    disable             SAVE the setting OFF, then remove the rules and restart nftband
+    apply               RE-APPLY the rules if the setting is ON (never changes the setting)
     status              Show bot guard status and statistics
     config              Show bot guard configuration
     stats               Show bot guard set statistics
@@ -74,12 +75,19 @@ COMMANDS:
     help                Show this help message
 
 DESCRIPTION:
-    HTTP Bot Guard provides automated crawler detection and protection
-    using a three-clock hybrid architecture:
+    HTTP Bot Guard provides automated crawler detection and protection:
 
-      Clock 1 (Kernel):  nft meter marks suspect IPs per-packet
-      Clock 2 (Go 60s):  Classification + FCrDNS verification loop
-      Clock 3 (Shell):   Botscan batch pattern matching (10 min)
+      Kernel:      nft meter marks suspect IPs per-packet
+      Go (60s):    Classification + FCrDNS verification loop
+
+    BotScan (nftban botscan, the periodic access-log scanner) is a separate
+    module: it runs and bans whether or not BotGuard is enabled. See
+    'nftban botscan help' for how its decisions differ with BotGuard on/off.
+
+    Which command to use:
+      change the setting           nftban botguard enable | disable
+      rules missing, setting ON    nftban botguard apply
+      whole ruleset damaged        nftban firewall rebuild
 
     Bot Guard is a SEPARATE module from DDoS protection. Both can run
     independently. Bot Guard adds HTTP-specific bot classification on
@@ -94,7 +102,7 @@ CONFIGURATION:
 EXAMPLES:
     nftban botguard enable                # Enable bot guard
     nftban botguard status                # Show current status
-    nftban botguard test 1.2.3.4          # Test IP classification
+    nftban botguard test 192.0.2.10       # Test IP classification
     nftban botguard list --set=allow      # Show verified crawlers
     nftban botguard verify 66.249.79.1    # FCrDNS check (Googlebot)
     nftban botguard status --json         # JSON output for scripting
@@ -347,10 +355,56 @@ _botguard_kernel_set_exists() {
 # COMMANDS
 # =============================================================================
 
+# v1.238 D1/D2 (owner 2026-11-23): the enable switch is written by the shared module writer (central
+# nftban.conf.local when the key is defined there, otherwise the module .local), read back, and its
+# source named. Only the explicit `nftban botguard enable|disable` writes; the rebuild uses `apply`.
+_botguard_save_switch() {
+    local want="$1" json_mode="$2" rb src now
+    if ! declare -F nftban_module_set_enabled >/dev/null 2>&1; then
+        # shellcheck source=/usr/lib/nftban/lib/module_authority.sh
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" || return 1
+    fi
+    nftban_module_set_enabled botguard "$want" || return 1
+    rb=$(nftban_module_enable_resolve botguard 2>/dev/null) || rb=""
+    src=$(cut -f2 <<<"$rb")
+    nftban_module_effective_enabled botguard >/dev/null 2>&1 && now=true || now=false
+    if [[ "$now" != "$want" ]]; then
+        echo "ERROR: HTTP_BOTGUARD_ENABLED is \"$(cut -f1 <<<"$rb")\" in ${src:-the defaults} after the write — the selection is NOT saved as requested" >&2
+        return 1
+    fi
+    [[ "$json_mode" == "true" ]] || echo "Selection saved: HTTP_BOTGUARD_ENABLED=\"$want\" (effective, from ${src:-defaults})"
+}
+
+# nftban botguard apply — v1.238: the rebuild's re-application (was `botguard enable`, which wrote
+# HTTP_BOTGUARD_ENABLED="true" over the operator's choice). Applies only when the effective switch is
+# on, prints why it failed, never writes config.
+_nftban_botguard_apply() {
+    if ! declare -F nftban_module_effective_enabled >/dev/null 2>&1; then
+        # shellcheck source=/usr/lib/nftban/lib/module_authority.sh
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" || return 1
+    fi
+    nftban_module_effective_enabled botguard >/dev/null 2>&1 || { echo "BotGuard is not enabled; nothing applied"; return 0; }
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR}/lib/nft_fragment.sh" || true
+    local frc=0
+    if declare -f nft_fragment_enable_module &>/dev/null; then
+        nft_fragment_enable_module "botguard" || frc=$?
+    fi
+    if [[ $frc -ne 0 ]]; then
+        echo "ERROR: BotGuard rules were NOT applied (fragment load failed, rc=$frc)" >&2
+        return 1
+    fi
+    if systemctl is-active nftband &>/dev/null && ! systemctl restart nftband 2>/dev/null; then
+        echo "ERROR: BotGuard rules loaded but nftband did not restart" >&2
+        return 1
+    fi
+    return 0
+}
+
 _nftban_botguard_enable() {
     local json_mode="${1:-false}"
 
-    _botguard_config_set "HTTP_BOTGUARD_ENABLED" "true"
+    _botguard_save_switch true "$json_mode" || return 1
 
     # Apply nft fragment: create sets + rules + jump chains
     # shellcheck source=/dev/null
@@ -358,7 +412,7 @@ _nftban_botguard_enable() {
     # v1.150 (MOD-05): capture the fragment rc. Previously a fragment failure
     # only warned, then the function unconditionally claimed "enabled" + rc=0
     # while HTTP_BOTGUARD_ENABLED=true was already persisted → BotGuard inert
-    # but reported active. Keep the config write (so a later `nftban rebuild`
+    # but reported active. Keep the config write (so a later `nftban botguard apply` or `nftban firewall rebuild`
     # picks it up) but make the result honest: do NOT claim "enabled", and
     # return non-zero so callers/automation see the failure.
     local fragment_rc=0
@@ -368,11 +422,12 @@ _nftban_botguard_enable() {
 
     if [[ $fragment_rc -ne 0 ]]; then
         if [[ "$json_mode" == "true" ]]; then
-            printf '{"status":"error","message":"HTTP Bot Guard configured but rules NOT applied","hint":"run: nftban rebuild","rules_applied":false}\n'
+            printf '{"status":"error","message":"HTTP Bot Guard configured but rules NOT applied","hint":"run: nftban botguard apply (re-applies BotGuard only; on repeated failure: nftban firewall rebuild)","rules_applied":false}\n'
         else
             echo "ERROR: HTTP Bot Guard configured but rules were NOT applied." >&2
             echo "       The config is saved (HTTP_BOTGUARD_ENABLED=true) but the firewall" >&2
-            echo "       rules failed to load. Run: nftban rebuild" >&2
+            echo "       rules failed to load. Run: nftban botguard apply (shows the reason);" >&2
+            echo "       if that fails again: nftban firewall rebuild" >&2
         fi
         return 1
     fi
@@ -400,7 +455,7 @@ _nftban_botguard_enable() {
 _nftban_botguard_disable() {
     local json_mode="${1:-false}"
 
-    _botguard_config_set "HTTP_BOTGUARD_ENABLED" "false"
+    _botguard_save_switch false "$json_mode" || return 1
 
     # Remove nft fragment: cleanup sets + rules
     # shellcheck source=/dev/null
@@ -431,8 +486,12 @@ _nftban_botguard_disable() {
 
 _nftban_botguard_status() {
     local json_mode="${1:-false}"
-    local enabled
+    local enabled enabled_json
     enabled=$(_botguard_config_get "HTTP_BOTGUARD_ENABLED" "false")
+    # v1.238 (BUG-BOTGUARD-STATUS-JSON-INVALID-WITH-YES, lab4 2026-11-23): the raw value was printed into
+    # JSON ("enabled":yes = invalid JSON). JSON gets a boolean with the module-gate truth table
+    # (nftban_bool_is_true: true|yes|1|on|enabled).
+    case "${enabled,,}" in true|yes|1|on|enabled) enabled_json=true ;; *) enabled_json=false ;; esac
 
     local loop_interval
     loop_interval=$(_botguard_config_get "HTTP_BOT_FAST_LOOP_INTERVAL" "60")
@@ -520,7 +579,7 @@ _nftban_botguard_status() {
         # a longer route. freshness_at is likewise `null` (not "") when nothing
         # was measured — an empty string is still a claim that a read happened.
         printf '{"enabled":%s,"daemon_running":%s,"loop_interval":%s,"pressure_interval":%s,"suspect_rate":"%s","source":"%s","freshness_at":%s,"structural_present":%s,"sets":{"suspect":{"v4":%s,"v6":%s},"pending":{"v4":%s,"v6":%s},"allow":{"v4":%s,"v6":%s},"grey":{"v4":%s,"v6":%s},"ban":{"v4":%s,"v6":%s},"emergency":{"v4":%s,"v6":%s}}}\n' \
-            "$enabled" "$daemon_running" "$loop_interval" "$pressure_interval" \
+            "$enabled_json" "$daemon_running" "$loop_interval" "$pressure_interval" \
             "$suspect_rate" "$source" "$freshness_json" "$structural_present" \
             "$(nftban_count_json "$ipv4_suspects")" "$(nftban_count_json "$ipv6_suspects")" \
             "$(nftban_count_json "$ipv4_pending")" "$(nftban_count_json "$ipv6_pending")" \
@@ -762,8 +821,12 @@ _nftban_botguard_config() {
     local config_file="$_BOTGUARD_CONF"
     local config_local="$_BOTGUARD_CONF_LOCAL"
 
-    local enabled
+    local enabled enabled_json
     enabled=$(_botguard_config_get "HTTP_BOTGUARD_ENABLED" "false")
+    # v1.238 (BUG-BOTGUARD-STATUS-JSON-INVALID-WITH-YES, lab4 2026-11-23): the raw value was printed into
+    # JSON ("enabled":yes = invalid JSON). JSON gets a boolean with the module-gate truth table
+    # (nftban_bool_is_true: true|yes|1|on|enabled).
+    case "${enabled,,}" in true|yes|1|on|enabled) enabled_json=true ;; *) enabled_json=false ;; esac
     local suspect_rate
     suspect_rate=$(_botguard_config_get "HTTP_BOT_SUSPECT_RATE" "30/second")
     local loop_interval
@@ -779,7 +842,7 @@ _nftban_botguard_config() {
         printf '{"config_file":"%s","config_local":"%s","local_exists":%s,"settings":{"enabled":%s,"suspect_rate":"%s","loop_interval":%s,"pressure_interval":%s,"batch_interval":%s,"suspect_timeout":%s}}\n' \
             "$config_file" "$config_local" \
             "$([[ -f "$config_local" ]] && echo "true" || echo "false")" \
-            "$enabled" "$suspect_rate" "$loop_interval" "$pressure_interval" \
+            "$enabled_json" "$suspect_rate" "$loop_interval" "$pressure_interval" \
             "$batch_interval" "$suspect_timeout"
     else
         echo "Bot Guard Configuration"
@@ -921,8 +984,18 @@ nftban_cmd_botguard() {
         disable)
             _nftban_botguard_disable "$json_mode"
             ;;
+        apply)
+            _nftban_botguard_apply
+            ;;
         status)
-            _nftban_botguard_status "$json_mode"
+            # v1.238 D1/D2 option A: plus configuration / daemon / kernel (and .enable_state in JSON)
+            declare -F nftban_module_status_with_state >/dev/null 2>&1 \
+                || source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/module_authority.sh" 2>/dev/null || true
+            if declare -F nftban_module_status_with_state >/dev/null 2>&1; then
+                nftban_module_status_with_state botguard "$json_mode" _nftban_botguard_status
+            else
+                _nftban_botguard_status "$json_mode"
+            fi
             ;;
         config)
             _nftban_botguard_config "$json_mode"
@@ -949,7 +1022,7 @@ nftban_cmd_botguard() {
             _nftban_botguard_help
             ;;
         *)
-            cmd_error "Unknown command: $action. Use: enable, disable, status, config, stats, test, list, verify, help" "$json_mode"
+            cmd_error "Unknown command: $action. Use: enable, disable, apply, status, config, stats, test, list, verify, help" "$json_mode"
             return 1
             ;;
     esac
