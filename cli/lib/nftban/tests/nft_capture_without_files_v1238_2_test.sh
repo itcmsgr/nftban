@@ -34,7 +34,7 @@
 # =============================================================================
 set -uo pipefail
 LIBDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PASS=0; FAIL=0; ok(){ PASS=$((PASS+1)); echo "  ✓ $1"; }; no(){ FAIL=$((FAIL+1)); echo "  ✗ $1${2:+ — $2}"; }
+PASS=0; FAIL=0; ok(){ PASS=$((PASS+1)); echo "  ✓ $1"; }; no(){ FAIL=$((FAIL+1)); echo "  ✗ $1${2:+ — ${2//$'\n'/ ¶ }}"; }
 W=$(mktemp -d); trap 'chmod -R u+w "$W" 2>/dev/null; rm -rf "${W:?}"' EXIT
 mkdir -p "$W/writers" "$W/tmp" "$W/bin" "$W/etc/rules.d"
 chmod 0700 "$W/writers"
@@ -74,13 +74,13 @@ files_used() { grep -c '^file\|^[a-z]* file' "$W/log"; }
 calls() { grep -c . "$W/log"; }
 clean_dirs() { [[ -z "$(ls -A "$W/tmp")" && -z "$(ls -A "$W/writers")" ]]; }
 
-P_TABLE='nftban_nft_probe_table ip nftban t; echo "$NFTBAN_NFT_PROBE_VERDICT|$NFTBAN_NFT_PROBE_RC|$NFTBAN_NFT_PROBE_CLASS|$NFTBAN_NFT_PROBE_STDERR"'
-P_SET='nftban_nft_probe_set ip nftban blacklist_ipv4 t; echo "$NFTBAN_NFT_PROBE_VERDICT|$NFTBAN_NFT_PROBE_RC|$NFTBAN_NFT_PROBE_CLASS"'
+P_TABLE='nftban_nft_probe_table ip nftban t || true; echo "$NFTBAN_NFT_PROBE_VERDICT|$NFTBAN_NFT_PROBE_RC|$NFTBAN_NFT_PROBE_CLASS|$NFTBAN_NFT_PROBE_STDERR"'
+P_SET='nftban_nft_probe_set ip nftban blacklist_ipv4 t || true; echo "$NFTBAN_NFT_PROBE_VERDICT|$NFTBAN_NFT_PROBE_RC|$NFTBAN_NFT_PROBE_CLASS"'
 OBS='source "$NFTBAN_LIB_DIR/lib/nft_fragment.sh" >/dev/null 2>&1
-nft_fragment_observe_chain ip nftban input; echo "C:$?|$NFT_FRAGMENT_OBS_STATE|$NFT_FRAGMENT_OBS_REASON"
-nft_fragment_observe_jumps ip nftban input; echo "J:$?|$NFT_FRAGMENT_OBS_JUMPS|$NFT_FRAGMENT_OBS_REASON"
-nft_fragment_observe_set ip nftban ddos_blocked; echo "S:$?|$NFT_FRAGMENT_OBS_STATE|$NFT_FRAGMENT_OBS_REASON"'
-LST='source "$NFTBAN_LIB_DIR/core/nftban_ddos_suricata.sh" >/dev/null 2>&1; _nftban_ddos_suricata_block_rule "ip nftban" ddos_blocked remove; echo "rc=$?"'
+if nft_fragment_observe_chain ip nftban input; then r=0; else r=$?; fi; echo "C:$r|$NFT_FRAGMENT_OBS_STATE|$NFT_FRAGMENT_OBS_REASON"
+if nft_fragment_observe_jumps ip nftban portscan_detection; then r=0; else r=$?; fi; echo "J:$r|$NFT_FRAGMENT_OBS_JUMPS|$NFT_FRAGMENT_OBS_REASON"
+if nft_fragment_observe_set ip nftban ddos_blocked; then r=0; else r=$?; fi; echo "S:$r|$NFT_FRAGMENT_OBS_STATE|$NFT_FRAGMENT_OBS_REASON"'
+LST='source "$NFTBAN_LIB_DIR/core/nftban_ddos_suricata.sh" >/dev/null 2>&1; if _nftban_ddos_suricata_block_rule "ip nftban" ddos_blocked remove; then echo "rc=0"; else echo "rc=$?"; fi'
 
 echo "=== healthy answers: no capture file anywhere ==="
 out=$(run ok "$P_TABLE")
@@ -115,8 +115,8 @@ out=$(run fail "$LST")
 [[ "$out" == "rc=1" ]] && grep -q "Operation not permitted" "$W/stderr" && ok "N2: other failures refused, diagnostic printed" || no "N2 failure" "$out / $(cat "$W/stderr")"
 
 echo "=== caller errexit, large listing ==="
-out=$(run fail "set -e; $P_TABLE")
-[[ "$out" == CANNOT_READ\|1\|* ]] && ok "under set -e the rc is still captured" || no "errexit" "$out"
+out=$(run fail 'set -e; _nftban_capture3 o e r nft list tables; echo "$r|$e"')
+[[ "$out" == "1|"*"Operation not permitted"* ]] && ok "under a caller's set -e the failing command's rc and stderr are captured" || no "errexit" "$out"
 out=$(run big "$P_TABLE")
 [[ "$out" == PRESENT\|0\|* ]] && ok "listing larger than a pipe buffer read completely" || no "big listing" "$out"
 
