@@ -22,6 +22,7 @@ package opqueue
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -85,29 +86,109 @@ func (w *NFTBackendWrapper) getTable(setName string) *nftables.Table {
 	return w.tableIPv4
 }
 
-// getSet gets or creates a set with caching
-func (w *NFTBackendWrapper) getSet(setName string) (*nftables.Set, error) {
-	// Check cache
-	if set, ok := w.sets[setName]; ok {
+// v1.238.1 F2 (BUG-OPQUEUE-IPV6-SETS-RESOLVED-BY-NAME-SUFFIX): the write path no longer picks
+// the table from the set NAME (only "_ipv6" names went to ip6, so http_bot_grey6/http_bot_ban6
+// resolved to the ip table) and no longer CREATES a missing set (getSet fabricated an ipv4
+// interval set of that name in table ip, which later coexisted with the real ip6 set).
+// Add/delete resolve the set in the table of the ELEMENT's address family and check the set's
+// key type; flush/list resolve by name only when that is unambiguous. A missing set is an error.
+
+// valueFamily returns the address family of an element (IP or CIDR).
+func valueFamily(v string) (nftables.TableFamily, error) {
+	if p, err := netip.ParsePrefix(v); err == nil {
+		if p.Addr().Is4() || p.Addr().Is4In6() {
+			return nftables.TableFamilyIPv4, nil
+		}
+		return nftables.TableFamilyIPv6, nil
+	}
+	a, err := netip.ParseAddr(v)
+	if err != nil {
+		return 0, fmt.Errorf("element %q is not an IP address or prefix", v)
+	}
+	if a.Is4() || a.Is4In6() {
+		return nftables.TableFamilyIPv4, nil
+	}
+	return nftables.TableFamilyIPv6, nil
+}
+
+func keyTypeMatches(set *nftables.Set, fam nftables.TableFamily) bool {
+	if fam == nftables.TableFamilyIPv6 {
+		return set.KeyType == nftables.TypeIP6Addr
+	}
+	return set.KeyType == nftables.TypeIPAddr
+}
+
+func (w *NFTBackendWrapper) tableFor(fam nftables.TableFamily) *nftables.Table {
+	if fam == nftables.TableFamilyIPv6 {
+		return w.tableIPv6
+	}
+	return w.tableIPv4
+}
+
+func familyName(fam nftables.TableFamily) string {
+	if fam == nftables.TableFamilyIPv6 {
+		return "ip6"
+	}
+	return "ip"
+}
+
+// setInFamily returns the existing set setName in the nftban table of family fam, after checking
+// that its key type is that family's address type. It never looks in the other family and never
+// creates a set.
+func (w *NFTBackendWrapper) setInFamily(setName string, fam nftables.TableFamily) (*nftables.Set, error) {
+	key := familyName(fam) + "|" + setName
+	if set, ok := w.sets[key]; ok {
 		return set, nil
 	}
-
-	table := w.getTable(setName)
-	isIPv4 := table == w.tableIPv4
-
-	// Use NFTManager's GetOrCreateIntervalSet
-	set, err := w.nft.GetOrCreateIntervalSet(table, setName, isIPv4)
+	set, err := w.nft.FindSetInTable(w.tableFor(fam), setName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get/create set %s: %w", setName, err)
+		return nil, err
 	}
-
-	w.sets[setName] = set
+	if set == nil {
+		return nil, fmt.Errorf("set %s not found in %s nftban table", setName, familyName(fam))
+	}
+	if !keyTypeMatches(set, fam) {
+		return nil, fmt.Errorf("set %s in %s nftban table has key type %s, not the %s address type",
+			setName, familyName(fam), set.KeyType.Name, familyName(fam))
+	}
+	w.sets[key] = set
 	return set, nil
+}
+
+// setByName resolves setName when no element tells the family (flush, list). It is used only
+// when that is unambiguous: the set exists with a matching address key type in exactly one
+// family; if both families hold one, the schema's naming decides (see below), so a flush of
+// http_bot_grey6 empties the ip6 set and never the ipv4-typed copy the old path left in table ip.
+func (w *NFTBackendWrapper) setByName(setName string) (*nftables.Set, error) {
+	var found []*nftables.Set
+	for _, fam := range []nftables.TableFamily{nftables.TableFamilyIPv4, nftables.TableFamilyIPv6} {
+		set, err := w.nft.FindSetInTable(w.tableFor(fam), setName)
+		if err != nil {
+			return nil, err
+		}
+		if set != nil && keyTypeMatches(set, fam) {
+			found = append(found, set)
+		}
+	}
+	switch len(found) {
+	case 1:
+		return found[0], nil
+	case 0:
+		return nil, fmt.Errorf("set %s not found with an address key type in the ip or ip6 nftban table", setName)
+	default:
+		// Both tables hold a set of this name. That is the state the old name-suffix path left on
+		// upgraded hosts (a real ip6 http_bot_grey6 plus an ipv4-typed copy in table ip). The
+		// schema's naming decides: names ending "_ipv6" or "6" belong to ip6, all others to ip.
+		if strings.HasSuffix(setName, "_ipv6") || strings.HasSuffix(setName, "6") {
+			return found[1], nil
+		}
+		return found[0], nil
+	}
 }
 
 // FlushSet clears all elements from a set
 func (w *NFTBackendWrapper) FlushSet(tableName, setName string) error {
-	set, err := w.getSet(setName)
+	set, err := w.setByName(setName)
 	if err != nil {
 		return err
 	}
@@ -126,17 +207,17 @@ func (w *NFTBackendWrapper) AddElements(tableName, setName string, elements []Se
 		return 0, nil
 	}
 
-	set, err := w.getSet(setName)
-	if err != nil {
-		return 0, err
-	}
-
-	// Convert to string IPs for NFTManager
 	applied := 0
 	var firstErr error
 	for _, elem := range elements {
-		timeout := time.Duration(elem.TTL) * time.Second
-		if err := w.nft.AddIPWithTimeout(set, elem.Value, timeout); err != nil {
+		fam, err := valueFamily(elem.Value)
+		if err == nil {
+			var set *nftables.Set
+			if set, err = w.setInFamily(setName, fam); err == nil {
+				err = w.nft.AddIPWithTimeout(set, elem.Value, time.Duration(elem.TTL)*time.Second)
+			}
+		}
+		if err != nil {
 			// Continue past a single bad element, but remember the first failure.
 			if firstErr == nil {
 				firstErr = fmt.Errorf("add %q to %s: %w", elem.Value, setName, err)
@@ -152,26 +233,6 @@ func (w *NFTBackendWrapper) AddElements(tableName, setName string, elements []Se
 	return applied, nil
 }
 
-// resolveExistingSet finds the set in the LIVE kernel tables (ip6 then ip),
-// returning its authoritative *nftables.Set (real address family + Interval flag).
-// It does NOT infer the family from the set name and does NOT create the set: a
-// replacement targets an existing enforcement set, so a missing set is an error
-// (fail-closed) rather than a silently-fabricated bogus interval set. This is the
-// resolution step the replace path uses instead of the name-suffix getTable()
-// (which mis-resolves names like http_bot_ban6 that do not end in _ipv6).
-func (w *NFTBackendWrapper) resolveExistingSet(setName string) (*nftables.Set, error) {
-	for _, tbl := range []*nftables.Table{w.tableIPv6, w.tableIPv4} {
-		s, err := w.nft.FindSetInTable(tbl, setName)
-		if err != nil {
-			return nil, err
-		}
-		if s != nil {
-			return s, nil
-		}
-	}
-	return nil, fmt.Errorf("replace_set: set %s not found in ip or ip6 nftban table", setName)
-}
-
 // ReplaceSet atomically replaces the entire contents of a set in ONE netlink
 // transaction, delegating to the shared NFTManager connection. It does NOT call
 // the separately-committing FlushSet()/AddElements() methods — flush + add +
@@ -179,7 +240,24 @@ func (w *NFTBackendWrapper) resolveExistingSet(setName string) (*nftables.Set, e
 // (fail-CLOSED on failure). The address family is derived from the resolved set's
 // KeyType inside ReplaceSetElements, never from setName.
 func (w *NFTBackendWrapper) ReplaceSet(tableName, setName string, elements []SetElement) error {
-	set, err := w.resolveExistingSet(setName)
+	// v1.238.1 F2: the family comes from the elements (all must share it); an empty replacement
+	// (clear) resolves by name only when unambiguous. Never the ip6-first name lookup.
+	var set *nftables.Set
+	var err error
+	if len(elements) == 0 {
+		set, err = w.setByName(setName)
+	} else {
+		fam, ferr := valueFamily(elements[0].Value)
+		if ferr != nil {
+			return fmt.Errorf("replace_set %s: %w", setName, ferr)
+		}
+		for _, e := range elements[1:] {
+			if f, ferr := valueFamily(e.Value); ferr != nil || f != fam {
+				return fmt.Errorf("replace_set %s: elements mix address families or are invalid (%q)", setName, e.Value)
+			}
+		}
+		set, err = w.setInFamily(setName, fam)
+	}
 	if err != nil {
 		return err
 	}
@@ -201,23 +279,34 @@ func (w *NFTBackendWrapper) DeleteElements(tableName, setName string, elements [
 		return nil
 	}
 
-	set, err := w.getSet(setName)
-	if err != nil {
-		return err
+	// Group by address family: each element is removed only from the set of its own family.
+	byFam := map[nftables.TableFamily][]string{}
+	for _, elem := range elements {
+		fam, err := valueFamily(elem.Value)
+		if err != nil {
+			return fmt.Errorf("delete from %s: %w", setName, err)
+		}
+		byFam[fam] = append(byFam[fam], elem.Value)
 	}
-
-	// Convert to string IPs
-	ips := make([]string, len(elements))
-	for i, elem := range elements {
-		ips[i] = elem.Value
+	for _, fam := range []nftables.TableFamily{nftables.TableFamilyIPv4, nftables.TableFamilyIPv6} {
+		ips := byFam[fam]
+		if len(ips) == 0 {
+			continue
+		}
+		set, err := w.setInFamily(setName, fam)
+		if err != nil {
+			return err
+		}
+		if err := w.nft.DeleteSetElements(set, ips); err != nil {
+			return err
+		}
 	}
-
-	return w.nft.DeleteSetElements(set, ips)
+	return nil
 }
 
 // GetSetElements returns all elements in a set
 func (w *NFTBackendWrapper) GetSetElements(tableName, setName string) ([]string, error) {
-	set, err := w.getSet(setName)
+	set, err := w.setByName(setName)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +322,7 @@ func (w *NFTBackendWrapper) GetSetElements(tableName, setName string) ([]string,
 // table guessed from the name (http_bot_ban6 has no _ipv6 suffix, so it would be fabricated
 // in the ip table), and counting now runs every exporter interval. The set is looked up in
 // the name's table first (tcp_ports_in etc. exist in both families), then the other one,
-// with FindSetInTable as resolveExistingSet does; a missing set is an error, never created.
+// with FindSetInTable (as setInFamily/setByName do); a missing set is an error, never created.
 func (w *NFTBackendWrapper) GetSetCount(tableName, setName string) (int, error) {
 	first, second := w.getTable(setName), w.tableIPv6
 	if first == w.tableIPv6 {
