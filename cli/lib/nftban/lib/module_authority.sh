@@ -347,6 +347,32 @@ _nftban_module_mode_var() {
 # ⛔ DERIVED STATE, NOT DURABLE CONFIGURATION. `MODE=auto` stays the operator's
 #    durable intent; effective_mode and resolution_id are evidence about it.
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# MODE ADMISSION — v1.238.1 (owner 2026-11-25)
+#
+# nftban_module_mode_unadmitted <module> <mode>
+#   The ONE place naming the module x mode pairs that docs/MODE_ADMISSION_LEDGER.md marks
+#   `BROKEN`. Prints the operator-facing reason and returns 0 when the pair is NOT admitted;
+#   returns 1 (prints nothing) when it is admitted.
+#
+#   ddos:suricata — nothing in NFTBan consumes DDoS Suricata alerts: nftban_ddos_suricata_process
+#   has no caller, nftband registers no Suricata watcher, nothing publishes EventDDoSDetected.
+#   The mode only places the block rule for a set nothing feeds.
+#
+# Effects (and only these): `auto` never selects a non-admitted mode (basis
+# auto_suricata_mode_not_admitted); an EXPLICIT configuration is honoured, and status / mode
+# show carry the reason as a persistent warning. Not a config key: admission is a property of
+# the code, not of the host.
+# -----------------------------------------------------------------------------
+nftban_module_mode_unadmitted() {
+    case "${1:-}:${2:-}" in
+        ddos:suricata)
+            printf '%s' "NFTBan does not consume DDoS alerts in suricata mode (no detection on this path)"
+            return 0 ;;
+    esac
+    return 1
+}
+
 nftban_module_resolve_plan() {
     local module="${1:-}" mode_var configured effective basis rid now enabled
 
@@ -407,7 +433,14 @@ nftban_module_resolve_plan() {
                 if [[ "$(type -t "$pred" || true)" != "function" ]]; then
                     effective="classic"; basis="auto_suricata_module_not_loaded"
                 elif "$pred" >/dev/null 2>&1; then
-                    effective="suricata"; basis="auto_suricata_available"
+                    # v1.238.1: available but not admitted -> classic, decided HERE, before any
+                    # apply/teardown, so reconcile never removes the classic projection because
+                    # of auto. Unavailable keeps its own basis (below).
+                    if nftban_module_mode_unadmitted "$module" suricata >/dev/null; then
+                        effective="classic"; basis="auto_suricata_mode_not_admitted"
+                    else
+                        effective="suricata"; basis="auto_suricata_available"
+                    fi
                 else
                     effective="classic"; basis="auto_suricata_unavailable"
                 fi

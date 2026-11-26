@@ -28,6 +28,19 @@ Every row cites what was actually checked. Rows without traffic evidence are **n
 | LoginMon | hybrid | `DECLARED` | Both watchers started; dedup authority unproven. |
 | LoginMon | auto | **`BROKEN` readiness resolution** | `auto` + Suricata present ⇒ `ModeSuricata` on presence alone, silently darkening journal sources. Fail-safe direction is correct (configured `suricata` + unavailable ⇒ falls back to `classic`). |
 
+### v1.238.1 — DDoS `auto` does not select `suricata`
+
+The `BROKEN` DDoS/suricata row is now enforced in code at one place:
+`nftban_module_mode_unadmitted` in `cli/lib/nftban/lib/module_authority.sh`.
+
+- `DDOS_MODE=auto` with Suricata available resolves to `classic`, basis
+  `auto_suricata_mode_not_admitted`, in `nftban_module_resolve_plan` before any apply or teardown.
+  With Suricata unavailable the basis stays `auto_suricata_unavailable`.
+- `DDOS_MODE=suricata` set explicitly is honoured (option C of the section below: parsing kept).
+  `nftban ddos status`, `nftban ddos mode` and `nftban status` show the persistent warning
+  "NFTBan does not consume DDoS alerts in suricata mode (no detection on this path)".
+- PortScan `auto` is unchanged.
+
 ### Not in this table
 
 BotScan, BotGuard, GeoBan, RBL and Watchdog have not been mode-resolved. Absence from this ledger

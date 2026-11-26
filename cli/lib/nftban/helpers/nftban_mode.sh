@@ -172,6 +172,13 @@ _nftban_mode_show() {
     # Check Suricata availability
     _nftban_check_suricata_available
 
+    # v1.238.1: persistent mode-admission warning (lib/module_authority.sh nftban_module_mode_unadmitted).
+    local mode_warning=""
+    if [[ "$MODE_CONFIGURED" == suricata || "$MODE_EFFECTIVE" == suricata ]] \
+       && declare -F nftban_module_mode_unadmitted >/dev/null 2>&1; then
+        mode_warning=$(nftban_module_mode_unadmitted "$module_name" suricata) || mode_warning=""
+    fi
+
     # JSON output
     if [[ "$json_mode" == "true" ]] && declare -f json_output &>/dev/null; then
         local data
@@ -191,8 +198,10 @@ _nftban_mode_show() {
                 --arg suricata_available "$suricata_bool" \
                 --arg suricata_status "$SURICATA_STATUS" \
                 --arg config_file "$config_main" \
+                --arg mode_warning "$mode_warning" \
                 '{
                     mode: {
+                        warning: (if $mode_warning == "" then null else $mode_warning end),
                         module: $module,
                         configured: $configured,
                         effective: $effective,
@@ -230,6 +239,10 @@ _nftban_mode_show() {
         echo "  Effective Mode:   $MODE_EFFECTIVE"
     fi
     echo ""
+    if [[ -n "$mode_warning" ]]; then
+        echo "  ⚠ WARN:           $mode_warning"
+        echo ""
+    fi
     echo "  Config File:      $config_main"
     if [[ -n "$MODE_OVERRIDE" ]]; then
         echo "  Override:         $MODE_OVERRIDE (from $MODE_OVERRIDE_SOURCE)"
