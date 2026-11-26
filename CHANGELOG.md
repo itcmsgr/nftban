@@ -11,6 +11,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.238.1] - 2026-11-26 — Fixes found in v1.238.0 release acceptance: BotGuard after reboot on SELinux hosts, IPv6 BotGuard/BotScan sets, DDoS auto mode
+
+v1.238.0 was built as a draft and was not published. v1.238.1 contains every change listed under v1.238.0 below, plus the fixes in this section.
+The problems fixed here were found during release acceptance of v1.238.0. Each one is also present in v1.237.0.
+
+### Fixed
+
+- **BotGuard was not applied after a reboot on EL9/EL10 with SELinux enforcing** (#1529).
+  - The daemon's start-up apply runs an nft probe that wrote its capture files to `/tmp`. `nftband.service` runs with a private `/tmp`, and under the shipped SELinux policy the daemon may not create files there. The probe failed, BotGuard stayed enabled but its chain was missing, and health showed DEGRADED until a manual `nftban botguard apply`.
+  - The probe now writes its capture files to the root-only runtime directory `/run/nftban-writers`, which the shipped policy already allows the daemon to manage. No SELinux policy change is needed.
+  - The same change applies to the other short-lived capture files on daemon paths:
+    - the PortScan and DDoS observe checks during apply and teardown;
+    - the DDoS Suricata block-rule listing;
+    - the PortScan journal batch.
+  - If that directory is missing or unusable when running as root, the file falls back to `$TMPDIR` or `/tmp`, and a `nftban: WARN capture dir fallback` line is printed.
+- **IPv6 BotGuard and BotScan grey/ban entries did not reach the IPv6 sets** (#1530).
+  - The daemon chose the table from the set name, so `http_bot_grey6` and `http_bot_ban6` were looked up in the IPv4 table. When the set was missing there, the daemon created an IPv4-typed copy. The write then failed ("is not IPv4"), and the IPv6 set used by the firewall rule never received the address.
+  - The table is now chosen from the address family of each entry, and this write path never creates a set.
+  - Hosts that ran an earlier version may still have the stray IPv4-typed `http_bot_grey6` / `http_bot_ban6` sets in `table ip nftban`. They are not used by any rule, and v1.238.1 no longer writes to them.
+- **DDoS `auto` mode could remove the classic DDoS protection** (#1531).
+  - With `DDOS_MODE=auto`, once Suricata became available the next reconcile switched DDoS to suricata mode and removed the classic DDoS rules. NFTBan does not consume DDoS alerts from Suricata, so the host was left without DDoS rate-limiting.
+  - `auto` now keeps DDoS in classic mode when Suricata is available; `nftban ddos status` shows the basis `auto_suricata_mode_not_admitted`.
+  - An explicit `DDOS_MODE=suricata` is still honoured, and `nftban ddos status`, `nftban ddos mode` and `nftban status` show a warning that no DDoS detection runs on that path.
+  - `nftban ddos stats` now reports the mode chosen by the reconcile instead of deciding it from whether `suricata.service` is running.
+  - PortScan `auto` is unchanged.
+
+### Upgrade and operator notes
+
+- **DDoS in `auto` mode on a host with Suricata running.** After the upgrade, `auto` resolves DDoS to classic at the next reconcile. To check: `nftban ddos status` should show mode `classic`, and the DDoS chains should be present (`nft list table ip nftban`).
+- **BotGuard on EL9/EL10 with SELinux enforcing.** If BotGuard showed DEGRADED after a reboot on v1.237.0 or earlier, the daemon's start-up apply no longer writes to `/tmp`. To check after the next reboot: `nftban botguard status`, and the `http_bot_guard` chain in `nft list table ip nftban`.
+
+### Tests
+
+- New regression tests for the three fixes. Each one fails on v1.238.0 code with the specific defect and passes with the fix. The IPv6 test runs only inside a private network namespace.
+
+### Known issues
+
+- The known issues listed under v1.238.0 still apply.
+- **DDoS suricata mode does not detect.** An explicit `DDOS_MODE=suricata` places the block rule, but nothing in NFTBan consumes DDoS alerts from Suricata. Use classic or auto.
+
+---
+
 ## [v1.238.0] - 2026-11-25 — Feed integration (AbuseIPDB), configuration and CLI truth, write-boundary and privacy fixes
 
 NFTBan v1.238 adds the optional AbuseIPDB blacklist feed. Manual incident reporting and IP reputation lookup are planned for v1.239.
