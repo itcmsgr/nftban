@@ -160,8 +160,10 @@ nftban_nft_probe_redact() {
 # directory /run/nftban-writers (fhs-spec: 0700 root:root; SELinux nftban_var_run_t, which nftband_t
 # manages; in the unit's ReadWritePaths). NFTBAN_PROBE_TMPDIR overrides (tests). A caller that cannot
 # write there (a non-root CLI) keeps the previous ${TMPDIR:-/tmp}, so nothing regresses for it.
-# v1.238.1: also used by the other short-lived nft capture/batch files on daemon paths
-# (nft_fragment_observe_*, the DDoS Suricata block-rule listing, the PortScan journal batch).
+# v1.238.2: the probes, nft_fragment_observe_* and the DDoS Suricata block-rule listing no longer
+# use capture FILES at all (_nftban_capture3): nft run by nftban-boot-content.service executes in
+# iptables_t, which may not write files in this directory. The remaining user is the PortScan
+# journal batch, written by the daemon (nftband_t) only.
 # Fallback visibility: ROOT falling back to TMPDIR means the writers dir is missing or unusable on a
 # package host — the exact condition that produced the EL Enforcing denial — so it is said on stderr
 # (the daemon's journal) with the directory chosen.
@@ -179,6 +181,52 @@ _nftban_probe_capture_dir() {
         fi
         printf '%s' "${TMPDIR:-/tmp}"
     fi
+}
+
+# -----------------------------------------------------------------------------
+# _nftban_capture3 <outvar> <errvar> <rcvar> <command> [args...]
+#
+# v1.238.2 (owner 2026-11-26): run <command> and capture its stdout, stderr and exit status
+# SEPARATELY, WITHOUT any file. v1.238.1 moved the probe's capture FILES from /tmp to
+# /run/nftban-writers (nftban_var_run_t). nftband runs nft in its own domain and could write
+# there, but nftban-boot-content.service runs nft in iptables_t, which may not write
+# nftban_var_run_t files: SELinux replaced the inherited capture fds, nft's listing was lost,
+# the probe read "EMPTY_OUTPUT_NO_ABSENCE_PROOF" and the durable bans/whitelist were not loaded
+# at early boot on EL9/EL10 Enforcing. Pipes are inherited by every caller's domain the same way
+# a command substitution's pipe is, so no directory, label or cleanup is involved.
+#
+# NOT the fd-swap idiom `_err=$( { _out=$(cmd 2>&1 1>&3); } 3>&1 )`, which assigns _out in a
+# SUBSHELL (both captures empty — see nftban_nft_probe_table). Here the three values travel
+# NUL-separated through ONE process substitution and are read by `read` in THIS shell:
+#   stream = <stderr bytes> NUL <stdout> NUL <rc> NUL
+# stderr is written while the command runs (fd 3 = the substitution's stdout); stdout and rc
+# follow only after it exited, so the order is fixed. nft output contains no NUL bytes.
+# Trailing newlines are stripped from both captures, as `$(cat file)` did before.
+# Returns 0 with the three variables set; returns 1 (variables untouched) when the capture
+# itself failed (no numeric rc read back) — callers treat that as CANNOT_READ, never ABSENT.
+# -----------------------------------------------------------------------------
+_nftban_capture3() {
+    local __c3_ov="$1" __c3_ev="$2" __c3_rv="$3"
+    shift 3
+    local __c3_out="" __c3_err="" __c3_rc=""
+    {
+        IFS= read -r -d '' __c3_err || true
+        IFS= read -r -d '' __c3_out || true
+        IFS= read -r -d '' __c3_rc || true
+    } < <(
+        {
+            __c3_so=""
+            __c3_sr=0
+            __c3_so=$("$@" 2>&3) || __c3_sr=$?
+            printf '\0%s\0%s\0' "$__c3_so" "$__c3_sr"
+        } 3>&1
+    )
+    [[ "$__c3_rc" =~ ^[0-9]+$ ]] || return 1
+    while [[ "$__c3_err" == *$'\n' ]]; do __c3_err="${__c3_err%$'\n'}"; done
+    printf -v "$__c3_ov" '%s' "$__c3_out"
+    printf -v "$__c3_ev" '%s' "$__c3_err"
+    printf -v "$__c3_rv" '%s' "$__c3_rc"
+    return 0
 }
 
 _probe_fail_closed() {
@@ -239,34 +287,11 @@ nftban_nft_probe_table() {
     # STEP 1 — establish READABILITY positively. `nft list tables` succeeds
     # whenever netlink is usable, independently of which tables exist.
     #
-    # Captured via temp files, NOT the fd-swap idiom
-    #     _err=$( { _out=$(cmd 2>&1 1>&3); } 3>&1 )
-    # which assigns _out inside a SUBSHELL. That left both captures empty, and an
-    # empty table list made a PRESENT table read as ABSENT — which would have
-    # authorised a rebuild on a healthy firewall. Correctness over cleverness.
-    # Capture files: unpredictable names, mode 0600, removed on every exit path
-    # including early return. A capture failure is CANNOT_READ — NEVER ABSENT.
-    local _fo _fe _pd
-    _pd=$(_nftban_probe_capture_dir)
-    _fo=$(mktemp "${_pd}/.nftban-probe.XXXXXXXXXX" 2>/dev/null) \
-        || { _probe_fail_closed "PROBE_CAPTURE_FAILED" "mktemp stdout failed"; return 1; }
-    _fe=$(mktemp "${_pd}/.nftban-probe.XXXXXXXXXX" 2>/dev/null) \
-        || { rm -f "$_fo"; _probe_fail_closed "PROBE_CAPTURE_FAILED" "mktemp stderr failed"; return 1; }
-    chmod 600 "$_fo" "$_fe" 2>/dev/null || true
-
-    "$_nft" list tables >"$_fo" 2>"$_fe"; _rc=$?
-
-    # Read back defensively: an unreadable or vanished capture file is a probe
-    # failure, not evidence of anything about the firewall.
-    if [[ ! -r "$_fo" || ! -r "$_fe" ]]; then
-        rm -f "$_fo" "$_fe"
-        _probe_fail_closed "PROBE_CAPTURE_UNREADABLE" "capture file missing or unreadable"
-        return 1
-    fi
-    _out=$(cat "$_fo" 2>/dev/null) || { rm -f "$_fo" "$_fe"
-        _probe_fail_closed "PROBE_CAPTURE_UNREADABLE" "stdout read failed"; return 1; }
-    _err=$(cat "$_fe" 2>/dev/null) || _err=""
-    rm -f "$_fo" "$_fe"
+    # Captured WITHOUT files (v1.238.2, _nftban_capture3): stdout, stderr and rc separately,
+    # NOT the fd-swap idiom (subshell assignment left both captures empty, and an empty table
+    # list made a PRESENT table read as ABSENT). A capture failure is CANNOT_READ — NEVER ABSENT.
+    _nftban_capture3 _out _err _rc "$_nft" list tables \
+        || { _probe_fail_closed "PROBE_CAPTURE_FAILED" "stdout/stderr/rc capture failed"; return 1; }
     if [[ $_rc -ne 0 ]]; then
         NFTBAN_NFT_PROBE_RC="$_rc"
         NFTBAN_NFT_PROBE_CLASS=$(nftban_nft_probe_error_class "$_err" "$_rc")
@@ -333,31 +358,16 @@ nftban_nft_probe_set() {
     local _family="$1" _table="$2" _set="$3" _component="${4:-${NFTBAN_COMPONENT:-unknown}}"
     NFTBAN_NFT_PROBE_VERDICT=""; NFTBAN_NFT_PROBE_RC=""; NFTBAN_NFT_PROBE_CLASS=""
     NFTBAN_NFT_PROBE_STDERR=""
-    local _nft="${NFTBAN_NFT_BIN:-nft}" _out _err _rc=0 _fo _fe _pd
+    local _nft="${NFTBAN_NFT_BIN:-nft}" _out _err _rc=0
 
     NFTBAN_NFT_PROBE_FAMILY="$_family"
     NFTBAN_NFT_PROBE_TABLE="$_table/$_set"
     NFTBAN_NFT_PROBE_COMPONENT="$_component"
     NFTBAN_NFT_PROBE_ARGV="$_nft list sets $_family"
 
-    _pd=$(_nftban_probe_capture_dir)
-    _fo=$(mktemp "${_pd}/.nftban-probe.XXXXXXXXXX" 2>/dev/null) \
-        || { _probe_fail_closed "PROBE_CAPTURE_FAILED" "mktemp stdout failed"; return 1; }
-    _fe=$(mktemp "${_pd}/.nftban-probe.XXXXXXXXXX" 2>/dev/null) \
-        || { rm -f "$_fo"; _probe_fail_closed "PROBE_CAPTURE_FAILED" "mktemp stderr failed"; return 1; }
-    chmod 600 "$_fo" "$_fe" 2>/dev/null || true
-
-    "$_nft" list sets "$_family" >"$_fo" 2>"$_fe"; _rc=$?
-
-    if [[ ! -r "$_fo" || ! -r "$_fe" ]]; then
-        rm -f "$_fo" "$_fe"
-        _probe_fail_closed "PROBE_CAPTURE_UNREADABLE" "capture file missing or unreadable"
-        return 1
-    fi
-    _out=$(cat "$_fo" 2>/dev/null) || { rm -f "$_fo" "$_fe"
-        _probe_fail_closed "PROBE_CAPTURE_UNREADABLE" "stdout read failed"; return 1; }
-    _err=$(cat "$_fe" 2>/dev/null) || _err=""
-    rm -f "$_fo" "$_fe"
+    # Captured WITHOUT files (v1.238.2): see nftban_nft_probe_table and _nftban_capture3.
+    _nftban_capture3 _out _err _rc "$_nft" list sets "$_family" \
+        || { _probe_fail_closed "PROBE_CAPTURE_FAILED" "stdout/stderr/rc capture failed"; return 1; }
 
     if [[ $_rc -ne 0 ]]; then
         NFTBAN_NFT_PROBE_RC="$_rc"
@@ -492,7 +502,7 @@ nftban_nft_generation_read() {
     return 0
 }
 
-export -f nftban_nft_probe_session_degraded nftban_nft_probe_session_reset _nftban_probe_capture_dir \
+export -f nftban_nft_probe_session_degraded nftban_nft_probe_session_reset _nftban_probe_capture_dir _nftban_capture3 \
           nftban_nft_probe_table nftban_nft_probe_set nftban_nft_probe_error_class \
           nftban_nft_probe_redact nftban_nft_probe_diagnostic \
           nftban_nft_probe_may_rebuild nftban_nft_generation_read 2>/dev/null || true

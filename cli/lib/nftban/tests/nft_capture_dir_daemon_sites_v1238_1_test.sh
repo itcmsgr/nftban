@@ -6,7 +6,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2024-2026 Antonios Voulvoulis <contact@nftban.com>
 # meta:name="nft_capture_dir_daemon_sites_v1238_1_test"
 # meta:type="test"
-# meta:version="1.0.0"
+# meta:version="1.1.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:created_date="2026-11-25"
 # meta:description="v1.238.1 (owner GO 2026-11-25). nftband (nftband_t, PrivateTmp) reaches five temp-file sites besides the probe: N1 nft_fragment_observe_chain/_jumps/_set (.nftban-obs.*), N2 _nftban_ddos_suricata_block_rule (plain mktemp), N3 nftban_portscan_classic_process_logs (journal batch). Runs the REAL functions with stub nft/journalctl that record where their stdout/stderr point: with a writable writers dir (NFTBAN_WRITERS_DIR, sandbox) every capture is in the writers dir and NOTHING is left in TMPDIR; with an unwritable writers dir they fall back to TMPDIR (non-root CLI) as before. Non-vacuity: the pre-fix code captured in TMPDIR. Sandbox only (NFTBAN_CONFIG_DIR, cursor and state paths in a temp dir); no firewall change."
@@ -86,14 +86,22 @@ check() { # <label> <snippet> <min-records>
     [[ -z "$(find "$W/writers" -mindepth 1 -print -quit)" ]] && ok "$1: captures removed" || no "$1: left in writers dir" "$(ls -A "$W/writers" | tr '\n' ' ')"
     rm -rf "${W:?}/tmp/"* "${W:?}/writers/"* 2>/dev/null
 }
+# v1.238.2: N1 and N2 capture through pipes (lib/nft_probe.sh _nftban_capture3), so they must
+# create NO capture file at all, in any directory. N3 (the daemon's journal batch) still uses the
+# writers dir. See nft_capture_without_files_v1238_2_test for the full no-file contract.
+nofile() { # <label> <snippet>
+    run "$W/writers" "$2"
+    [[ "$(grep -c . "$W/log")" -eq 0 ]] && ok "$1: no capture file in any directory" || no "$1 wrote a file" "dirs=$(dirs)"
+    [[ -z "$(ls -A "$W/tmp")" && -z "$(ls -A "$W/writers")" ]] && ok "$1: writers dir and TMPDIR untouched" || no "$1: dirs touched"
+}
 echo "=== writable writers dir (root on a package host) ==="
-check "N1 observe_chain/_jumps/_set" "$N1" 3
-check "N2 ddos suricata block-rule listing" "$N2" 1
+nofile "N1 observe_chain/_jumps/_set" "$N1"
+nofile "N2 ddos suricata block-rule listing" "$N2"
 check "N3 portscan journal batch" "$N3" 1
 
 echo "=== fallback (non-root CLI: writers dir not writable) ==="
 chmod 0500 "$W/writers"
-for s in N1 N2 N3; do
+for s in N3; do
     run "$W/writers" "${!s}"
     [[ "$(dirs)" == "$W/tmp " ]] && ok "$s: TMPDIR as before" || no "$s fallback" "dirs=$(dirs)"
     rm -rf "${W:?}/tmp/"* 2>/dev/null
