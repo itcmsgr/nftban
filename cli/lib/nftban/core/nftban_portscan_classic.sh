@@ -160,8 +160,14 @@ _nftban_portscan_emit_event() {
 
     # Emit to journald with dedicated tag for easy querying
     # Query with: journalctl -t nftban-portscan-event --since "24 hours ago"
+    # v1.238.2 (owner 2026-11-26, v1.238.1 RC acceptance): best-effort, NEVER fatal. This runs inside
+    # nftband's PortScan cycle under `set -Eeuo pipefail`. On EL9/EL10 Enforcing nftband_t may not
+    # write /dev/log (AVC devlog_t), logger exits 1, and that aborted the WHOLE classic cycle on the
+    # first scan line: no connection recorded, no detection, no ban — while the read offset had
+    # already been committed, so the lines were never re-read. The event still goes to the file below.
     if command -v logger &>/dev/null; then
-        logger -t nftban-portscan-event "ts=${ts} src=${src} dst=${dst} proto=${proto} dpt=${dpt} flags=${flags}"
+        logger -t nftban-portscan-event "ts=${ts} src=${src} dst=${dst} proto=${proto} dpt=${dpt} flags=${flags}" \
+            2>/dev/null || true
     fi
 
     # Also write to file for systems without journald queryable by tag
