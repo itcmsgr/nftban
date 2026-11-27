@@ -170,10 +170,20 @@ _nftban_portscan_emit_event() {
             2>/dev/null || true
     fi
 
-    # Also write to file for systems without journald queryable by tag
+    # Also write to file for systems without journald queryable by tag (the CLI's fallback source).
+    # v1.238.2 (owner 2026-11-26): a failed event RECORD must not stop detection either. Detection,
+    # the state update and the ban keep their own results; only this record is optional. A failure
+    # is made VISIBLE once per cycle (each daemon cycle is a fresh shell) on stderr, which the daemon
+    # journals with the cycle output.
     local event_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-events.log"
-    mkdir -p "$(dirname "$event_log")" 2>/dev/null || return 1
-    echo "ts=${ts} src=${src} dst=${dst} proto=${proto} dpt=${dpt} flags=${flags}" >> "$event_log"
+    if ! { mkdir -p "$(dirname "$event_log")" \
+           && echo "ts=${ts} src=${src} dst=${dst} proto=${proto} dpt=${dpt} flags=${flags}" >> "$event_log"; } 2>/dev/null; then
+        if [[ -z "${_NFTBAN_PS_EVENT_RECORD_WARNED:-}" ]]; then
+            _NFTBAN_PS_EVENT_RECORD_WARNED=1
+            echo "nftban: WARN portscan: event record not written to ${event_log}; detection continues, event logging is lost for this cycle" >&2
+        fi
+    fi
+    return 0
 }
 
 # =============================================================================
