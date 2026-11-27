@@ -101,11 +101,9 @@ check "N3 portscan journal batch" "$N3" 1
 
 echo "=== fallback (non-root CLI: writers dir not writable) ==="
 chmod 0500 "$W/writers"
-for s in N3; do
-    run "$W/writers" "${!s}"
-    [[ "$(dirs)" == "$W/tmp " ]] && ok "$s: TMPDIR as before" || no "$s fallback" "dirs=$(dirs)"
-    rm -rf "${W:?}/tmp/"* 2>/dev/null
-done
+run "$W/writers" "$N3"
+[[ "$(dirs)" == "$W/tmp " ]] && ok "N3: TMPDIR as before" || no "N3 fallback" "dirs=$(dirs)"
+rm -rf "${W:?}/tmp/"* 2>/dev/null
 chmod 0700 "$W/writers"
 
 echo "=== non-vacuity (static) ==="
