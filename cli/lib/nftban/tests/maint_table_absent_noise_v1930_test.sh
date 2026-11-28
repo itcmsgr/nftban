@@ -12,7 +12,7 @@
 # meta:created_date="2026-06-17"
 # meta:description="PR-B: maintenance.sh re-probes the live nftban table before logging 'table absent' — a transient firewall-transition window (table reappears) is suppressed (quiet INFO), while a GENUINE persistent absence still WARNs. Tests _maint_table_absent_confirmed (transient→rc1, genuine→rc0, reappear→rc1) + static guard that both WARN sites are gated. Hermetic: stubbed nft/sleep, no root/nft/host."
 # meta:inventory.files="maint_table_absent_noise_v1930_test.sh"
-# meta:inventory.binaries="bash,awk,grep"
+# meta:inventory.binaries="bash,awk,grep,mktemp"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -70,10 +70,21 @@ nft(){ printf '%s\n' "$_LIST_PRESENT"; return 0; }
 if _maint_table_absent_confirmed; then bad "present table classified genuine-absent"; else ok "table present → transient (rc1 → suppress noisy WARN)"; fi
 
 echo "=== T3: table REAPPEARS mid-grace (fail then present) → rc1 (transient) ==="
-_n3=0; nft(){ _n3=$((_n3+1))
-  if [ "$_n3" -ge 2 ]; then printf '%s\n' "$_LIST_PRESENT"; else printf '%s\n' "$_LIST_ABSENT"; fi
+# v1.238.2: the call counter lives in a FILE, like the real table state lives in the kernel.
+# Since v1.238.2 the probe captures nft through a pipe (_nftban_capture3, no capture files),
+# so nft runs in a subshell and an in-shell counter would never advance: every call would be
+# call #1 and the stub, not the helper, would decide the verdict. A real nft is a separate
+# process and is unaffected.
+_n3f=$(mktemp)
+echo 0 > "$_n3f"
+nft(){ local _n; _n=$(( $(<"$_n3f") + 1 )); echo "$_n" > "$_n3f"
+  if [ "$_n" -ge 2 ]; then printf '%s\n' "$_LIST_PRESENT"; else printf '%s\n' "$_LIST_ABSENT"; fi
   return 0; }
 if _maint_table_absent_confirmed; then bad "reappearing table classified genuine-absent (noise would persist)"; else ok "table reappears within grace → transient (rc1 → suppress)"; fi
+_n3calls=$(<"$_n3f")
+# Non-vacuity: the verdict must come from a real re-probe, not from the first answer.
+[[ "$_n3calls" -ge 2 ]] && ok "the re-probe ran (nft calls=$_n3calls)" || bad "the re-probe did not run (nft calls=$_n3calls)"
+rm -f "$_n3f"
 unset -f nft 2>/dev/null || true
 
 # v1.228.4 PR-3 — T3b. The defect this release removes: a failed READ being taken

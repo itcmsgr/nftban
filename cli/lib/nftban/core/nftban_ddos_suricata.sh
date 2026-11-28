@@ -528,29 +528,30 @@ _nftban_ddos_suricata_block_rule() {
     local comment="DDoS Suricata blocked" listing handles anchor_h rule_line anchor_line frag rc=0
 
     # shellcheck disable=SC2086 # table is "<family> <name>"
-    local nerr
-    # v1.238.1: nftband runs this at start (apply/teardown) under nftband_t with PrivateTmp, which may not
-    # create in /tmp — capture in the labelled runtime dir (lib/nft_probe.sh _nftban_probe_capture_dir).
-    if ! declare -F _nftban_probe_capture_dir >/dev/null 2>&1 \
+    local nerr="" nrc=0
+    # v1.238.2: captured WITHOUT a file (lib/nft_probe.sh _nftban_capture3). A capture FILE was first
+    # denied in /tmp (nftband_t, PrivateTmp) and, in /run/nftban-writers, to nft running in iptables_t.
+    if ! declare -F _nftban_capture3 >/dev/null 2>&1 \
        && [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_probe.sh" ]]; then
         # shellcheck source=/usr/lib/nftban/lib/nft_probe.sh
         source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_probe.sh" || return 1
     fi
-    local _cd="${TMPDIR:-/tmp}"
-    declare -F _nftban_probe_capture_dir >/dev/null 2>&1 && _cd=$(_nftban_probe_capture_dir)
-    nerr=$(mktemp "${_cd}/.nftban-ddos-suricata.XXXXXXXXXX") || return 1
-    if ! listing=$(timeout 10s nft -a list chain $table input 2>"$nerr"); then
+    declare -F _nftban_capture3 >/dev/null 2>&1 || {
+        echo "  ERROR: cannot read ${table} input: capture helper (lib/nft_probe.sh) not available" >&2
+        return 1; }
+    # shellcheck disable=SC2086 # table is "<family> <name>"
+    _nftban_capture3 listing nerr nrc timeout 10s nft -a list chain $table input || {
+        echo "  ERROR: cannot read ${table} input: capture failed" >&2
+        return 1; }
+    if (( nrc != 0 )); then
         # Only nft's own "No such file or directory" (no table/chain) means there is no rule
         # to remove; any other failure is UNKNOWN and refused (nft parser contract).
-        if [[ "$action" == "remove" ]] && grep -q "No such file or directory" "$nerr"; then
-            rm -f "$nerr"
+        if [[ "$action" == "remove" && "$nerr" == *"No such file or directory"* ]]; then
             return 0
         fi
-        echo "  ERROR: cannot read ${table} input: $(head -c 200 "$nerr")" >&2
-        rm -f "$nerr"
+        echo "  ERROR: cannot read ${table} input: ${nerr:0:200}" >&2
         return 1
     fi
-    rm -f "$nerr"
     handles=$(awk -v c="comment \"${comment}\"" 'index($0, c) {print $NF}' <<<"$listing")
     anchor_h=$(awk '/NFTBAN_ANCHOR:ANCHOR_BAN"/ {print $NF; exit}' <<<"$listing")
 
