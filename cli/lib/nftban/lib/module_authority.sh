@@ -374,7 +374,7 @@ nftban_module_mode_unadmitted() {
 }
 
 nftban_module_resolve_plan() {
-    local module="${1:-}" mode_var configured effective basis rid now enabled
+    local module="${1:-}" mode_var configured effective basis rid now enabled intent_unmet=""
 
     # ⛔ PLAN-N1 ENFORCEMENT: SECOND RESOLUTION WITHIN A TRANSACTION IS A
     # CONTRACT VIOLATION -- even when it would produce the SAME effective_mode.
@@ -419,8 +419,10 @@ nftban_module_resolve_plan() {
                     elif ! nftban_portscan_suricata_ready >/dev/null 2>&1; then
                         effective="classic"; basis="configured_suricata_unavailable_kept_classic"
                     fi
-                    [[ "$effective" == "classic" ]] && \
+                    if [[ "$effective" == "classic" ]]; then
+                        intent_unmet="suricata_not_ready"
                         echo "nftban: WARN portscan: configured mode suricata is not ready (${basis}); classic stays active — mode transition INCOMPLETE" >&2
+                    fi
                 fi
                 ;;
             hybrid)
@@ -481,6 +483,9 @@ nftban_module_resolve_plan() {
     printf 'NFTBAN_PLAN_RESOLUTION_ID=%s\n'    "$rid"
     printf 'NFTBAN_PLAN_RESOLVED_AT=%s\n'      "$now"
     printf 'NFTBAN_PLAN_RESOLUTION_BASIS=%s\n' "$basis"
+    # v1.238.2: present ONLY when an explicit intent was not met and the working mode was kept
+    # (contract field read by internal/nftbanconf/modeplan.go; other plans are unchanged).
+    [[ -n "$intent_unmet" ]] && printf 'NFTBAN_PLAN_INTENT_UNMET=%s\n' "$intent_unmet"
     return 0
 }
 

@@ -55,18 +55,19 @@ resolve() {
         e=$(grep "^NFTBAN_PLAN_EFFECTIVE_MODE=" <<<"$out" | cut -d= -f2)
         b=$(grep "^NFTBAN_PLAN_RESOLUTION_BASIS=" <<<"$out" | cut -d= -f2)
         w=no; grep -q "transition INCOMPLETE" "$3/err" && w=yes
-        echo "$e $b warn=$w"' _ "$LIB" "$1" "$W"
+        u=$(grep "^NFTBAN_PLAN_INTENT_UNMET=" <<<"$out" | cut -d= -f2); u=${u:-none}
+        echo "$e $b warn=$w unmet=$u"' _ "$LIB" "$1" "$W"
 }
 
 echo "=== resolver: explicit portscan suricata ==="
 r=$(resolve portscan yes)
-[[ "$r" == "suricata configured_suricata warn=no" ]] && ok "ready -> effective suricata, no warning" || no "ready" "$r"
+[[ "$r" == "suricata configured_suricata warn=no unmet=none" ]] && ok "ready -> effective suricata, no warning" || no "ready" "$r"
 r=$(resolve portscan no)
-[[ "$r" == "classic configured_suricata_unavailable_kept_classic warn=yes" ]] && ok "not ready -> classic KEPT, transition reported incomplete" || no "not ready" "$r"
+[[ "$r" == "classic configured_suricata_unavailable_kept_classic warn=yes unmet=suricata_not_ready" ]] && ok "not ready -> classic KEPT, transition reported incomplete" || no "not ready" "$r"
 r=$(resolve portscan absent)
-[[ "$r" == "classic configured_suricata_module_not_loaded_kept_classic warn=yes" ]] && ok "readiness unknown -> classic KEPT" || no "absent" "$r"
+[[ "$r" == "classic configured_suricata_module_not_loaded_kept_classic warn=yes unmet=suricata_not_ready" ]] && ok "readiness unknown -> classic KEPT" || no "absent" "$r"
 r=$(resolve ddos no)
-[[ "$r" == "suricata configured_suricata warn=no" ]] && ok "DDoS explicit suricata is unchanged (owner scope)" || no "ddos" "$r"
+[[ "$r" == "suricata configured_suricata warn=no unmet=none" ]] && ok "DDoS explicit suricata is unchanged (owner scope)" || no "ddos" "$r"
 
 # enable <service: up|down> <eve: stale|fresh> -> rc
 enable() {
