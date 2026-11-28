@@ -157,7 +157,14 @@ nftban_portscan_load_config() {
 # =============================================================================
 
 # Check if Suricata binary exists
+# v1.238.2 (RC row 7): ONE answer for the plan resolver and for status. When the Suricata module
+# is loaded, its check (configured path, default path, then PATH) decides; the old exact-path test
+# remains only for a shell where that module was never sourced.
 _nftban_portscan_suricata_binary_exists() {
+    if declare -F nftban_portscan_suricata_binary_exists >/dev/null 2>&1; then
+        nftban_portscan_suricata_binary_exists
+        return
+    fi
     local binary="${PORTSCAN_SURICATA_BINARY:-/usr/bin/suricata}"
     [[ -x "$binary" ]]
 }
@@ -441,7 +448,7 @@ nftban_portscan_reconcile() {
     _nftban_portscan_load_modules || true
     # A root OPENS a transaction: clear any inherited plan first, so a nested
     # root cannot silently reuse an outer transaction's identity.
-    unset NFTBAN_PLAN_TXN_ID NFTBAN_PLAN_RESOLUTION_ID NFTBAN_PLAN_MODULE
+    unset NFTBAN_PLAN_TXN_ID NFTBAN_PLAN_RESOLUTION_ID NFTBAN_PLAN_MODULE NFTBAN_PLAN_INTENT_UNMET
     _plan="$(nftban_module_resolve_plan portscan)" || return 1
     eval "$_plan"
     NFTBAN_PLAN_TXN_ID="$NFTBAN_PLAN_RESOLUTION_ID"
@@ -539,6 +546,9 @@ nftban_portscan_reconcile() {
             printf 'NFTBAN_PLAN_RESOLVED_AT=%s\n'      "$NFTBAN_PLAN_RESOLVED_AT"
             printf 'NFTBAN_PLAN_RESOLUTION_BASIS=%s\n' "$NFTBAN_PLAN_RESOLUTION_BASIS"
             printf 'NFTBAN_PLAN_BOUND_GENERATION=%s\n' "$_gen"
+            # v1.238.2 (RC row 11): only when the resolver kept classic for an unmet explicit intent.
+            [[ -n "${NFTBAN_PLAN_INTENT_UNMET:-}" ]] && printf 'NFTBAN_PLAN_INTENT_UNMET=%s\n' "$NFTBAN_PLAN_INTENT_UNMET"
+            true
         } > "$_tmp" 2>/dev/null; then
         rm -f "$_tmp"
         echo "nftban_portscan_reconcile: failed to write the plan record — refusing to publish a partial one." >&2

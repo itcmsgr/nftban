@@ -310,7 +310,9 @@ portscan_event_logger_nonfatal_v1238_2_test	cli/lib/nftban/tests/portscan_event_
 portscan_generic_corroborate_v149_test	cli/lib/nftban/tests/portscan_generic_corroborate_v149_test.sh	portscan	test	portscan-classic	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_known_open_ports_family_v1235_test	cli/lib/nftban/tests/portscan_known_open_ports_family_v1235_test.sh	portscan	test	portscan-classic	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_reload_failure_exit_v1235_1_test	cli/lib/nftban/tests/portscan_reload_failure_exit_v1235_1_test.sh	portscan	test	portscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+portscan_suricata_binary_discovery_v1238_2_test	cli/lib/nftban/tests/portscan_suricata_binary_discovery_v1238_2_test.sh	portscan	test	portscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_suricata_eve_position_v1238_2_test	cli/lib/nftban/tests/portscan_suricata_eve_position_v1238_2_test.sh	portscan	test	portscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+portscan_switch_keeps_classic_v1238_2_test	cli/lib/nftban/tests/portscan_switch_keeps_classic_v1238_2_test.sh	portscan	test	portscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_trusted_flow_state_dir_authority_v1235_1_test	cli/lib/nftban/tests/portscan_trusted_flow_state_dir_authority_v1235_1_test.sh	portscan	test	portscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_trusted_flow_test	cli/lib/nftban/tests/portscan_trusted_flow_test.sh	portscan	test	portscan-trusted-flow	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 posture_observation_truth_v1229_3_test	cli/lib/nftban/tests/posture_observation_truth_v1229_3_test.sh	health	test	health	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
