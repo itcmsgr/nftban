@@ -260,7 +260,10 @@ declare -gA _PORTSCAN_SURICATA_IP_FIRST_SEEN   # IP -> first seen timestamp
 declare -gA _PORTSCAN_SURICATA_IP_LAST_SEEN    # IP -> last seen timestamp
 declare -gA _PORTSCAN_SURICATA_IP_SCAN_TYPES   # IP -> scan types seen
 declare -gA _PORTSCAN_SURICATA_IP_BLOCKED      # IP -> blocked timestamp
-declare -g  _PORTSCAN_SURICATA_EVE_OFFSET=0    # EVE file read offset
+declare -g  _PORTSCAN_SURICATA_EVE_OFFSET=0    # EVE file read offset (bytes of COMPLETE lines handled)
+# v1.238.2: 1 once the offset comes from a v1.238.2+ state file (EVE_READER|0|v2). Before v1.238.2
+# the offset was never saved by the daemon cycle, so an older value is not a position anyone can trust.
+declare -g  _PORTSCAN_SURICATA_EVE_READER_V2=0
 
 # Initialize state
 nftban_portscan_suricata_init_state() {
@@ -271,6 +274,7 @@ nftban_portscan_suricata_init_state() {
     _PORTSCAN_SURICATA_IP_SCAN_TYPES=()
     _PORTSCAN_SURICATA_IP_BLOCKED=()
     _PORTSCAN_SURICATA_EVE_OFFSET=0
+    _PORTSCAN_SURICATA_EVE_READER_V2=0
 
     # Load persistent state
     if [[ -f "${PORTSCAN_SURICATA_STATE_FILE}" ]]; then
@@ -281,12 +285,26 @@ nftban_portscan_suricata_init_state() {
 }
 
 # Save state to disk
+# nftban_portscan_suricata_save_state [--position-only]
+# v1.238.2: returns the real result of the write (it returned 0 even when nothing was written).
+# --position-only (the daemon cycle) writes the EVE read position and nothing else: the in-memory
+# BLOCKED map is never pruned by cleanup, so persisting it every cycle would make an address banned
+# once be ignored for good after its ban expired. The full form (disable) is unchanged apart from
+# the reader marker.
 nftban_portscan_suricata_save_state() {
     local state_file="${PORTSCAN_SURICATA_STATE_FILE}"
-    local state_dir
+    local state_dir position_only=false
+    [[ "${1:-}" == "--position-only" ]] && position_only=true
     state_dir=$(dirname "$state_file")
 
     mkdir -p "$state_dir" 2>/dev/null || true
+
+    if [[ "$position_only" == true ]]; then
+        { printf '# NFTBan Portscan Suricata State (EVE read position)\n# Format: TYPE|IP|DATA\nEVE_READER|0|v2\nEVE_OFFSET|0|%s\n' \
+              "${_PORTSCAN_SURICATA_EVE_OFFSET}" > "${state_file}.tmp" \
+          && mv -f "${state_file}.tmp" "${state_file}"; } 2>/dev/null
+        return $?
+    fi
 
     # Use library timestamp if available
     local state_timestamp
@@ -299,6 +317,7 @@ nftban_portscan_suricata_save_state() {
     {
         echo "# NFTBan Portscan Suricata State - ${state_timestamp}"
         echo "# Format: TYPE|IP|DATA"
+        [[ "${_PORTSCAN_SURICATA_EVE_READER_V2:-0}" == 1 ]] && echo "EVE_READER|0|v2"
         echo "EVE_OFFSET|0|${_PORTSCAN_SURICATA_EVE_OFFSET}"
 
         for ip in "${!_PORTSCAN_SURICATA_IP_SCORES[@]}"; do
@@ -309,8 +328,6 @@ nftban_portscan_suricata_save_state() {
             echo "BLOCKED|${ip}|${_PORTSCAN_SURICATA_IP_BLOCKED[$ip]}"
         done
     } > "${state_file}.tmp" && mv "${state_file}.tmp" "${state_file}"
-
-    return 0
 }
 
 # Load state from disk
@@ -324,8 +341,11 @@ nftban_portscan_suricata_load_state() {
         [[ -z "$type" ]] && continue
 
         case "$type" in
+            EVE_READER)
+                [[ "$data" == "v2" ]] && _PORTSCAN_SURICATA_EVE_READER_V2=1
+                ;;
             EVE_OFFSET)
-                _PORTSCAN_SURICATA_EVE_OFFSET="$data"
+                [[ "$data" =~ ^[0-9]+$ ]] && _PORTSCAN_SURICATA_EVE_OFFSET="$data"
                 ;;
             SCORE)
                 _PORTSCAN_SURICATA_IP_SCORES["$key"]="$data"
@@ -365,29 +385,82 @@ nftban_portscan_suricata_read_eve() {
 
     [[ -f "$eve_file" ]] || return 1
 
-    # Check if file was rotated (smaller than offset)
+    # v1.238.2 (owner 2026-11-28; BUG-PORTSCAN-SURICATA-EVE-OFFSET-NEVER-PERSISTED-REPLAYS-EVERY-CYCLE).
+    # MEASURED on v1.238.1 EL9 enforcing: 2 EVE alerts -> 2,185 BANNED lines, one per minute for
+    # ~36 h. Each daemon cycle is a fresh shell, the offset was set only in memory and never saved,
+    # so every cycle re-read the file from an old position and acted on the same alerts again.
+    # Rules now:
+    #   - bytes are counted in the C locale (${#line} = bytes);
+    #   - the window is [offset, size measured NOW): lines appended later are next cycle's work
+    #     (tail used to read past the measured size, then the offset was set back to it);
+    #   - only COMPLETE lines are acted on; a half-written last line waits for its newline;
+    #   - the offset moves to the end of the last line HANDLED: after a batch cut it stops there
+    #     (the rest is next cycle's, not skipped), and at an alert whose ban FAILED it stops before
+    #     that alert, so the alert is retried next cycle and nothing before it is repeated;
+    #   - a position from before v1.238.2 is not trusted: the reader starts at the current end, so
+    #     old alerts never act again. The caller saves the position (nftban_portscan_suricata_run).
+    local -x LC_ALL=C
     local file_size
     file_size=$(stat -c %s "$eve_file" 2>/dev/null) || return 1
 
     if [[ $file_size -lt $_PORTSCAN_SURICATA_EVE_OFFSET ]]; then
+        _nftban_portscan_suricata_log "INFO" "EVE file ${eve_file} is smaller than the saved position (${_PORTSCAN_SURICATA_EVE_OFFSET} > ${file_size}): treated as rotated, reading from the start"
         _PORTSCAN_SURICATA_EVE_OFFSET=0
     fi
+    if [[ "${_PORTSCAN_SURICATA_EVE_READER_V2:-0}" != 1 ]]; then
+        _PORTSCAN_SURICATA_EVE_OFFSET=$file_size
+        _PORTSCAN_SURICATA_EVE_READER_V2=1
+        _nftban_portscan_suricata_log "INFO" "EVE read position initialised at the end of ${eve_file} (${file_size} bytes); alerts written before this point are not acted on"
+        return 0
+    fi
 
-    # Read new entries
-    local count=0
-    while IFS= read -r line; do
-        nftban_portscan_suricata_process_alert "$line"
-        # v1.19.20 FIX
-        ((count++)) || true
-        [[ $count -ge $batch_size ]] && break
-    done < <(tail -c +$((_PORTSCAN_SURICATA_EVE_OFFSET + 1)) "$eve_file" 2>/dev/null | \
-             grep -E '"event_type"\s*:\s*"alert"' | \
-             grep -iE "$sig_patterns" | \
-             head -n "$batch_size")
+    local off=$_PORTSCAN_SURICATA_EVE_OFFSET
+    local len=$(( file_size - off ))
+    (( len > 0 )) || return 0
 
-    # Update offset
-    _PORTSCAN_SURICATA_EVE_OFFSET=$file_size
+    # Bytes of the window that end with a newline. The window is read with dd (skip_bytes /
+    # count_bytes): exact bytes from the file, no early-closing reader in a pipe (EPIPE gate).
+    # The last byte of the window is the byte at file_size-1. When it is not a newline, awk's END
+    # keeps the last record = the partial line (looked at in the window's last <=1 MiB).
+    local last_byte partial=0 complete tail_off tail_len
+    last_byte=$(dd if="$eve_file" iflag=skip_bytes,count_bytes skip=$(( file_size - 1 )) count=1 status=none 2>/dev/null \
+                | od -An -tx1 | tr -d ' \n')
+    if [[ "$last_byte" != "0a" ]]; then
+        tail_len=$(( len < 1048576 ? len : 1048576 )); tail_off=$(( file_size - tail_len ))
+        partial=$(dd if="$eve_file" iflag=skip_bytes,count_bytes skip="$tail_off" count="$tail_len" status=none 2>/dev/null \
+                  | awk 'END { print length($0) }')
+        [[ "$partial" =~ ^[0-9]+$ ]] || partial=$len
+    fi
+    complete=$(( len - partial ))
+    (( complete > 0 )) || return 0
 
+    local count=0 rec start line end rc handled_end=0 stop_at=-1
+    while IFS= read -r rec; do
+        start=${rec%%:*}; line=${rec#*:}
+        end=$(( start + ${#line} + 1 ))
+        (( end <= complete )) || break
+        rc=0
+        nftban_portscan_suricata_process_alert "$line" || rc=$?
+        if (( rc == 2 )); then
+            stop_at=$start
+            _nftban_portscan_suricata_log "ERROR" "ban action failed for an EVE alert at byte $((off + start)); the alert is retried next cycle"
+            echo "nftban: WARN portscan-suricata: a ban for an EVE alert failed; it is retried next cycle (see portscan-suricata.log)" >&2
+            break
+        fi
+        handled_end=$end
+        count=$((count + 1))
+        (( count >= batch_size )) && break
+    done < <(dd if="$eve_file" iflag=skip_bytes,count_bytes skip="$off" count="$complete" status=none 2>/dev/null | \
+             grep -ab -E '"event_type"\s*:\s*"alert"' | \
+             grep -iE "$sig_patterns")
+
+    if (( stop_at >= 0 )); then
+        _PORTSCAN_SURICATA_EVE_OFFSET=$(( off + stop_at ))
+    elif (( count >= batch_size )); then
+        _PORTSCAN_SURICATA_EVE_OFFSET=$(( off + handled_end ))
+    else
+        _PORTSCAN_SURICATA_EVE_OFFSET=$(( off + complete ))
+    fi
     return 0
 }
 
@@ -412,7 +485,7 @@ nftban_portscan_suricata_process_alert() {
     category=$(echo "$alert_json" | jq -r '.alert.category // ""' 2>/dev/null)
 
     # Process the alert
-    nftban_portscan_suricata_record_alert "$src_ip" "$severity" "$signature" "$category"
+    nftban_portscan_suricata_record_alert "$src_ip" "$severity" "$signature" "$category" || return $?
 
     return 0
 }
@@ -445,7 +518,7 @@ nftban_portscan_suricata_process_alert_regex() {
         category="${BASH_REMATCH[1]}"
     fi
 
-    nftban_portscan_suricata_record_alert "$src_ip" "$severity" "$signature" "$category"
+    nftban_portscan_suricata_record_alert "$src_ip" "$severity" "$signature" "$category" || return $?
 
     return 0
 }
@@ -507,7 +580,7 @@ nftban_portscan_suricata_record_alert() {
     fi
 
     # Check thresholds and take action
-    nftban_portscan_suricata_check_thresholds "$src_ip" "$score"
+    nftban_portscan_suricata_check_thresholds "$src_ip" "$score" || return $?
 
     return 0
 }
@@ -667,21 +740,21 @@ nftban_portscan_suricata_check_thresholds() {
     # Check permanent threshold
     compare_result=$(echo "$score >= $threshold_permanent" | bc -l 2>/dev/null || echo 0)
     if [[ "$compare_result" == "1" ]]; then
-        nftban_portscan_suricata_block_ip "$ip" "permanent" "$score"
+        nftban_portscan_suricata_block_ip "$ip" "permanent" "$score" || return $?
         return 0
     fi
 
     # Check long block threshold
     compare_result=$(echo "$score >= $threshold_long" | bc -l 2>/dev/null || echo 0)
     if [[ "$compare_result" == "1" ]]; then
-        nftban_portscan_suricata_block_ip "$ip" "long" "$score"
+        nftban_portscan_suricata_block_ip "$ip" "long" "$score" || return $?
         return 0
     fi
 
     # Check short block threshold
     compare_result=$(echo "$score >= $threshold_short" | bc -l 2>/dev/null || echo 0)
     if [[ "$compare_result" == "1" ]]; then
-        nftban_portscan_suricata_block_ip "$ip" "short" "$score"
+        nftban_portscan_suricata_block_ip "$ip" "short" "$score" || return $?
         return 0
     fi
 
@@ -717,18 +790,24 @@ nftban_portscan_suricata_block_ip() {
 
     local scan_types="${_PORTSCAN_SURICATA_IP_SCAN_TYPES[$ip]:-unknown}"
 
+    # v1.238.2: the ban's real result is returned (2 = the ban action failed). It was ignored, and
+    # "Blocked …" below was logged for a ban that never happened. rc 2 makes the EVE reader stop at
+    # this alert and retry it next cycle (nftban_portscan_suricata_read_eve).
+    local ban_rc=0
     # Use nftban ban command if available
     if type -t nftban_ban &>/dev/null; then
         nftban_ban "$ip" \
             --timeout "$duration" \
             --reason "portscan:suricata:${level}:${scan_types}" \
             --source "portscan-suricata" \
-            --score "$score"
+            --score "$score" || ban_rc=$?
+        (( ban_rc == 0 )) || _nftban_portscan_suricata_log "ERROR" "ban failed for $ip (rc=$ban_rc)"
     elif type -t nft_ipc_ban &>/dev/null; then
         # Use IPC to ban (single-writer architecture)
         local ipc_result
         if ! ipc_result=$(nft_ipc_ban "$ip" "$duration" "portscan:suricata:${level}:${scan_types}" "portscan-suricata" 2>&1); then
             _nftban_portscan_suricata_log "ERROR" "IPC ban failed for $ip: $ipc_result"
+            ban_rc=1
         fi
     else
         # Fallback: Direct IPC add element
@@ -738,13 +817,16 @@ nftban_portscan_suricata_block_ip() {
         if [[ "$ip" =~ : ]]; then
             if ! nft_ipc_add_element "$table_ipv6" "blacklist" "$ip" "$duration"; then
                 _nftban_portscan_suricata_log "WARN" "IPC ban failed for $ip"
+                ban_rc=1
             fi
         else
             if ! nft_ipc_add_element "$table_ipv4" "blacklist" "$ip" "$duration"; then
                 _nftban_portscan_suricata_log "WARN" "IPC ban failed for $ip"
+                ban_rc=1
             fi
         fi
     fi
+    (( ban_rc == 0 )) || return 2
 
     # Record block - Use library function if available, fallback to date
     if type -t nftban_timestamp_unix &>/dev/null; then
@@ -915,8 +997,9 @@ nftban_portscan_suricata_enable() {
 nftban_portscan_suricata_disable() {
     _nftban_portscan_suricata_log "INFO" "Disabling Suricata portscan detection"
 
-    # Save state
-    nftban_portscan_suricata_save_state
+    # Save state (v1.238.2: the save reports its result; a failure is logged, disable still completes)
+    nftban_portscan_suricata_save_state \
+        || _nftban_portscan_suricata_log "ERROR" "state NOT saved to ${PORTSCAN_SURICATA_STATE_FILE} on disable"
 
     _nftban_portscan_suricata_log "INFO" "Suricata portscan detection disabled"
     return 0
@@ -925,10 +1008,19 @@ nftban_portscan_suricata_disable() {
 # Process pending alerts (called periodically)
 nftban_portscan_suricata_run() {
     # Read and process EVE alerts
-    nftban_portscan_suricata_read_eve
+    nftban_portscan_suricata_read_eve || true
 
     # Cleanup old entries
     nftban_portscan_suricata_cleanup
+
+    # v1.238.2: the read position survives cycles and restarts (it was never saved by the cycle).
+    # A failed save is VISIBLE (daemon journal via stderr + portscan-suricata.log) but does not fail
+    # the cycle: in hybrid mode the classic run follows in the same call and must not be skipped.
+    # If the ban already happened, the next cycle may act on the same alerts again; the message says so.
+    if ! nftban_portscan_suricata_save_state --position-only; then
+        _nftban_portscan_suricata_log "ERROR" "EVE read position NOT saved to ${PORTSCAN_SURICATA_STATE_FILE}; alerts handled in this cycle may be acted on again next cycle"
+        echo "nftban: WARN portscan-suricata: EVE read position not saved (${PORTSCAN_SURICATA_STATE_FILE}); alerts of this cycle may be acted on again" >&2
+    fi
 
     return 0
 }
