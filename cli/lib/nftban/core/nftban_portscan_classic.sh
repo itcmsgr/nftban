@@ -1848,8 +1848,50 @@ nftban_portscan_classic_run() {
 # Sensitive ports - higher weight in scoring (can be overridden by config)
 : "${PORTSCAN_SENSITIVE_PORTS:=22,23,25,53,80,110,111,135,139,143,389,443,445,465,512,513,514,587,631,873,902,1080,1433,1521,2049,2375,3306,3389,5000,5432,5601,5900,6379,8080,8443,9000,9200,9300,11211,27017}"
 
+# _nftban_portscan_agg_score "<epoch:port> ..." -> "events unique_ports sensitive_hits span_hours score"
+# v1.238.2: the existing scoring, computed from one event list so it can be applied to all in-window
+# events and again to the events newer than the last ban. Formula unchanged.
+_nftban_portscan_agg_score() {
+    local IFS=$' \t\n'   # the module runs under IFS=$'\n\t'; this list is space-separated
+    local list="$1" ev ep port first="" last="" n=0 sens=0 span=0 score=0
+    local -A seen=()
+    for ev in $list; do
+        ep=${ev%%:*}; port=${ev#*:}
+        n=$((n + 1))
+        [[ -z "$first" || $ep -lt $first ]] && first=$ep
+        [[ -z "$last"  || $ep -gt $last  ]] && last=$ep
+        [[ -n "$port" ]] && seen[$port]=1
+    done
+    for port in "${!seen[@]}"; do
+        [[ ",$PORTSCAN_SENSITIVE_PORTS," == *",$port,"* ]] && sens=$((sens + 1))
+    done
+    [[ -n "$first" ]] && span=$(( (last - first) / 3600 ))
+    score=$(( n + ${#seen[@]} * 3 / 10 + sens * 2 ))
+    (( span >= 6 )) && score=$((score + 5))
+    echo "$n ${#seen[@]} $sens $span $score"
+}
+
+# _nftban_portscan_agg_qualifies <score> <events> <unique> <score_min> <events_min> <unique_min>
+_nftban_portscan_agg_qualifies() {
+    [[ $1 -ge $4 && $2 -ge $5 && $3 -ge $6 ]]
+}
+
+# _nftban_portscan_agg_last_ban_epoch <ip> -> epoch of the most recent PortScan BANNED line for the
+# address in bans.log (+ the uncompressed previous rotation, bans.log.1), or empty.
+# Format (internal/banlog/banlog.go): DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON|BAN_ID, local time.
+_nftban_portscan_agg_last_ban_epoch() {
+    local ip="$1" dir="${NFTBAN_LOG_DIR:-/var/log/nftban}" f d=""
+    local -a files=()
+    for f in "$dir/bans.log.1" "$dir/bans.log"; do [[ -r "$f" ]] && files+=("$f"); done
+    (( ${#files[@]} > 0 )) || return 0
+    d=$(awk -F'|' -v ip="$ip" '$4 == ip && $3 ~ /^portscan/ && $6 == "BANNED" { d = $1 " " $2 } END { print d }' "${files[@]}" 2>/dev/null)
+    [[ -n "$d" ]] || return 0
+    date -d "$d" +%s 2>/dev/null || true
+}
+
 # Aggregation function - called by maintenance.sh every 15 min
 nftban_portscan_aggregate() {
+    local IFS=$' \t\n'   # v1.238.2: event lists and `read -r a b c` split on spaces (module IFS is $'\n\t')
     local since="${1:---since 24h}"
     local do_ban=false
     [[ "$*" == *"--ban"* ]] && do_ban=true
@@ -1882,8 +1924,22 @@ nftban_portscan_aggregate() {
         return 0
     fi
 
-    # Aggregate by source IP
-    declare -A ip_events ip_ports ip_first ip_last
+    # v1.238.2 (owner 2026-11-28; BUG-PORTSCAN-AGGREGATE-24H-RESCAN-RE-BANS-EVERY-CYCLE-AND-FALLBACK-UNWINDOWED).
+    # MEASURED on EL10 enforcing: this 15-min aggregate re-banned two addresses from file records
+    # two days old at every run, and an operator `nftban unban` did not hold. The journal source
+    # was windowed (--since 24h), the FILE source (always used on EL enforcing, where the event
+    # logger is denied) was not, and an unreadable time counted as "now".
+    # Rules now, for BOTH sources:
+    #   - an event counts only if its OWN time is readable and inside [now-24h, now+5min];
+    #     an unreadable time is skipped (never "now");
+    #   - evidence already acted on does not act again: for an address that qualifies, only events
+    #     NEWER than its most recent PortScan ban in bans.log (the operator-visible ledger) are
+    #     scored again. So an identical input does not re-ban, an operator unban holds (the ban
+    #     line still predates the evidence), and fresh evidence after the unban acts again.
+    declare -A ip_evts
+    local now_epoch cutoff_epoch skipped_old=0 skipped_bad=0
+    now_epoch=$(date +%s)
+    cutoff_epoch=$(( now_epoch - 86400 ))
 
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
@@ -1901,74 +1957,52 @@ nftban_portscan_aggregate() {
             continue
         fi
 
-        # Aggregate
-        ip_events[$src]=$(( ${ip_events[$src]:-0} + 1 ))
-        ip_ports[$src]="${ip_ports[$src]:-} $dpt"
-
-        # Track first/last seen for span calculation
-        local ts_epoch
-        if declare -f nftban_timestamp_to_unix &>/dev/null && [[ -n "$ts" ]]; then
-            ts_epoch=$(nftban_timestamp_to_unix "$ts")
-            # Fallback if conversion failed
-            if [[ "$ts_epoch" == "0" ]]; then
-                ts_epoch=$(date -d "$ts" +%s 2>/dev/null || nftban_timestamp_unix 2>/dev/null || date +%s)
+        # The event's own time; unreadable = skipped, never "now".
+        local ts_epoch=""
+        if [[ -n "$ts" ]]; then
+            if declare -f nftban_timestamp_to_unix &>/dev/null; then
+                ts_epoch=$(nftban_timestamp_to_unix "$ts" 2>/dev/null) || ts_epoch=""
             fi
-        else
-            ts_epoch=$(date -d "$ts" +%s 2>/dev/null || date +%s)
+            [[ "$ts_epoch" =~ ^[1-9][0-9]*$ ]] || ts_epoch=$(date -d "$ts" +%s 2>/dev/null) || ts_epoch=""
         fi
-        [[ -z "${ip_first[$src]:-}" ]] && ip_first[$src]=$ts_epoch
-        ip_last[$src]=$ts_epoch
+        if [[ ! "$ts_epoch" =~ ^[0-9]+$ ]]; then skipped_bad=$((skipped_bad + 1)); continue; fi
+        if (( ts_epoch < cutoff_epoch || ts_epoch > now_epoch + 300 )); then skipped_old=$((skipped_old + 1)); continue; fi
 
+        ip_evts[$src]="${ip_evts[$src]:-} ${ts_epoch}:${dpt}"
     done <<< "$events"
+    (( skipped_old + skipped_bad > 0 )) && \
+        _nftban_portscan_classic_log "INFO" "aggregate: skipped ${skipped_old} event(s) outside the 24 h window and ${skipped_bad} with an unreadable time"
 
-    local banned=0 detected=0
+    local banned=0 detected=0 acted_skip=0
 
     # Analyze each IP
-    for src in "${!ip_events[@]}"; do
-        local event_count=${ip_events[$src]}
-        local ports="${ip_ports[$src]}"
-        local unique_ports
-        unique_ports=$(echo "$ports" | tr ' ' '\n' | grep -v '^$' | sort -u | wc -l)
+    for src in "${!ip_evts[@]}"; do
+        # Score the in-window events (scoring unchanged: +1/event, +0.3/unique port,
+        # +2/sensitive port, +3 and +2 for a span of 6 h or more).
+        local event_count unique_ports sensitive_hits span_hours score
+        read -r event_count unique_ports sensitive_hits span_hours score \
+            < <(_nftban_portscan_agg_score "${ip_evts[$src]}")
+        _nftban_portscan_agg_qualifies "$score" "$event_count" "$unique_ports" \
+            "$score_threshold" "$min_events" "$min_unique_ports" || continue
 
-        # Calculate score (reusing patterns from suricata scoring)
-        local score=0
-
-        # +1 per event
-        score=$((score + event_count))
-
-        # +0.3 per unique port (capped)
-        local port_score=$((unique_ports * 3 / 10))
-        score=$((score + port_score))
-
-        # +2 per sensitive port hit
-        local sensitive_hits=0
-        for port in $(echo "$ports" | tr ' ' '\n' | sort -u); do
-            if [[ ",$PORTSCAN_SENSITIVE_PORTS," == *",$port,"* ]]; then
-                # v1.19.20 FIX
-                ((sensitive_hits++)) || true
-            fi
-        done
-        score=$((score + sensitive_hits * 2))
-
-        # +3 if periodicity detected (events spread over 6+ hours)
-        local span_hours=0
-        if [[ -n "${ip_first[$src]:-}" ]] && [[ -n "${ip_last[$src]:-}" ]]; then
-            span_hours=$(( (ip_last[$src] - ip_first[$src]) / 3600 ))
-            if [[ $span_hours -ge 6 ]]; then
-                score=$((score + 3))
+        # Evidence already acted on does not act again: re-score only the events newer than this
+        # address's most recent PortScan ban (bans.log). No ban yet -> all events are new.
+        local last_ban fresh="" ev
+        last_ban=$(_nftban_portscan_agg_last_ban_epoch "$src")
+        if [[ "$last_ban" =~ ^[0-9]+$ ]]; then
+            for ev in ${ip_evts[$src]}; do
+                (( ${ev%%:*} > last_ban )) && fresh+=" $ev"
+            done
+            read -r event_count unique_ports sensitive_hits span_hours score \
+                < <(_nftban_portscan_agg_score "$fresh")
+            if ! _nftban_portscan_agg_qualifies "$score" "$event_count" "$unique_ports" \
+                    "$score_threshold" "$min_events" "$min_unique_ports"; then
+                acted_skip=$((acted_skip + 1))
+                continue
             fi
         fi
 
-        # +2 if persistent (span >= 6 hours)
-        if [[ $span_hours -ge 6 ]]; then
-            score=$((score + 2))
-        fi
-
-        # Check ban threshold (99% certainty)
-        # Require: score >= 25 AND events >= 8 AND unique_ports >= 20
-        if [[ $score -ge $score_threshold ]] && \
-           [[ $event_count -ge $min_events ]] && \
-           [[ $unique_ports -ge $min_unique_ports ]]; then
+        {
 
             # v1.19.20 FIX
             ((detected++)) || true
@@ -1996,10 +2030,10 @@ nftban_portscan_aggregate() {
                     fi
                 fi
             fi
-        fi
+        }
     done
 
-    _nftban_portscan_classic_log "INFO" "Aggregation complete: detected=$detected banned=$banned"
+    _nftban_portscan_classic_log "INFO" "Aggregation complete: detected=$detected banned=$banned already_acted=$acted_skip"
     return 0
 }
 

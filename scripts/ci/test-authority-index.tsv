@@ -302,6 +302,7 @@ plan_projection_v1229_7_test	cli/lib/nftban/tests/plan_projection_v1229_7_test.s
 port_allow_replay_v1235_test	cli/lib/nftban/tests/port_allow_replay_v1235_test.sh	firewall	test	port	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 port_remove_live_ssh_guard_v1234_test	cli/lib/nftban/tests/port_remove_live_ssh_guard_v1234_test.sh	cli	test	ports	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 port_report_published_forward_v1235_test	cli/lib/nftban/tests/port_report_published_forward_v1235_test.sh	firewall	test	port-report	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+portscan_aggregate_acted_evidence_v1238_2_test	cli/lib/nftban/tests/portscan_aggregate_acted_evidence_v1238_2_test.sh	portscan	test	portscan-classic	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_classic_event_time_v1233_1_test	cli/lib/nftban/tests/portscan_classic_event_time_v1233_1_test.sh	portscan	test	portscan-classic	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_cursor_replay_v1229_test	cli/lib/nftban/tests/portscan_cursor_replay_v1229_test.sh	portscan	test	portscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 portscan_daemon_stop_no_reconcile_v1235_1_test	cli/lib/nftban/tests/portscan_daemon_stop_no_reconcile_v1235_1_test.sh	portscan	test	portscan	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
