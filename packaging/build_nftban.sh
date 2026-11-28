@@ -1251,12 +1251,30 @@ fi
 # Guarded + idempotent + strict no-op on SELinux Disabled/absent.
 if command -v semodule >/dev/null 2>&1 && selinuxenabled 2>/dev/null; then
     _nftban_sel=/usr/share/nftban/selinux
-    if [ -f "\$_nftban_sel/nftban.pp" ]; then
-        semodule -i "\$_nftban_sel/nftban.pp" 2>/dev/null || true
+    _nftban_sel_ok=no
+    # v1.238.3: the shipped module first; if it does not load (built against a different policy
+    # version), compile on this host when selinux-policy-devel is present (in a temp dir, never in
+    # the package directory); if it still is not loaded, SAY SO. A silent failure here left nftband
+    # without its domain and BotGuard unapplied on EL10 (FAILED_REBUILD), with nothing on screen.
+    if [ -f "\$_nftban_sel/nftban.pp" ] && semodule -i "\$_nftban_sel/nftban.pp" 2>/dev/null; then
+        _nftban_sel_ok=yes
     elif [ -f /usr/share/selinux/devel/Makefile ]; then
-        ( cd "\$_nftban_sel" && make -f /usr/share/selinux/devel/Makefile nftban.pp 2>/dev/null \
-            && semodule -i nftban.pp 2>/dev/null ) || true
+        _nftban_selw=\$(mktemp -d /var/tmp/nftban-selinux.XXXXXX 2>/dev/null) || _nftban_selw=""
+        if [ -n "\$_nftban_selw" ] \
+           && cp "\$_nftban_sel/nftban.te" "\$_nftban_sel/nftban.fc" "\$_nftban_sel/nftban.if" "\$_nftban_selw/" 2>/dev/null \
+           && ( cd "\$_nftban_selw" && make -f /usr/share/selinux/devel/Makefile nftban.pp >/dev/null 2>&1 \
+                && semodule -i nftban.pp 2>/dev/null ); then
+            _nftban_sel_ok=yes
+        fi
+        case "\$_nftban_selw" in /var/tmp/nftban-selinux.*) rm -rf -- "\$_nftban_selw" ;; esac
+        unset _nftban_selw
     fi
+    if [ "\$_nftban_sel_ok" != yes ]; then
+        echo "[NFTBan WARNING] The NFTBan SELinux policy module was NOT loaded (semodule -i failed)." >&2
+        echo "[NFTBan WARNING] nftband then runs without its SELinux domain and firewall rebuilds may fail." >&2
+        echo "[NFTBan WARNING] Fix: install selinux-policy-devel, then reinstall nftban-core (it compiles the module for this host)." >&2
+    fi
+    unset _nftban_sel_ok
     restorecon -R /usr/sbin/nftban /usr/lib/nftban/bin /etc/nftban /var/lib/nftban /var/log/nftban /run/nftban /run/nftban-writers /var/cache/nftban 2>/dev/null || true
     unset _nftban_sel
 fi

@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.238.3] - 2026-11-28 — SELinux policy module loads on all EL10 hosts
+
+v1.238.2 was built as a draft and was not published. Its release acceptance found that the SELinux policy module did not load on an EL10 host. v1.238.3 contains every change listed under v1.238.2, v1.238.1 and v1.238.0 below, plus this fix.
+
+### Fixed
+
+- **The NFTBan SELinux policy module did not load on some EL10 hosts, and nothing said so** (#1544).
+  - The el10 package builds `nftban.pp` against the newest EL10 policy. There, `corecmd_exec_bin()` adds the attribute `sys_resource_type`, which older EL10 policies do not have. Measured on Rocky Linux 10.1 with selinux-policy 42.1.18: `semodule -i` failed with "Failed to resolve typeattributeset".
+  - The package hid that error. nftband then ran without its SELinux domain, BotGuard could not apply its rules (`fork/exec /usr/sbin/nft: permission denied`), and the upgrade ended in `FAILED_REBUILD` with the firewall not activated. v1.237.0 already behaved this way on that host.
+  - The policy now uses `corecmd_exec_bin_noattr()` where the installed policy provides it, and `corecmd_exec_bin()` otherwise. The permissions are the same. The module version is 1.2.6.
+  - If the shipped module still does not load, the package compiles it on the host when `selinux-policy-devel` is installed. If the module is still not loaded, the package prints a warning with the fix.
+
+### Upgrade and operator notes
+
+- **EL10 hosts that show `INSTALL_STATE=FAILED_REBUILD` or `DEGRADED` after an earlier install.** Upgrading to v1.238.3 loads the module, and the installer's rebuild then completes. Check with `semodule -l | grep nftban` and `nftban health`.
+
+---
+
 ## [v1.238.2] - 2026-11-28 — Fixes found in v1.238.1 release acceptance: boot-time bans on SELinux hosts, PortScan on EL enforcing, Suricata PortScan replay, rebuild result, drop-log rate limit
 
 v1.238.0 and v1.238.1 were built as drafts and were not published. v1.238.2 contains every change listed under v1.238.1 and v1.238.0 below, plus the fixes in this section.

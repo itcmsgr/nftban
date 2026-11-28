@@ -17,7 +17,7 @@
 # journalctl_exec_t / systemd_systemctl_exec_t which EL8 refpolicy 3.14.3 lacks;
 # wrap in optional_policy() if EL8 is ever in scope).
 
-policy_module(nftban, 1.2.5)
+policy_module(nftban, 1.2.6)
 
 ########################################
 # External type requires
@@ -325,7 +325,17 @@ logging_watch_generic_log_dirs(nftband_t)
 # Shell-outs (ACCEPT_BROAD_DOMAIN_NOW_REDUCE_LATER — see D-V147-REDUCE-NFTBAND-SHELLOUTS)
 ########################################
 # Children inherit nftband_t (execute_no_trans) — the daemon runs them inline.
-corecmd_exec_bin(nftband_t)
+# v1.238.3 (BUG-SELINUX-EL10-MODULE-NOT-LOADED-SYS-RESOURCE-TYPE): newer EL10 policies
+# (selinux-policy 42.1.27, el10_3) make corecmd_exec_bin() add `typeattribute $1 sys_resource_type`.
+# A module built there does not load on older EL10 hosts (42.1.18 has no such attribute):
+# "Failed to resolve typeattributeset". Those policies offer corecmd_exec_bin_noattr() with the same
+# permissions and no attribute; older ones (EL9 38.x, EL10 42.1.18) lack it, but their
+# corecmd_exec_bin() adds no attribute either. Same access everywhere, loadable everywhere.
+ifdef(`corecmd_exec_bin_noattr',`
+	corecmd_exec_bin_noattr(nftband_t)
+',`
+	corecmd_exec_bin(nftband_t)
+')
 corecmd_exec_shell(nftband_t)
 can_exec(nftband_t, nftband_exec_t)
 can_exec(nftband_t, { iptables_exec_t rpm_exec_t ssh_exec_t journalctl_exec_t systemd_systemctl_exec_t })
