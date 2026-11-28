@@ -53,6 +53,55 @@ type WhitelistEntry struct {
 	// remaining TTL instead of clobbering the entry to permanent (CLI-BUG-2,
 	// v1.168). Past timestamps are skipped at load and never reach here.
 	ExpiresAt time.Time
+	// OwnershipOnly (v1.238.2, SEC-WHITELIST-SELF-ADDRESSES-INCLUDE-DOCKER-BRIDGE-AND-LINK-LOCAL-
+	// INPUT-ACCEPT): every occurrence of this address was recorded by NFTBan only because the host
+	// owns it (see ownershipOnlyLine). It keeps self-ban protection — every guard reads this full
+	// map — but grants NO kernel whitelist accept. One trusted occurrence anywhere (operator entry,
+	// session, localhost, whitelistme) clears it and supplies the entry's ExpiresAt. The zero value
+	// is today's behaviour: an entry built anywhere else stays an accept.
+	OwnershipOnly bool
+}
+
+// ownershipComments are the comments NFTBan writes when it records an address because the host owns
+// it. Unchanged since v1.0.0-beta (214ef759): nftban_system_ip.sh (interface, public IPv4/IPv6) and
+// maintenance.sh (file re-creation). The shell twin is nftban_whitelist_line_is_ownership_only
+// (cli/lib/nftban/lib/nft_ipc.sh); both MUST classify the same lines.
+var ownershipComments = []string{
+	"Server interface (auto-detected)",
+	"Server public IPv4 (auto-detected)",
+	"Server public IPv6 (auto-detected)",
+	"Server IPv4 (auto-detected)",
+	"Server IPv6 (auto-detected)",
+}
+
+// ownershipOnlyLine reports whether a whitelist line was written by NFTBan only because the host owns
+// the address. base is the file name, prev the line before it.
+//   - 00-system-ip.conf holds only the default-route source address (_nftban_auto_whitelist_system_ip);
+//   - 00-system.conf: an ownership comment, or a bare line right after maintenance's
+//     "# Auto-added by maintenance:" / "# Auto-added IPv6 by maintenance:" (public address changed);
+//   - everything else is trusted, including a bare 00-system.conf line of unknown origin: nothing is
+//     taken away on a guess.
+func ownershipOnlyLine(base, line, prev string) bool {
+	switch base {
+	case "00-system-ip.conf":
+		return true
+	case "00-system.conf":
+	default:
+		return false
+	}
+	i := strings.Index(line, "#")
+	if i < 0 {
+		p := strings.TrimSpace(prev)
+		return strings.HasPrefix(p, "# Auto-added by maintenance:") ||
+			strings.HasPrefix(p, "# Auto-added IPv6 by maintenance:")
+	}
+	c := line[i:]
+	for _, m := range ownershipComments {
+		if strings.Contains(c, m) {
+			return true
+		}
+	}
+	return false
 }
 
 // LoadAllWhitelists loads IPs from all whitelist sources and returns two
@@ -233,7 +282,11 @@ func IsIPInWhitelistFile(ip string, entries map[string]WhitelistEntry) bool {
 // entry to be skipped conservatively — operator-intent ambiguity is treated
 // as "do not honor as whitelist."
 func loadWhitelistFileTyped(filePath string, ipv4, ipv6 map[string]WhitelistEntry) error {
+	base := filepath.Base(filePath)
+	prev := ""
 	return util.LoadLines(filePath, func(line string) error {
+		p := prev
+		prev = line
 		entry := feeds.ParseFeedLineSilent(line)
 		if entry == nil {
 			return nil
@@ -247,15 +300,21 @@ func loadWhitelistFileTyped(filePath string, ipv4, ipv6 map[string]WhitelistEntr
 			return nil
 		}
 		we := WhitelistEntry{
-			Value:     entry.Value,
-			IsCIDR:    entry.IsCIDR,
-			ExpiresAt: expiresAt,
+			Value:         entry.Value,
+			IsCIDR:        entry.IsCIDR,
+			ExpiresAt:     expiresAt,
+			OwnershipOnly: ownershipOnlyLine(base, line, p),
 		}
+		m := ipv6
 		if entry.IPv4 {
-			ipv4[entry.Value] = we
-		} else {
-			ipv6[entry.Value] = we
+			m = ipv4
 		}
+		// An ownership-only occurrence never replaces an entry already loaded: it would turn an
+		// operator's accept (and its expiry) into ownership. A trusted occurrence replaces as before.
+		if _, ok := m[entry.Value]; ok && we.OwnershipOnly {
+			return nil
+		}
+		m[entry.Value] = we
 		return nil
 	})
 }

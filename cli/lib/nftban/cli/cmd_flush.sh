@@ -205,9 +205,18 @@ _restore_system_whitelist() {
 
     # Read from system whitelist file
     if [[ -f "$NFTBAN_SYSTEM_WHITELIST" ]]; then
+        local _wl_prev=""
         while IFS= read -r line; do
+            local _wl_p="$_wl_prev"; _wl_prev="$line"
             [[ -z "$line" ]] && continue
             [[ "$line" =~ ^#.* ]] && continue
+            # v1.238.2 (SEC-WHITELIST-SELF-ADDRESSES-…): an address recorded only because the host
+            # owns it (00-system-ip.conf = default-route source) keeps self-ban protection via the
+            # file but is NOT put back into the kernel accept set. The SSH client below still is.
+            if declare -F nftban_whitelist_line_is_ownership_only >/dev/null 2>&1 \
+               && nftban_whitelist_line_is_ownership_only "${NFTBAN_SYSTEM_WHITELIST##*/}" "$line" "$_wl_p"; then
+                continue
+            fi
 
             if [[ "$line" =~ : ]]; then
                 [[ -n "$ips_v6" ]] && ips_v6+=","
