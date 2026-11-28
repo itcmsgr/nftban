@@ -100,8 +100,8 @@ r=$(addip 127.0.0.1 "Localhost (critical)")
 echo "=== (3) maintenance: re-sync applies the classifier; public-IP change adds nothing to the kernel ==="
 M="$LIB/cron/maintenance.sh"
 loop=$(awk '/Ensure ALL IPs in 00-system.conf are loaded into nftables sets/{f=1} f{print} f&&/done < "\$\{NFTBAN_CONFIG_DIR\}\/whitelist.d\/00-system.conf"/{exit}' "$M")
-c1=$(grep -n 'nftban_whitelist_line_is_ownership_only' <<<"$loop" | head -1 | cut -d: -f1)
-c2=$(grep -n 'nft_ipc_add_element' <<<"$loop" | head -1 | cut -d: -f1)
+c1=$(awk '/nftban_whitelist_line_is_ownership_only/ && !n {n=NR} END{print n}' <<<"$loop")
+c2=$(awk '/nft_ipc_add_element/ && !n {n=NR} END{print n}' <<<"$loop")
 [[ -n "$c1" && -n "$c2" && "$c1" -lt "$c2" ]] && ok "re-sync loop classifies each line before any kernel add" || no "re-sync loop" "classifier@${c1:-none} add@${c2:-none}"
 if grep -qE 'nft_ipc_add_element .*whitelist_ipv[46] "\$current_ipv[46]"' "$M"; then
     no "public-IP change still adds the host's own address to the kernel set"
