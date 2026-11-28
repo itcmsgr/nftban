@@ -160,14 +160,30 @@ _nftban_portscan_emit_event() {
 
     # Emit to journald with dedicated tag for easy querying
     # Query with: journalctl -t nftban-portscan-event --since "24 hours ago"
+    # v1.238.2 (owner 2026-11-26, v1.238.1 RC acceptance): best-effort, NEVER fatal. This runs inside
+    # nftband's PortScan cycle under `set -Eeuo pipefail`. On EL9/EL10 Enforcing nftband_t may not
+    # write /dev/log (AVC devlog_t), logger exits 1, and that aborted the WHOLE classic cycle on the
+    # first scan line: no connection recorded, no detection, no ban — while the read offset had
+    # already been committed, so the lines were never re-read. The event still goes to the file below.
     if command -v logger &>/dev/null; then
-        logger -t nftban-portscan-event "ts=${ts} src=${src} dst=${dst} proto=${proto} dpt=${dpt} flags=${flags}"
+        logger -t nftban-portscan-event "ts=${ts} src=${src} dst=${dst} proto=${proto} dpt=${dpt} flags=${flags}" \
+            2>/dev/null || true
     fi
 
-    # Also write to file for systems without journald queryable by tag
+    # Also write to file for systems without journald queryable by tag (the CLI's fallback source).
+    # v1.238.2 (owner 2026-11-26): a failed event RECORD must not stop detection either. Detection,
+    # the state update and the ban keep their own results; only this record is optional. A failure
+    # is made VISIBLE once per cycle (each daemon cycle is a fresh shell) on stderr, which the daemon
+    # journals with the cycle output.
     local event_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-events.log"
-    mkdir -p "$(dirname "$event_log")" 2>/dev/null || return 1
-    echo "ts=${ts} src=${src} dst=${dst} proto=${proto} dpt=${dpt} flags=${flags}" >> "$event_log"
+    if ! { mkdir -p "$(dirname "$event_log")" \
+           && echo "ts=${ts} src=${src} dst=${dst} proto=${proto} dpt=${dpt} flags=${flags}" >> "$event_log"; } 2>/dev/null; then
+        if [[ -z "${_NFTBAN_PS_EVENT_RECORD_WARNED:-}" ]]; then
+            _NFTBAN_PS_EVENT_RECORD_WARNED=1
+            echo "nftban: WARN portscan: event record not written to ${event_log}; detection continues, event logging is lost for this cycle" >&2
+        fi
+    fi
+    return 0
 }
 
 # =============================================================================
