@@ -366,6 +366,7 @@ search_found_sets_display_v1236_test	cli/lib/nftban/tests/search_found_sets_disp
 secure_go_gate_coverage_v1229_4_test	cli/lib/nftban/tests/secure_go_gate_coverage_v1229_4_test.sh	cross-cutting	test	core	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 secure_go_release_proof_authority_v1230_test	cli/lib/nftban/tests/secure_go_release_proof_authority_v1230_test.sh	release	test	secure-go-release-proof	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	60		
 selinux_boot_projection_fcontext_v1229_13_test	cli/lib/nftban/tests/selinux_boot_projection_fcontext_v1229_13_test.sh	firewall	test	selinux-policy	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+selinux_el10_module_portable_v1238_3_test	cli/lib/nftban/tests/selinux_el10_module_portable_v1238_3_test.sh	security	test	selinux-el10-module-portable	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 selinux_geoip_map_v1228_5_test	cli/lib/nftban/tests/selinux_geoip_map_v1228_5_test.sh	security	test	selinux-geoip-map	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 selinux_loginmon_persistent_journal_v1238_2_test	cli/lib/nftban/tests/selinux_loginmon_persistent_journal_v1238_2_test.sh	security	test	selinux-loginmon-journal	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 service_alerts_v138_test	cli/lib/nftban/tests/service_alerts_v138_test.sh	firewall	test	firewall-conflicts	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
