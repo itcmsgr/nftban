@@ -17,6 +17,7 @@
 # meta:ta.gate="ci-bash"
 # meta:ta.blocking="true"
 # meta:ta.timeout="120"
+# meta:ta.required_assertions="RENDER_NO_COMMAND_EXECUTED,BOTGUARD_COMMENT_COMPLETE"
 # meta:ta.hermetic="true"
 # meta:ta.requires_root="false"
 # meta:ta.requires_network="false"

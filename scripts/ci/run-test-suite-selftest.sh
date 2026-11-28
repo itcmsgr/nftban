@@ -8,7 +8,7 @@
 # meta:description="Hermetic self-tests for run-test-suite.sh: selection, isolation, false-green mutation, injection inertness, fail-closed validation"
 # meta:inventory.files="scripts/ci/run-test-suite.sh"
 # meta:inventory.binaries="bash,git,mktemp,awk,grep,sed,printf,wc,sort"
-# meta:inventory.env_vars=""
+# meta:inventory.env_vars="GITHUB_STEP_SUMMARY,GITHUB_SHA"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
@@ -28,6 +28,9 @@
 set -Eeuo pipefail
 
 RUNNER="$(cd "$(dirname "$0")" && pwd)/run-test-suite.sh"
+# The fixtures below must never write into the CI job's real summary; the summary
+# tests set their own file explicitly.
+unset GITHUB_STEP_SUMMARY GITHUB_SHA
 FAIL=0
 ok()  { printf '  ok   %s\n' "$1"; }
 bad() { printf '  FAIL %s  %s\n' "$1" "${2:-}"; FAIL=1; }
@@ -199,6 +202,131 @@ test_missing_index_fail_closed() {
     runr "$r" verify >/dev/null 2>&1 && bad "missing_index_accepted" || ok "missing index fails closed (exit 2)"
     rm -rf "$r"
 }
+
+# ---- v1.239 §1.0: required named assertions --------------------------------
+# Fixture tests declare `# meta:ta.required_assertions="ALPHA_ONE,BETA_TWO"` and
+# print [PASS]/[FAIL] lines. Cases (a)-(d) are the binding exit semantics.
+DECL='# meta:ta.required_assertions="ALPHA_ONE,BETA_TWO"'
+test_assert_a_nonzero_kept() {
+    echo test_assert_a_nonzero_kept
+    local r; r="$(mkrepo)"
+    addtest "$r" a_test.sh "$DECL\nprintf '  [PASS] ALPHA_ONE x\\\\n  [PASS] BETA_TWO y\\\\n'\nexit 3"
+    mkindex "$r" <<< "$(row a_test ci-bash)"
+    local rc=0 err; err="$(runr "$r" run --gate ci-bash 2>&1 >/dev/null)" || rc=$?
+    [ $rc -eq 1 ] && grep -qE '^  FAIL +a_test$' <<<"$err" \
+        && ok "(a) rc!=0 is kept: every required PASS printed, exit 3 -> FAIL, runner rc 1" || bad "assert_a" "rc=$rc $err"
+    rm -rf "$r"
+}
+test_assert_b_missing_pass() {
+    echo test_assert_b_missing_pass
+    local r; r="$(mkrepo)"
+    addtest "$r" a_test.sh "$DECL\nprintf '  [PASS] ALPHA_ONE x\\\\n'\nexit 0"
+    mkindex "$r" <<< "$(row a_test ci-bash)"
+    local rc=0 err; err="$(runr "$r" run --gate ci-bash 2>&1 >/dev/null)" || rc=$?
+    [ $rc -eq 1 ] && grep -q 'required assertion BETA_TWO: MISSING' <<<"$err" \
+        && ok "(b) rc 0 with a required PASS missing -> FAIL, named" || bad "assert_b" "rc=$rc $err"
+    rm -rf "$r"
+}
+test_assert_c_explicit_fail() {
+    echo test_assert_c_explicit_fail
+    local r; r="$(mkrepo)"
+    addtest "$r" a_test.sh "$DECL\nprintf '  [PASS] ALPHA_ONE x\\\\n  [PASS] BETA_TWO y\\\\n  [FAIL] BETA_TWO: z\\\\n'\nexit 0"
+    mkindex "$r" <<< "$(row a_test ci-bash)"
+    local rc=0 err; err="$(runr "$r" run --gate ci-bash 2>&1 >/dev/null)" || rc=$?
+    [ $rc -eq 1 ] && grep -q 'required assertion BETA_TWO: FAIL' <<<"$err" \
+        && ok "(c) rc 0 with an explicit FAIL (beside a PASS) -> FAIL" || bad "assert_c" "rc=$rc $err"
+    rm -rf "$r"
+}
+test_assert_d_success_format() {
+    echo test_assert_d_success_format
+    local r; r="$(mkrepo)"
+    addtest "$r" a_test.sh "$DECL\nprintf '  [PASS] ALPHA_ONE x\\\\n  [PASS] BETA_TWO\\\\n'\nexit 0"
+    mkindex "$r" <<< "$(row a_test ci-bash)"
+    local rc=0 out err; out="$(runr "$r" run --gate ci-bash 2>"$r/err")" || rc=$?; err="$(cat "$r/err")"
+    # byte-compatible output: the same RESULT line and status line as an undeclared test
+    [ $rc -eq 0 ] \
+        && [ "$out" = 'RESULT gate=ci-bash total=1 pass=1 fail=0 timeout=0 quarantined=0 sig_mismatch=0 quar_now_pass=0' ] \
+        && [ "$err" = '  PASS         a_test' ] \
+        && ok "(d) normal success -> PASS; stdout/stderr byte-identical to an undeclared pass" || bad "assert_d" "rc=$rc out=$out err=$err"
+    rm -rf "$r"
+}
+test_assert_name_boundary() {
+    echo test_assert_name_boundary
+    local r; r="$(mkrepo)"
+    # "[PASS] ALPHA_ONEX" is a different name; "# [PASS] ALPHA_ONE" is not a result line
+    addtest "$r" a_test.sh "$DECL\nprintf '  [PASS] ALPHA_ONEX\\\\n # [PASS] ALPHA_ONE\\\\n  [PASS] BETA_TWO\\\\n'\nexit 0"
+    mkindex "$r" <<< "$(row a_test ci-bash)"
+    local rc=0 err; err="$(runr "$r" run --gate ci-bash 2>&1 >/dev/null)" || rc=$?
+    [ $rc -eq 1 ] && grep -q 'required assertion ALPHA_ONE: MISSING' <<<"$err" \
+        && ok "a name matches only whole, at the start of a result line" || bad "assert_boundary" "rc=$rc $err"
+    rm -rf "$r"
+}
+test_assert_malformed_fail_closed() {
+    echo test_assert_malformed_fail_closed
+    local r rc
+    for decl in '# meta:ta.required_assertions="alpha-one"' '# meta:ta.required_assertions=""' \
+                '# meta:ta.required_assertions="ALPHA_ONE,"' '# meta:ta.required_assertions=",ALPHA_ONE"' \
+                '# meta:ta.required_assertions="ALPHA_ONE,,BETA_TWO"' '# meta:ta.required_assertions="ALPHA_ONE BETA_TWO"' \
+                "$DECL\n# meta:ta.required_assertions=\"ALPHA_ONE\""; do
+        r="$(mkrepo)"
+        addtest "$r" a_test.sh "$decl\nprintf '  [PASS] ALPHA_ONE\\\\n  [PASS] BETA_TWO\\\\n'\nexit 0"
+        mkindex "$r" <<< "$(row a_test ci-bash)"
+        rc=0; runr "$r" run --gate ci-bash >/dev/null 2>&1 || rc=$?
+        [ $rc -eq 1 ] && ok "malformed/duplicate declaration fails closed: ${decl%%\\n*}" || bad "assert_malformed" "rc=$rc decl=$decl"
+        rm -rf "$r"
+    done
+}
+test_assert_undeclared_unchanged() {
+    echo test_assert_undeclared_unchanged
+    local r; r="$(mkrepo)"
+    # no declaration: judged by exit status alone, exactly as before (even with a [FAIL] line)
+    addtest "$r" a_test.sh "printf '  [FAIL] SOMETHING\\\\n'\nexit 0"
+    mkindex "$r" <<< "$(row a_test ci-bash)"
+    local rc=0; runr "$r" run --gate ci-bash >/dev/null 2>&1 || rc=$?
+    [ $rc -eq 0 ] && ok "a test without a declaration keeps exit-status-only semantics" || bad "assert_undeclared" "rc=$rc"
+    rm -rf "$r"
+}
+test_summary_content() {
+    echo test_summary_content
+    local r; r="$(mkrepo)"
+    addtest "$r" a_test.sh "$DECL\nprintf 'SECRET_OUTPUT_TOKEN\\\\n  [PASS] ALPHA_ONE x\\\\n  [PASS] BETA_TWO y\\\\n'\nexit 0"
+    addtest "$r" b_test.sh "$DECL\nprintf 'SECRET_OUTPUT_TOKEN\\\\n  [PASS] ALPHA_ONE x\\\\n'\nexit 0"
+    addtest "$r" u_test.sh "printf 'SECRET_OUTPUT_TOKEN\\\\n'\nexit 0"
+    mkindex "$r" <<< "$(row a_test ci-bash; row b_test ci-bash; row u_test ci-bash)"
+    local rc=0 sum="$r/summary.md"
+    ( export GITHUB_STEP_SUMMARY="$sum" GITHUB_SHA=0123456789abcdef0123; runr "$r" run --gate ci-bash >/dev/null 2>&1 ) || rc=$?
+    local s; s="$(cat "$sum" 2>/dev/null || true)"
+    if [ $rc -eq 1 ] \
+       && grep -qF '| `a_test` | `0123456789ab` | PASS | `ALPHA_ONE` | PASS |' <<<"$s" \
+       && grep -qF '| `a_test` | `0123456789ab` | PASS | `BETA_TWO` | PASS |' <<<"$s" \
+       && grep -qF '| `b_test` | `0123456789ab` | FAIL | `BETA_TWO` | MISSING |' <<<"$s" \
+       && ! grep -q 'SECRET_OUTPUT_TOKEN' <<<"$s" && ! grep -q 'u_test' <<<"$s"; then
+        ok "Job Summary: test id + commit + names + results; no test output; undeclared tests absent"
+    else
+        bad "summary_content" "rc=$rc summary=$s"
+    fi
+    rm -rf "$r"
+}
+test_summary_never_masks_rc() {
+    echo test_summary_never_masks_rc
+    local r rc1=0 rc2=0
+    r="$(mkrepo)"
+    addtest "$r" p_test.sh "$DECL\nprintf '  [PASS] ALPHA_ONE\\\\n  [PASS] BETA_TWO\\\\n'\nexit 0"
+    addtest "$r" f_test.sh "$DECL\nprintf '  [PASS] ALPHA_ONE\\\\n  [PASS] BETA_TWO\\\\n'\nexit 1"
+    mkindex "$r" <<< "$(row p_test ci-bash)"
+    ( export GITHUB_STEP_SUMMARY="$r/no/such/dir/summary.md"; runr "$r" run --gate ci-bash >/dev/null 2>&1 ) || rc1=$?
+    mkindex "$r" <<< "$(row p_test ci-bash; row f_test ci-bash)"
+    ( export GITHUB_STEP_SUMMARY="$r/no/such/dir/summary.md"; runr "$r" run --gate ci-bash >/dev/null 2>&1 ) || rc2=$?
+    [ $rc1 -eq 0 ] && [ $rc2 -eq 1 ] && ok "an unwritable summary changes neither a pass (rc 0) nor a failure (rc 1)" \
+        || bad "summary_masks" "rc1=$rc1 rc2=$rc2"
+    rm -rf "$r"
+}
+
+for t in test_assert_a_nonzero_kept test_assert_b_missing_pass test_assert_c_explicit_fail \
+         test_assert_d_success_format test_assert_name_boundary test_assert_malformed_fail_closed \
+         test_assert_undeclared_unchanged test_summary_content test_summary_never_masks_rc; do
+    "$t"
+done
 
 for t in test_valid_run test_fail_propagates test_timeout_propagates test_deferred_not_executed \
          test_lab_manual_and_package test_reject_unknown_gate test_reject_dupes_and_missing \
