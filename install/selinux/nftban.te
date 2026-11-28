@@ -17,7 +17,7 @@
 # journalctl_exec_t / systemd_systemctl_exec_t which EL8 refpolicy 3.14.3 lacks;
 # wrap in optional_policy() if EL8 is ever in scope).
 
-policy_module(nftban, 1.2.4)
+policy_module(nftban, 1.2.5)
 
 ########################################
 # External type requires
@@ -308,6 +308,18 @@ kernel_read_net_sysctls(nftband_t)
 logging_read_syslog_pid(nftband_t)
 logging_mmap_journal(nftband_t)
 logging_watch_journal_dir(nftband_t)
+# (3) v1.238.2 BUG-LOGINMON-BLIND-ON-PERSISTENT-JOURNAL-SELINUX-WATCH-DENIED. (2) covers the
+#     VOLATILE journal only: logging_watch_journal_dir grants watch on syslogd_var_run_t
+#     (/run/log/journal). With a PERSISTENT journal the files live in /var/log/journal and
+#     /var/log/journal/<machine-id>, both labelled var_log_t. The follower already READS them
+#     (logging_read_generic_logs above), but it could not inotify-watch the directories, so it
+#     stayed alive, never woke on new entries and delivered no line: 4 fixture SSH failures,
+#     0 LoginMon detections, no ban (Rocky 10.1 Enforcing, 2026-11-28).
+#     Measured: avc denied { watch } comm="journalctl" path="/var/log/journal"
+#     scontext=nftband_t tcontext=var_log_t tclass=dir (and the same for the machine-id dir).
+#     logging_watch_generic_log_dirs = var_log_t:dir { getattr watch } + files_search_var.
+#     Directories only: no file permission, no other log type.
+logging_watch_generic_log_dirs(nftband_t)
 
 ########################################
 # Shell-outs (ACCEPT_BROAD_DOMAIN_NOW_REDUCE_LATER — see D-V147-REDUCE-NFTBAND-SHELLOUTS)

@@ -11,6 +11,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.238.2] - 2026-11-28 — Fixes found in v1.238.1 release acceptance: boot-time bans on SELinux hosts, PortScan on EL enforcing, Suricata PortScan replay, rebuild result, drop-log rate limit
+
+v1.238.0 and v1.238.1 were built as drafts and were not published. v1.238.2 contains every change listed under v1.238.1 and v1.238.0 below, plus the fixes in this section.
+The problems fixed here were found during release acceptance of v1.238.1 on EL9/EL10 with SELinux enforcing, and in a read-only check of production hosts.
+
+### Fixed
+
+- **Durable bans and the whitelist were not loaded at boot on EL9/EL10 with SELinux enforcing** (#1533). This was a regression in v1.238.1.
+  - `nftban-boot-content.service` runs nft in the `iptables_t` domain, which may not write the capture files that v1.238.1 placed in `/run/nftban-writers`. The probe then read an empty listing, and the durable content was not loaded before the daemon started.
+  - The nft probes, the BotGuard/PortScan/DDoS observe checks and the DDoS Suricata block-rule listing now capture nft's output through a pipe and write no file. This replaces the capture-file change described under v1.238.1.
+  - The PortScan journal batch is the only capture file left; the daemon writes it.
+- **PortScan classic detected nothing on EL9/EL10 with SELinux enforcing** (#1534).
+  - The daemon may not write `/dev/log`. The `logger` call for each PortScan event failed, and under the cycle's error handling that ended the whole cycle at the first scan line, after the read position was already saved.
+  - The event `logger` call is now best-effort. If the event record in `portscan-events.log` cannot be written either, detection continues and one WARN per cycle reports the lost record.
+- **Suricata PortScan acted on the same EVE alert again in every cycle** (#1538).
+  - The daemon cycle did not save the EVE read position, so every cycle re-read the alert file from an old position. Measured on EL9: two alerts produced 2,185 ban records over about 36 hours, and the address stayed banned because each repeat refreshed its timeout.
+  - The read position is now saved after every cycle and survives restarts. Only complete lines are processed, a batch limit continues in the next cycle, and an alert whose ban failed is retried in the next cycle without repeating the alerts before it.
+  - On the first cycle after the upgrade, the reader starts at the end of the EVE file, so alerts written before the upgrade are not acted on again.
+  - A failed ban is reported as an error and is no longer logged as "Blocked". If the read position cannot be saved, a WARN says that this cycle's alerts may be acted on again.
+- **`nftban firewall rebuild` reported success when a module re-apply failed** (#1536).
+  - The rebuild runs `nftban <module> reload` as a child process. That child did not receive several helper functions, so a PortScan reload after a mode switch failed with `command not found`. The rebuild still printed `Final status: … (all checks passed)` and returned 0.
+  - The helper functions are now available to the child. In a rebuild child, DDoS `auto` with Suricata available therefore also stays classic, as decided in v1.238.1.
+  - A failed DDoS, PortScan or BotGuard re-apply is named in the final line (`module re-apply FAILED: …`). An operator rebuild then returns 1 with a `REBUILD INCOMPLETE` line. Installer and `update apply` rebuilds keep exit code 0 and their result record.
+- **The final drop log was not rate limited** (#1537).
+  - The rule `counter … log prefix "nftban: drop: " limit rate 10/minute` logged every dropped packet before the limit was evaluated. A production host logged up to 10,284 lines per minute.
+  - The limit now comes before the log statement in every shipped ruleset, including the recovery ruleset. The counter still counts every dropped packet, and the drop itself is unchanged.
+- **Switching PortScan from classic to Suricata could leave no detector running** (#1535).
+  - Measured on EL9 enforcing: `nftban portscan mode set suricata` and the restart both returned 0 and removed the classic rules. Then the Suricata enable refused, and no detector ran for 19 minutes or more.
+  - The Suricata binary is now found at the configured path, the default path or through `PATH`. Readiness means the binary exists and the service runs. The resolver and the enable step use the same check; an old EVE file no longer blocks enable.
+  - If Suricata is not ready, PortScan keeps classic. `nftban portscan mode show` reports `Configured: suricata / Effective: classic`, and a WARN says the mode transition is INCOMPLETE. The daemon and the shell accept this kept-classic plan only for PortScan and only when the plan names the unmet intent. DDoS is unchanged.
+- **The PortScan stealth aggregate banned an address again from evidence it had already acted on** (#1540).
+  - The aggregate, which runs every 15 minutes, re-scored the full event history. An address that was banned and later released, or unbanned by an operator, was banned again from the same old events.
+  - Both event sources now use a 24-hour window, and events with an unreadable time are skipped. Only events newer than the address's last PortScan ban count. An operator unban therefore holds until new scan activity appears.
+- **LoginMon detected nothing on a host with a persistent journal and SELinux enforcing** (#1539).
+  - The journal follower in `nftband_t` was denied the inotify watch on `/var/log/journal` (`var_log_t`). It stayed running but received no lines, so SSH and auth detection saw nothing. The earlier grants covered only the volatile journal in `/run/log/journal`.
+  - The policy module (1.2.5) adds `logging_watch_generic_log_dirs(nftband_t)`, which allows `getattr` and `watch` on `var_log_t` directories and nothing broader.
+- **The host's own addresses were accepted as trusted incoming sources** (#1542).
+  - NFTBan records the host's addresses (interfaces, public IPv4/IPv6, default-route source) in `whitelist.d/00-system.conf` and `00-system-ip.conf` so they can never be banned. The same entries were also loaded into `whitelist_ipv4`/`whitelist_ipv6`, which the INPUT chain accepts before every other check, with no interface limit.
+  - Measured on IPv6: a host on the same network that forged one of these addresses as its source was accepted, for example to a closed UDP port. On IPv4 the kernel's own checks may drop such packets first; that was not measured on the same host.
+  - Addresses recorded only because the host owns them still cannot be banned, but they are no longer added to the whitelist sets. This applies to boot, rebuild, the daemon sync, the 15-minute maintenance run, `nftban whitelist-system sync` and `nftban flush`.
+  - Localhost, the admin session address, the SSH client address, `whitelistme` entries and every operator whitelist entry are unchanged. An address that is both host-owned and explicitly whitelisted keeps its accept for as long as the explicit entry lasts.
+
+### Upgrade and operator notes
+
+- **Host addresses and incoming traffic.** After the upgrade's rebuild, the host's own addresses leave `whitelist_ipv4`/`whitelist_ipv6`. They still cannot be banned. Traffic that arrived with one of the host's own addresses as source is now handled by the normal rules. If such traffic is wanted (for example hairpin NAT that keeps the public address as source), add the address to `whitelist.d/99-manual.conf`.
+
+- **Suricata PortScan on a host that ran v1.238.1 or earlier.** After the upgrade, repeated bans from old EVE alerts stop. Addresses that were kept banned by the repeats are released when their remaining timeout ends.
+- **Kernel log volume.** After the upgrade's rebuild, the final drop log is limited to 10 lines per minute plus a burst of 5. The `total_input_drop` counter is unchanged.
+
+### Tests
+
+- New regression tests for each fix. Each one fails on the code before the fix and passes with it.
+- Static checks: exported shell functions carry the functions they call (`exported_function_closure_v1238_2_test`), and the final drop rule order is checked in every shipped ruleset (`nft_drop_log_limit_order_v1238_2_test`).
+- The SELinux policy change is checked statically: the volatile-journal grants stay, and broader log-watch grants are refused (`selinux_loginmon_persistent_journal_v1238_2_test`).
+
+### Known issues
+
+- **Suricata PortScan does not add up alerts across daemon cycles.** Each cycle starts with fresh scores, so a slow scan whose alerts fall into different cycles may stay below the ban threshold. This was already the case before v1.238.2. Classic mode is not affected.
+
+---
+
 ## [v1.238.1] - 2026-11-26 — Fixes found in v1.238.0 release acceptance: BotGuard after reboot on SELinux hosts, IPv6 BotGuard/BotScan sets, DDoS auto mode
 
 v1.238.0 was built as a draft and was not published. v1.238.1 contains every change listed under v1.238.0 below, plus the fixes in this section.
