@@ -621,7 +621,7 @@ nftban_module_report_modes() {
     #     A COHERENT SNAPSHOT WITHOUT LOCKING READERS.
     # ⛔ Read-only commands MUST NOT take the convergence lock — a status query
     # must never be able to block, or be blocked by, a converging writer.
-    local p_module="" p_effective="" p_configured="" p_gen=""
+    local p_module="" p_effective="" p_configured="" p_gen="" p_unmet=""
     local snap_gen="" snap_ok="false" _try g1 g2 pf
     # ⛔ IN-TRANSACTION VERIFICATION. Commit-last is only meaningful if the
     # writer can VERIFY the set it staged BEFORE making it authoritative. When
@@ -644,6 +644,7 @@ nftban_module_report_modes() {
                     NFTBAN_PLAN_EFFECTIVE_MODE)   p_effective="$tv" ;;
                     NFTBAN_PLAN_CONFIGURED_MODE)  p_configured="$tv" ;;
                     NFTBAN_PLAN_BOUND_GENERATION) p_gen="$tv" ;;
+                    NFTBAN_PLAN_INTENT_UNMET)     p_unmet="$tv" ;;
                 esac
             done < "$pf"
         fi
@@ -656,7 +657,7 @@ nftban_module_report_modes() {
         #     A STRING COMPARISON INSIDE (( )) IS NOT A STRING COMPARISON.
         [[ "$snap_ok" == "true" ]] && break
         g1="$(nftban_plan_generation_current)"
-        p_module=""; p_effective=""; p_configured=""; p_gen=""
+        p_module=""; p_effective=""; p_configured=""; p_gen=""; p_unmet=""
         pf="$(nftban_plan_record_path "$module" "$g1")"
         # MIGRATION READ. A host converged before v1.229.11 carries an
         # unsuffixed record. It is accepted ONLY if it declares the generation
@@ -672,6 +673,7 @@ nftban_module_report_modes() {
                     NFTBAN_PLAN_EFFECTIVE_MODE)   p_effective="$v" ;;
                     NFTBAN_PLAN_CONFIGURED_MODE)  p_configured="$v" ;;
                     NFTBAN_PLAN_BOUND_GENERATION) p_gen="$v" ;;
+                    NFTBAN_PLAN_INTENT_UNMET)     p_unmet="$v" ;;
                 esac
             done < "$pf"
         fi
@@ -695,7 +697,14 @@ nftban_module_report_modes() {
     elif [[ "$p_configured" != "$configured" ]]; then
         basis="plan_superseded_by_config_change"
     elif [[ ( "$configured" == "classic" || "$configured" == "suricata" ) && "$p_effective" != "$configured" ]]; then
-        basis="plan_contradicts_explicit_intent"
+        # v1.238.2 (RC row 11): the ONE sanctioned exception, identical to the Go reader
+        # (internal/nftbanconf/modeplan.go): an unmet explicit PortScan suricata intent with the
+        # working classic mode kept and the contract field NFTBAN_PLAN_INTENT_UNMET present.
+        if [[ "$module" == "portscan" && "$configured" == "suricata" && "$p_effective" == "classic" && -n "$p_unmet" ]]; then
+            effective="classic"; basis="explicit_intent_unmet_kept_classic"
+        else
+            basis="plan_contradicts_explicit_intent"
+        fi
     else
         effective="$p_effective"; basis="current_plan"
     fi

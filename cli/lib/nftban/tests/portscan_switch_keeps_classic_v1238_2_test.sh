@@ -69,6 +69,33 @@ r=$(resolve portscan absent)
 r=$(resolve ddos no)
 [[ "$r" == "suricata configured_suricata warn=no unmet=none" ]] && ok "DDoS explicit suricata is unchanged (owner scope)" || no "ddos" "$r"
 
+# report <module> <plan effective> <unmet field or ""> -> "EFFECTIVE BASIS" from the REAL shell plan
+# reader (nftban_module_report_modes), the source of the PortScan cycle's active mode. RC row 11
+# rerun: the Go reader accepted the kept-classic plan, this copy still said UNKNOWN and no detector ran.
+report() {
+    local run="$W/run-$1-$2-${3:-none}"; mkdir -p "$run"; echo 7 > "$run/convergence-generation"
+    { echo "NFTBAN_PLAN_MODULE=$1"; echo "NFTBAN_PLAN_ENABLED=true"; echo "NFTBAN_PLAN_CONFIGURED_MODE=suricata"
+      echo "NFTBAN_PLAN_EFFECTIVE_MODE=$2"; echo "NFTBAN_PLAN_RESOLUTION_BASIS=x"; echo "NFTBAN_PLAN_BOUND_GENERATION=7"
+      [[ -n "$3" ]] && echo "NFTBAN_PLAN_INTENT_UNMET=$3"; } > "$run/module-plan-$1.env.7"
+    env -i PATH="$W/bin:/usr/bin:/bin" HOME="$W" NFTBAN_LIB_DIR="$LIB" NFTBAN_CONFIG_DIR="$W/etc" \
+        NFTBAN_PLAN_RECORD_DIR="$run" NFTBAN_PLAN_GENERATION_FILE="$run/convergence-generation" bash -c '
+        source "$1/lib/module_authority.sh" >/dev/null 2>&1 || { echo SOURCE_FAILED; exit 0; }
+        out=$(nftban_module_report_modes "$2" 2>/dev/null)
+        e=$(grep "^NFTBAN_REPORT_EFFECTIVE_MODE=" <<<"$out" | cut -d= -f2)
+        b=$(grep "^NFTBAN_REPORT_EFFECTIVE_BASIS=" <<<"$out" | cut -d= -f2)
+        echo "$e $b"' _ "$LIB" "$1"
+}
+
+echo "=== shell plan reader: the kept-classic plan (same rule as internal/nftbanconf/modeplan.go) ==="
+r=$(report portscan classic suricata_not_ready)
+[[ "$r" == "classic explicit_intent_unmet_kept_classic" ]] && ok "portscan kept classic + field -> effective classic" || no "reader kept-classic" "$r"
+r=$(report portscan classic "")
+[[ "$r" == "unknown plan_contradicts_explicit_intent" ]] && ok "no field -> still a contradiction" || no "reader no field" "$r"
+r=$(report ddos classic suricata_not_ready)
+[[ "$r" == "unknown plan_contradicts_explicit_intent" ]] && ok "DDoS is not covered -> contradiction" || no "reader ddos" "$r"
+r=$(report portscan suricata "")
+[[ "$r" == "suricata current_plan" ]] && ok "normal suricata plan unchanged" || no "reader suricata" "$r"
+
 # enable <service: up|down> <eve: stale|fresh> -> rc
 enable() {
     local eve="$W/eve-alerts.json"; : > "$eve"
