@@ -1194,3 +1194,13 @@ export -f _nftban_plan_lock_acquire _nftban_plan_lock_release nftban_plan_record
     nftban_plan_txn_abort nftban_plan_txn_commit nftban_plan_generation_reap
 export -f nftban_bool_is_true _nftban_module_feeds_enabled
 export -f nftban_module_report_modes nftban_plan_generation_current _nftban_module_enable_var _nftban_module_read_key nftban_module_effective_enabled nftban_module_set_enabled _nftban_module_mode_var nftban_module_resolve_plan nftban_module_plan_provenance_ok
+# v1.238.2 (owner 2026-11-28, RC rebuild after a mode switch): the callees of the exported
+# functions above travel WITH them. `firewall rebuild` runs `nftban <module> reload` as a child;
+# that child inherits nftban_module_resolve_plan, so nftban_portscan.sh / nftban_ddos.sh skip
+# sourcing this file (`declare -F nftban_module_resolve_plan` guard) and only exported functions
+# exist there. Measured on EL9 enforcing: "_nftban_module_central_wins: command not found",
+# portscan reload rc 1 inside the rebuild. nftban_module_mode_unadmitted is the same case: inside
+# `if`, "command not found" is false, so auto would resolve to the NON-admitted suricata mode
+# (the v1.238.1 DDoS auto defect) in a rebuild child. Guarded by
+# exported_function_closure_v1238_2_test (every exported function's library callees are exported).
+export -f _nftban_module_central_wins nftban_module_mode_unadmitted

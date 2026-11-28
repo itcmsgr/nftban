@@ -5163,6 +5163,15 @@ _firewall_rebuild_core() {
         _final_case="protected"
         [[ "$quiet" == "false" ]] && echo "Note: timer liveness (VAL-TIMER-001) DEFERRED to the installer — core timers start in its Configure phase and are validated after it."
     fi
+    # v1.238.2 (owner 2026-11-28): module re-applies that FAILED in this rebuild. Measured on EL9
+    # enforcing: "Portscan reload failed (exit 1) … rules for mode 'suricata' were NOT applied",
+    # then "Final status: IDLE (all checks passed)" and rc 0. A failed required reload stays in
+    # the final line, and in runtime context in the rc (see REBUILD INCOMPLETE below).
+    local _rebuild_failed_modules=""
+    [[ "${_REBUILD_MODULE_DDOS:-}" == "${MR_FAILED:-RESTORE_FAILED}" ]] && _rebuild_failed_modules+=" ddos"
+    [[ "${_REBUILD_MODULE_PORTSCAN:-}" == "${MR_FAILED:-RESTORE_FAILED}" ]] && _rebuild_failed_modules+=" portscan"
+    [[ "${_REBUILD_MODULE_BOTGUARD:-}" == "${MR_FAILED:-RESTORE_FAILED}" ]] && _rebuild_failed_modules+=" botguard"
+    _rebuild_failed_modules="${_rebuild_failed_modules# }"
 
     case "$_final_case" in
         protected|idle)
@@ -5175,6 +5184,8 @@ _firewall_rebuild_core() {
                 [[ "$quiet" == "false" ]] && echo "Final status: ${post_status^^} validator status; firewall checks passed; timer liveness DEFERRED to the installer${_rebuild_whitelist_converged:+ (whitelist: ${_rebuild_whitelist_converged})}"
             elif [[ "${_rebuild_whitelist_converged:-true}" == "deferred" ]]; then
                 [[ "$quiet" == "false" ]] && echo "Final status: ${post_status^^} (schema checks passed; whitelist projection DEFERRED)"
+            elif [[ -n "$_rebuild_failed_modules" ]]; then
+                [[ "$quiet" == "false" ]] && echo "Final status: ${post_status^^} (firewall checks passed; module re-apply FAILED: ${_rebuild_failed_modules})"
             else
                 [[ "$quiet" == "false" ]] && echo "Final status: ${post_status^^} (all checks passed)"
             fi
@@ -5234,11 +5245,26 @@ _firewall_rebuild_core() {
             # context WITHOUT a result-file consumer only. Installer and `update apply` read the
             # record, where COMPLETE must pair with rc 0 (switchop ContradictsExitCode); they keep
             # rc 0 and the step-10 warning. Generation and record above are unchanged.
+            # v1.238.2 (owner 2026-11-28): the same rule for the DDoS and PortScan re-applies
+            # (steps 8/9). BotGuard wording and behaviour are unchanged. No nested if/fi in this
+            # statement: rebuild_probe_constants_botguard_rc_v1238_test extracts it to its first fi.
             if [[ -z "${_NFTBAN_REBUILD_RESULT_FILE:-}" && "${_NFTBAN_REBUILD_CONTEXT:-runtime-required}" == "runtime-required" \
-                  && "${_REBUILD_MODULE_BOTGUARD:-}" == "${MR_FAILED:-RESTORE_FAILED}" ]]; then
+                  && ( "${_REBUILD_MODULE_BOTGUARD:-}" == "${MR_FAILED:-RESTORE_FAILED}" \
+                    || "${_REBUILD_MODULE_PORTSCAN:-}" == "${MR_FAILED:-RESTORE_FAILED}" \
+                    || "${_REBUILD_MODULE_DDOS:-}" == "${MR_FAILED:-RESTORE_FAILED}" ) ]]; then
                 # v1.238 group g2 (owner wording): state the failure, do not assume which rules remain.
-                echo "REBUILD INCOMPLETE: BotGuard rule re-apply failed." >&2
-                echo "  Run: nftban botguard apply   (shows the reason)" >&2
+                [[ "${_REBUILD_MODULE_BOTGUARD:-}" == "${MR_FAILED:-RESTORE_FAILED}" ]] \
+                    && { echo "REBUILD INCOMPLETE: BotGuard rule re-apply failed." >&2
+                         echo "  Run: nftban botguard apply   (shows the reason)" >&2; }
+                # The operator hints are printed with %s: mode_plan_exclusivity_v1229_7_test locates the
+                # module CONVERGENCE calls by the literal "nftban <ddos|portscan> reload", and a hint
+                # after the generation commit is not a convergence.
+                [[ "${_REBUILD_MODULE_PORTSCAN:-}" == "${MR_FAILED:-RESTORE_FAILED}" ]] \
+                    && { echo "REBUILD INCOMPLETE: PortScan re-apply failed; its rules for the effective mode were not applied." >&2
+                         printf '  Run: nftban %s reload   (shows the reason)\n' portscan >&2; }
+                [[ "${_REBUILD_MODULE_DDOS:-}" == "${MR_FAILED:-RESTORE_FAILED}" ]] \
+                    && { echo "REBUILD INCOMPLETE: DDoS re-apply failed; its rules for the effective mode were not applied." >&2
+                         printf '  Run: nftban %s reload   (shows the reason)\n' ddos >&2; }
                 return 1
             fi
             return 0
