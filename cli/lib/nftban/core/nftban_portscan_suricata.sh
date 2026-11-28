@@ -394,12 +394,16 @@ nftban_portscan_suricata_read_eve() {
     local len=$(( file_size - off ))
     (( len > 0 )) || return 0
 
-    # Bytes of the window that end with a newline. awk's END keeps the last record; when the window
-    # does not end with a newline that record is the partial line (looked at in the last <=1 MiB).
-    local last_byte partial=0 complete
-    last_byte=$(tail -c +$((off + 1)) "$eve_file" 2>/dev/null | head -c "$len" | tail -c 1 | od -An -tx1 | tr -d ' \n')
+    # Bytes of the window that end with a newline. The window is read with dd (skip_bytes /
+    # count_bytes): exact bytes from the file, no early-closing reader in a pipe (EPIPE gate).
+    # The last byte of the window is the byte at file_size-1. When it is not a newline, awk's END
+    # keeps the last record = the partial line (looked at in the window's last <=1 MiB).
+    local last_byte partial=0 complete tail_off tail_len
+    last_byte=$(dd if="$eve_file" iflag=skip_bytes,count_bytes skip=$(( file_size - 1 )) count=1 status=none 2>/dev/null \
+                | od -An -tx1 | tr -d ' \n')
     if [[ "$last_byte" != "0a" ]]; then
-        partial=$(tail -c +$((off + 1)) "$eve_file" 2>/dev/null | head -c "$len" | tail -c 1048576 \
+        tail_len=$(( len < 1048576 ? len : 1048576 )); tail_off=$(( file_size - tail_len ))
+        partial=$(dd if="$eve_file" iflag=skip_bytes,count_bytes skip="$tail_off" count="$tail_len" status=none 2>/dev/null \
                   | awk 'END { print length($0) }')
         [[ "$partial" =~ ^[0-9]+$ ]] || partial=$len
     fi
@@ -422,7 +426,7 @@ nftban_portscan_suricata_read_eve() {
         handled_end=$end
         count=$((count + 1))
         (( count >= batch_size )) && break
-    done < <(tail -c +$((off + 1)) "$eve_file" 2>/dev/null | head -c "$complete" | \
+    done < <(dd if="$eve_file" iflag=skip_bytes,count_bytes skip="$off" count="$complete" status=none 2>/dev/null | \
              grep -ab -E '"event_type"\s*:\s*"alert"' | \
              grep -iE "$sig_patterns")
 
