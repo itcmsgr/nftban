@@ -157,7 +157,14 @@ nftban_portscan_load_config() {
 # =============================================================================
 
 # Check if Suricata binary exists
+# v1.238.2 (RC row 7): ONE answer for the plan resolver and for status. When the Suricata module
+# is loaded, its check (configured path, default path, then PATH) decides; the old exact-path test
+# remains only for a shell where that module was never sourced.
 _nftban_portscan_suricata_binary_exists() {
+    if declare -F nftban_portscan_suricata_binary_exists >/dev/null 2>&1; then
+        nftban_portscan_suricata_binary_exists
+        return
+    fi
     local binary="${PORTSCAN_SURICATA_BINARY:-/usr/bin/suricata}"
     [[ -x "$binary" ]]
 }

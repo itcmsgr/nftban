@@ -118,9 +118,33 @@ _nftban_portscan_suricata_log() {
 # =============================================================================
 
 # Check if Suricata binary exists
+# v1.238.2 (owner 2026-11-28, RC row 7): EPEL installs /usr/sbin/suricata, while the shipped
+# PORTSCAN_SURICATA_BINARY is /usr/bin/suricata and nothing searched further. `auto` then
+# resolved to classic with Suricata running (basis auto_suricata_unavailable, EL9 enforcing).
+#   - PORTSCAN_SURICATA_BINARY set to any OTHER path = an explicit operator choice: only that
+#     path counts, no search (its meaning is preserved).
+#   - unset or the shipped default /usr/bin/suricata: that path first, then `command -v suricata`
+#     in the caller's PATH (nftband's unit has no PATH override, so systemd's default PATH with
+#     /usr/sbin applies to the daemon's cycles).
+#     Limitation: an operator who explicitly writes the default value cannot be told apart from it.
+# The chosen executable is kept in _PORTSCAN_SURICATA_BINARY_SELECTED (with its source) for the
+# enable log line; nothing else reads it.
 nftban_portscan_suricata_binary_exists() {
-    local binary="${PORTSCAN_SURICATA_BINARY:-/usr/bin/suricata}"
-    [[ -x "$binary" ]]
+    local binary="${PORTSCAN_SURICATA_BINARY:-/usr/bin/suricata}" found=""
+    _PORTSCAN_SURICATA_BINARY_SELECTED=""
+    if [[ "$binary" != "/usr/bin/suricata" ]]; then
+        [[ -x "$binary" ]] || return 1
+        _PORTSCAN_SURICATA_BINARY_SELECTED="$binary (configured)"
+        return 0
+    fi
+    if [[ -x "$binary" ]]; then
+        _PORTSCAN_SURICATA_BINARY_SELECTED="$binary (default)"
+        return 0
+    fi
+    found=$(command -v suricata 2>/dev/null) || return 1
+    [[ -n "$found" && -x "$found" ]] || return 1
+    _PORTSCAN_SURICATA_BINARY_SELECTED="$found (PATH)"
+    return 0
 }
 
 # Check if Suricata service is running
@@ -883,7 +907,7 @@ nftban_portscan_suricata_enable() {
     # Initialize state
     nftban_portscan_suricata_init_state
 
-    _nftban_portscan_suricata_log "INFO" "Suricata portscan detection enabled"
+    _nftban_portscan_suricata_log "INFO" "Suricata portscan detection enabled (binary: ${_PORTSCAN_SURICATA_BINARY_SELECTED:-not checked})"
     return 0
 }
 
