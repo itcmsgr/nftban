@@ -374,7 +374,7 @@ nftban_module_mode_unadmitted() {
 }
 
 nftban_module_resolve_plan() {
-    local module="${1:-}" mode_var configured effective basis rid now enabled
+    local module="${1:-}" mode_var configured effective basis rid now enabled intent_unmet=""
 
     # ⛔ PLAN-N1 ENFORCEMENT: SECOND RESOLUTION WITHIN A TRANSACTION IS A
     # CONTRACT VIOLATION -- even when it would produce the SAME effective_mode.
@@ -405,7 +405,26 @@ nftban_module_resolve_plan() {
     else
         case "$configured" in
             classic)  effective="classic";  basis="configured_classic" ;;
-            suricata) effective="suricata"; basis="configured_suricata" ;;
+            suricata)
+                effective="suricata"; basis="configured_suricata"
+                # v1.238.2 (owner 2026-11-28, RC row 11): an explicit PortScan switch to suricata
+                # removed the classic projection, then enable refused (Suricata not ready) and
+                # neither detector ran for 19+ min while mode set + restart returned 0. The working
+                # mode is now KEPT and the transition is reported incomplete: the plan says
+                # effective classic with an explicit basis. Same readiness as enable
+                # (nftban_portscan_suricata_ready). DDoS is unchanged (owner scope: row 11).
+                if [[ "$module" == "portscan" ]]; then
+                    if [[ "$(type -t nftban_portscan_suricata_ready || true)" != "function" ]]; then
+                        effective="classic"; basis="configured_suricata_module_not_loaded_kept_classic"
+                    elif ! nftban_portscan_suricata_ready >/dev/null 2>&1; then
+                        effective="classic"; basis="configured_suricata_unavailable_kept_classic"
+                    fi
+                    if [[ "$effective" == "classic" ]]; then
+                        intent_unmet="suricata_not_ready"
+                        echo "nftban: WARN portscan: configured mode suricata is not ready (${basis}); classic stays active — mode transition INCOMPLETE" >&2
+                    fi
+                fi
+                ;;
             hybrid)
                 # ⛔ LEGACY INPUT -- ACCEPTED FOR OBSERVATION, NEVER REINTERPRETED.
                 # The frozen model has no fourth effective mode, but that does
@@ -464,6 +483,9 @@ nftban_module_resolve_plan() {
     printf 'NFTBAN_PLAN_RESOLUTION_ID=%s\n'    "$rid"
     printf 'NFTBAN_PLAN_RESOLVED_AT=%s\n'      "$now"
     printf 'NFTBAN_PLAN_RESOLUTION_BASIS=%s\n' "$basis"
+    # v1.238.2: present ONLY when an explicit intent was not met and the working mode was kept
+    # (contract field read by internal/nftbanconf/modeplan.go; other plans are unchanged).
+    [[ -n "$intent_unmet" ]] && printf 'NFTBAN_PLAN_INTENT_UNMET=%s\n' "$intent_unmet"
     return 0
 }
 
@@ -599,7 +621,7 @@ nftban_module_report_modes() {
     #     A COHERENT SNAPSHOT WITHOUT LOCKING READERS.
     # ⛔ Read-only commands MUST NOT take the convergence lock — a status query
     # must never be able to block, or be blocked by, a converging writer.
-    local p_module="" p_effective="" p_configured="" p_gen=""
+    local p_module="" p_effective="" p_configured="" p_gen="" p_unmet=""
     local snap_gen="" snap_ok="false" _try g1 g2 pf
     # ⛔ IN-TRANSACTION VERIFICATION. Commit-last is only meaningful if the
     # writer can VERIFY the set it staged BEFORE making it authoritative. When
@@ -622,6 +644,7 @@ nftban_module_report_modes() {
                     NFTBAN_PLAN_EFFECTIVE_MODE)   p_effective="$tv" ;;
                     NFTBAN_PLAN_CONFIGURED_MODE)  p_configured="$tv" ;;
                     NFTBAN_PLAN_BOUND_GENERATION) p_gen="$tv" ;;
+                    NFTBAN_PLAN_INTENT_UNMET)     p_unmet="$tv" ;;
                 esac
             done < "$pf"
         fi
@@ -634,7 +657,7 @@ nftban_module_report_modes() {
         #     A STRING COMPARISON INSIDE (( )) IS NOT A STRING COMPARISON.
         [[ "$snap_ok" == "true" ]] && break
         g1="$(nftban_plan_generation_current)"
-        p_module=""; p_effective=""; p_configured=""; p_gen=""
+        p_module=""; p_effective=""; p_configured=""; p_gen=""; p_unmet=""
         pf="$(nftban_plan_record_path "$module" "$g1")"
         # MIGRATION READ. A host converged before v1.229.11 carries an
         # unsuffixed record. It is accepted ONLY if it declares the generation
@@ -650,6 +673,7 @@ nftban_module_report_modes() {
                     NFTBAN_PLAN_EFFECTIVE_MODE)   p_effective="$v" ;;
                     NFTBAN_PLAN_CONFIGURED_MODE)  p_configured="$v" ;;
                     NFTBAN_PLAN_BOUND_GENERATION) p_gen="$v" ;;
+                    NFTBAN_PLAN_INTENT_UNMET)     p_unmet="$v" ;;
                 esac
             done < "$pf"
         fi
@@ -673,7 +697,14 @@ nftban_module_report_modes() {
     elif [[ "$p_configured" != "$configured" ]]; then
         basis="plan_superseded_by_config_change"
     elif [[ ( "$configured" == "classic" || "$configured" == "suricata" ) && "$p_effective" != "$configured" ]]; then
-        basis="plan_contradicts_explicit_intent"
+        # v1.238.2 (RC row 11): the ONE sanctioned exception, identical to the Go reader
+        # (internal/nftbanconf/modeplan.go): an unmet explicit PortScan suricata intent with the
+        # working classic mode kept and the contract field NFTBAN_PLAN_INTENT_UNMET present.
+        if [[ "$module" == "portscan" && "$configured" == "suricata" && "$p_effective" == "classic" && -n "$p_unmet" ]]; then
+            effective="classic"; basis="explicit_intent_unmet_kept_classic"
+        else
+            basis="plan_contradicts_explicit_intent"
+        fi
     else
         effective="$p_effective"; basis="current_plan"
     fi

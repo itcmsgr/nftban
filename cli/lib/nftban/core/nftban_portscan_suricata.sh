@@ -118,9 +118,33 @@ _nftban_portscan_suricata_log() {
 # =============================================================================
 
 # Check if Suricata binary exists
+# v1.238.2 (owner 2026-11-28, RC row 7): EPEL installs /usr/sbin/suricata, while the shipped
+# PORTSCAN_SURICATA_BINARY is /usr/bin/suricata and nothing searched further. `auto` then
+# resolved to classic with Suricata running (basis auto_suricata_unavailable, EL9 enforcing).
+#   - PORTSCAN_SURICATA_BINARY set to any OTHER path = an explicit operator choice: only that
+#     path counts, no search (its meaning is preserved).
+#   - unset or the shipped default /usr/bin/suricata: that path first, then `command -v suricata`
+#     in the caller's PATH (nftband's unit has no PATH override, so systemd's default PATH with
+#     /usr/sbin applies to the daemon's cycles).
+#     Limitation: an operator who explicitly writes the default value cannot be told apart from it.
+# The chosen executable is kept in _PORTSCAN_SURICATA_BINARY_SELECTED (with its source) for the
+# enable log line; nothing else reads it.
 nftban_portscan_suricata_binary_exists() {
-    local binary="${PORTSCAN_SURICATA_BINARY:-/usr/bin/suricata}"
-    [[ -x "$binary" ]]
+    local binary="${PORTSCAN_SURICATA_BINARY:-/usr/bin/suricata}" found=""
+    _PORTSCAN_SURICATA_BINARY_SELECTED=""
+    if [[ "$binary" != "/usr/bin/suricata" ]]; then
+        [[ -x "$binary" ]] || return 1
+        _PORTSCAN_SURICATA_BINARY_SELECTED="$binary (configured)"
+        return 0
+    fi
+    if [[ -x "$binary" ]]; then
+        _PORTSCAN_SURICATA_BINARY_SELECTED="$binary (default)"
+        return 0
+    fi
+    found=$(command -v suricata 2>/dev/null) || return 1
+    [[ -n "$found" && -x "$found" ]] || return 1
+    _PORTSCAN_SURICATA_BINARY_SELECTED="$found (PATH)"
+    return 0
 }
 
 # Check if Suricata service is running
@@ -193,6 +217,17 @@ nftban_portscan_suricata_eve_active() {
     age=$((current_time - file_mtime))
 
     [[ $age -le $freshness_threshold ]]
+}
+
+# v1.238.2 (owner 2026-11-28, RC row 11): readiness for an EXPLICIT PortScan suricata mode.
+# The binary is present and the service is running. EVE freshness is NOT part of it: the alert
+# file changes only when an alert is written, so on a quiet host it is "stale" while Suricata
+# works. Freshness stays a criterion for `auto` (nftban_portscan_suricata_is_available).
+# ONE definition, used by the plan resolver (module_authority.sh) and by enable below, so the
+# plan never says suricata while enable would refuse it (row 11: enable refused AFTER the classic
+# projection was removed, and neither detector ran).
+nftban_portscan_suricata_ready() {
+    nftban_portscan_suricata_binary_exists && nftban_portscan_suricata_service_running
 }
 
 # Combined availability check
@@ -953,9 +988,10 @@ nftban_portscan_suricata_cleanup() {
 nftban_portscan_suricata_enable() {
     _nftban_portscan_suricata_log "INFO" "Enabling Suricata portscan detection"
 
-    # Check if Suricata is available
-    if ! nftban_portscan_suricata_is_available; then
-        _nftban_portscan_suricata_log "ERROR" "Suricata is not available"
+    # v1.238.2 (RC row 11): the same readiness the plan resolver used (binary + service), not the
+    # auto criterion with EVE freshness, so a resolved suricata plan is never refused here.
+    if ! nftban_portscan_suricata_ready; then
+        _nftban_portscan_suricata_log "ERROR" "Suricata is not ready (binary: ${_PORTSCAN_SURICATA_BINARY_SELECTED:-not found}; service: $(nftban_portscan_suricata_service_running && echo running || echo not running))"
         return 1
     fi
 
@@ -965,7 +1001,7 @@ nftban_portscan_suricata_enable() {
     # Initialize state
     nftban_portscan_suricata_init_state
 
-    _nftban_portscan_suricata_log "INFO" "Suricata portscan detection enabled"
+    _nftban_portscan_suricata_log "INFO" "Suricata portscan detection enabled (binary: ${_PORTSCAN_SURICATA_BINARY_SELECTED:-not checked})"
     return 0
 }
 

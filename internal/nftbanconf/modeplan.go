@@ -32,7 +32,13 @@ const (
 	BasisUnbound        = "plan_not_bound_to_current_convergence"
 	BasisSuperseded     = "plan_superseded_by_config_change"
 	BasisContradiction  = "plan_contradicts_explicit_intent"
-	BasisUnknownModule  = "unknown_module"
+	// BasisIntentUnmetKeptClassic (v1.238.2, owner 2026-11-28, RC row 11): an explicit PortScan
+	// switch to suricata whose target was not ready. The shell resolver KEPT the working classic
+	// mode and recorded the unmet intent in the contract field NFTBAN_PLAN_INTENT_UNMET (not in the
+	// basis, which stays diagnostic). Without this, the daemon read the plan as a contradiction,
+	// loaded no mode, and no detector ran.
+	BasisIntentUnmetKeptClassic = "explicit_intent_unmet_kept_classic"
+	BasisUnknownModule          = "unknown_module"
 	// BasisConverging means the committed generation moved under every read
 	// attempt. That is an ACTIVE CONVERGENCE, not corruption and not a missing
 	// plan, and collapsing it into either would be a lie about the host.
@@ -116,7 +122,7 @@ func ReadEffectiveMode(module, configDir, runDir string) (string, string) {
 		return ModeUnknown, BasisNoPlan
 	}
 
-	var gotModule, effective, planConfigured, boundGen string
+	var gotModule, effective, planConfigured, boundGen, intentUnmet string
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if v, ok := strings.CutPrefix(line, "NFTBAN_PLAN_MODULE="); ok {
@@ -130,6 +136,9 @@ func ReadEffectiveMode(module, configDir, runDir string) (string, string) {
 		}
 		if v, ok := strings.CutPrefix(line, "NFTBAN_PLAN_BOUND_GENERATION="); ok {
 			boundGen = v
+		}
+		if v, ok := strings.CutPrefix(line, "NFTBAN_PLAN_INTENT_UNMET="); ok {
+			intentUnmet = v
 		}
 	}
 
@@ -156,6 +165,13 @@ func ReadEffectiveMode(module, configDir, runDir string) (string, string) {
 	// CONTRADICTION: a plan may RESOLVE `auto`; it may never OVERRIDE an
 	// explicit operator intent.
 	if explicit && effective != configured {
+		// The ONE sanctioned exception (v1.238.2, owner 2026-11-28, RC row 11): an explicit
+		// PortScan suricata intent whose target was not ready, with the working classic mode
+		// kept and the unmet intent named in its own contract field. Nothing else qualifies:
+		// DDoS, the other direction, or a record without the field stay a contradiction.
+		if module == "portscan" && configured == "suricata" && effective == "classic" && intentUnmet != "" {
+			return effective, BasisIntentUnmetKeptClassic
+		}
 		return ModeUnknown, BasisContradiction
 	}
 
