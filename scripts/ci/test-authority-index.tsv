@@ -173,6 +173,7 @@ enable_switch_json_truth_v1238_test	cli/lib/nftban/tests/enable_switch_json_trut
 epipe_guard_population_ratchet_v1231_test	cli/lib/nftban/tests/epipe_guard_population_ratchet_v1231_test.sh	architecture	test	epipe-shortcircuit	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 error_text_3line_v153_test	cli/lib/nftban/tests/error_text_3line_v153_test.sh	cli	test	cli-ux	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 expensive_predicate_v1229_13_test	cli/lib/nftban/tests/expensive_predicate_v1229_13_test.sh	cross-cutting	test	shell-predicates	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+exported_function_closure_v1238_2_test	cli/lib/nftban/tests/exported_function_closure_v1238_2_test.sh	firewall	test	daemon-runtime-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 exporter_exit2_phase2_scale_guard_v1361_test	cli/lib/nftban/tests/exporter_exit2_phase2_scale_guard_v1361_test.sh	metrics	test	exporter-exit2	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 exporter_exit2_resilience_v136_test	cli/lib/nftban/tests/exporter_exit2_resilience_v136_test.sh	metrics	test	exporter-exit2	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 exporter_no_duplicate_goroutines_emit_v217_test	cli/lib/nftban/tests/exporter_no_duplicate_goroutines_emit_v217_test.sh	metrics	test	exporter-goroutines	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			

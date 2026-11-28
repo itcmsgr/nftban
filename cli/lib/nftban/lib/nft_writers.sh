@@ -164,3 +164,9 @@ nftban_writers_run() {
 nftban_nft_write() {
     nftban_writers_run nft "$@"
 }
+
+# v1.238.2: the root-lock helpers are called by module_authority.sh's EXPORTED
+# _nftban_plan_lock_acquire / _nftban_plan_lock_release, so they must reach the same child shells
+# (see the export note in module_authority.sh). Guarded by exported_function_closure_v1238_2_test.
+export -f nftban_root_lock_path nftban_legacy_lock_path nftban_root_lock_dir_ready \
+    nftban_legacy_lock_take nftban_legacy_lock_drop
