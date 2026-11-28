@@ -272,6 +272,7 @@ nft_capture_dir_daemon_sites_v1238_1_test	cli/lib/nftban/tests/nft_capture_dir_d
 nft_capture_without_files_v1238_2_test	cli/lib/nftban/tests/nft_capture_without_files_v1238_2_test.sh	cli	test	nft-probe-authority	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nft_consumer_authority_guard_v1228_4_test	cli/lib/nftban/tests/nft_consumer_authority_guard_v1228_4_test.sh	packaging	test	systemd-execution-authority	CI_STATIC	ci-bash	true	false	false	false	false	false			
 nft_counting_model_guard_v190_test	cli/lib/nftban/tests/nft_counting_model_guard_v190_test.sh	metrics	test	nft-counting-model	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
+nft_drop_log_limit_order_v1238_2_test	cli/lib/nftban/tests/nft_drop_log_limit_order_v1238_2_test.sh	firewall	test	firewall-schema	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nft_loopback_before_invalid_v217_test	cli/lib/nftban/tests/nft_loopback_before_invalid_v217_test.sh	firewall	test	nft-schema-rule-order	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nft_ndp_rfc4861_source_scope_test	cli/lib/nftban/tests/nft_ndp_rfc4861_source_scope_test.sh	firewall	test	nft-schema-ndp	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 nft_parser_compat_v1228_8_test	cli/lib/nftban/tests/nft_parser_compat_v1228_8_test.sh	health	test	nft-parser-contract	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false	120		
