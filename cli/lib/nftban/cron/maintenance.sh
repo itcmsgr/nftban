@@ -650,24 +650,10 @@ EOF
                 mv -f "${_wl_file}.tmp" "$_wl_file"
                 log "INFO" "✅ Added $current_ipv4 to whitelist"
 
-                # ATOMIC firewall update via daemon IPC (single-writer architecture)
-                log "INFO" "Adding IP $current_ipv4 to firewall whitelist via daemon..."
-                if [[ "$_nft_table_available" == "true" ]]; then
-                    # Firewall is active - add IP via IPC
-                    if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" whitelist_ipv4 "$current_ipv4"; then
-                        log "INFO" "✅ IP $current_ipv4 whitelisted via daemon (no lockout risk)"
-                    else
-                        # IPC failed - daemon may be down, use full reload
-                        log "WARN" "Daemon IPC failed, using safe full reload..."
-                        if nftban firewall reload >/dev/null 2>&1; then
-                            log "INFO" "✅ Firewall reloaded - IP $current_ipv4 now protected"
-                        else
-                            log "WARN" "Reload failed - IP whitelisted in config but not yet active"
-                        fi
-                    fi
-                else
-                    log "WARN" "Firewall not initialized - IP whitelist updated but not applied"
-                fi
+                # v1.238.2 (SEC-WHITELIST-SELF-ADDRESSES-…): the host's own public address is recorded for
+                # SELF-BAN PROTECTION (the file line above; the ban guards read the files). Ownership
+                # grants no INPUT accept, so it is NOT added to the kernel whitelist set.
+                log "INFO" "IPv4 $current_ipv4 recorded for self-ban protection (no INPUT accept)"
 
                 # Save alert state to prevent spam (only alert once per IP)
                 mkdir -p "${NFTBAN_DATA_DIR}/state" || return 1
@@ -694,21 +680,8 @@ EOF
                 mv -f "${_wl_file}.tmp" "$_wl_file"
                 log "INFO" "✅ Added $current_ipv6 to whitelist"
 
-                # Firewall update via daemon IPC
-                if [[ "$_nft_table_available" == "true" ]]; then
-                    if nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" whitelist_ipv6 "$current_ipv6"; then
-                        log "INFO" "✅ IPv6 $current_ipv6 whitelisted via daemon (no lockout risk)"
-                    else
-                        log "WARN" "Daemon IPC failed for IPv6, using safe full reload..."
-                        if nftban firewall reload >/dev/null 2>&1; then
-                            log "INFO" "✅ Firewall reloaded - IPv6 $current_ipv6 now protected"
-                        else
-                            log "WARN" "Reload failed - IPv6 whitelisted in config but not yet active"
-                        fi
-                    fi
-                else
-                    log "WARN" "Firewall not initialized - IPv6 whitelist updated but not applied"
-                fi
+                # v1.238.2: same as IPv4 — self-ban protection only, not added to the kernel set.
+                log "INFO" "IPv6 $current_ipv6 recorded for self-ban protection (no INPUT accept)"
 
                 # Save alert state
                 mkdir -p "${NFTBAN_DATA_DIR}/state" || return 1
@@ -721,7 +694,16 @@ EOF
 
         # v1.19.5: Ensure ALL IPs in 00-system.conf are loaded into nftables sets
         # After reboot, nftables sets are recreated empty — re-sync from file
+        # v1.238.2: EXCEPT lines recorded only because the host owns the address
+        # (nftban_whitelist_line_is_ownership_only, lib/nft_ipc.sh; same rule as the Go loader).
+        # Without this, every maintenance run would put them back into the accept set.
+        local _wl_prev=""
         while IFS= read -r line; do
+            local _wl_p="$_wl_prev"; _wl_prev="$line"
+            if declare -F nftban_whitelist_line_is_ownership_only >/dev/null 2>&1 \
+               && nftban_whitelist_line_is_ownership_only "00-system.conf" "$line" "$_wl_p"; then
+                continue
+            fi
             # Strip comments and whitespace
             local entry="${line%%#*}"
             entry="${entry%% *}"

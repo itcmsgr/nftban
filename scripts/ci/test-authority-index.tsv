@@ -459,6 +459,7 @@ watchdog_single_battery_v1229_8_test	cli/lib/nftban/tests/watchdog_single_batter
 watchdog_update_swap_race_v1983_test	cli/lib/nftban/tests/watchdog_update_swap_race_v1983_test.sh	update	test	watchdog-update-swap	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 whitelist_dir_observation_v1228_10_test	cli/lib/nftban/tests/whitelist_dir_observation_v1228_10_test.sh	whitelist	test	whitelist-members	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 whitelist_list_timed_label_v169_test	cli/lib/nftban/tests/whitelist_list_timed_label_v169_test.sh	whitelist	test	whitelist	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
+whitelist_ownership_no_accept_v1238_2_test	cli/lib/nftban/tests/whitelist_ownership_no_accept_v1238_2_test.sh	whitelist	test	whitelist	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 whitelist_rebuild_remerge_v1930_test	cli/lib/nftban/tests/whitelist_rebuild_remerge_v1930_test.sh	firewall	test	whitelist-rebuild-remerge	CI_HERMETIC_SHELL	ci-bash	true	false	false	false	false	false			
 whitelist_reconcile_convergence_v1228_5_test	cli/lib/nftban/tests/whitelist_reconcile_convergence_v1228_5_test.sh	firewall	test	whitelist-reconcile-convergence	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			
 whitelist_set_timeout_flag_v168_test	cli/lib/nftban/tests/whitelist_set_timeout_flag_v168_test.sh	whitelist	test	whitelist-set-timeout-flag	CI_HERMETIC_SHELL	policy-gates	true	false	false	false	false	false			

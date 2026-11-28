@@ -64,13 +64,17 @@ type RuntimeState struct {
 
 // IPEntry represents a single IP in the runtime state
 type IPEntry struct {
-	IP         string
-	Source     string    // "whitelist", "blacklist", "feeds", "geoban", "tempban" (v1.0: removed fail2ban)
-	AddedAt    time.Time
-	BanCount   int       // Number of times this IP was banned
-	LastBanAt  time.Time // Last time this IP was banned
-	ExpireAt   *time.Time // Optional: expiration time for temporary bans
-	Reason     string    // Why this IP was added
+	IP        string
+	Source    string // "whitelist", "blacklist", "feeds", "geoban", "tempban" (v1.0: removed fail2ban)
+	AddedAt   time.Time
+	BanCount  int        // Number of times this IP was banned
+	LastBanAt time.Time  // Last time this IP was banned
+	ExpireAt  *time.Time // Optional: expiration time for temporary bans
+	Reason    string     // Why this IP was added
+	// OwnershipOnly (whitelist entries only, v1.238.2): the host owns the address, nothing else
+	// trusts it. Kept for every guard (IsWhitelisted, AddToBlacklist); left out of the kernel
+	// whitelist set (GetWhitelistSnapshotWithExpiry). Zero value = an accept, as before.
+	OwnershipOnly bool
 }
 
 // SourceStats tracks statistics per source
@@ -94,19 +98,19 @@ type Counters struct {
 	TotalBlacklistIPv6 int64
 
 	// Per-source counters
-	FeedsIPv4     int64
-	FeedsIPv6     int64
-	GeoBanIPv4    int64
-	GeoBanIPv6    int64
+	FeedsIPv4  int64
+	FeedsIPv6  int64
+	GeoBanIPv4 int64
+	GeoBanIPv6 int64
 	// Removed: Fail2BanIPv4, Fail2BanIPv6 (v1.0 migration to Suricata)
-	ManualIPv4    int64
-	ManualIPv6    int64
+	ManualIPv4 int64
+	ManualIPv6 int64
 
 	// Operations counters
-	BansTotal      int64
-	UnbansTotal    int64
-	ReloadsTotal   int64
-	SyncsTotal     int64
+	BansTotal       int64
+	UnbansTotal     int64
+	ReloadsTotal    int64
+	SyncsTotal      int64
 	SyncErrorsTotal int64
 }
 
@@ -146,9 +150,10 @@ func (rs *RuntimeState) LoadWhitelists() error {
 	// Populate IPv4 whitelist
 	for ip, we := range ipv4Set {
 		entry := &IPEntry{
-			IP:      ip,
-			Source:  "whitelist",
-			AddedAt: time.Now(),
+			IP:            ip,
+			Source:        "whitelist",
+			AddedAt:       time.Now(),
+			OwnershipOnly: we.OwnershipOnly,
 		}
 		if !we.ExpiresAt.IsZero() {
 			exp := we.ExpiresAt
@@ -160,9 +165,10 @@ func (rs *RuntimeState) LoadWhitelists() error {
 	// Populate IPv6 whitelist
 	for ip, we := range ipv6Set {
 		entry := &IPEntry{
-			IP:      ip,
-			Source:  "whitelist",
-			AddedAt: time.Now(),
+			IP:            ip,
+			Source:        "whitelist",
+			AddedAt:       time.Now(),
+			OwnershipOnly: we.OwnershipOnly,
 		}
 		if !we.ExpiresAt.IsZero() {
 			exp := we.ExpiresAt
@@ -421,12 +427,18 @@ func (rs *RuntimeState) GetWhitelistSnapshotWithExpiry() ([]string, []string, ma
 	expiry := make(map[string]time.Time)
 
 	for ip, e := range rs.WhitelistIPv4 {
+		if e.OwnershipOnly {
+			continue // v1.238.2: self-ban protection only, no kernel accept
+		}
 		ipv4List = append(ipv4List, ip)
 		if e.ExpireAt != nil {
 			expiry[ip] = *e.ExpireAt
 		}
 	}
 	for ip, e := range rs.WhitelistIPv6 {
+		if e.OwnershipOnly {
+			continue // v1.238.2: self-ban protection only, no kernel accept
+		}
 		ipv6List = append(ipv6List, ip)
 		if e.ExpireAt != nil {
 			expiry[ip] = *e.ExpireAt

@@ -973,6 +973,36 @@ nftban_ipc_check_or_emergency() {
 # v1.19.0 emergency gate (exported after definition)
 export -f nftban_ipc_check_or_emergency
 
+# nftban_whitelist_line_is_ownership_only <file-basename> <line> [<previous line>]
+# v1.238.2 (SEC-WHITELIST-SELF-ADDRESSES-INCLUDE-DOCKER-BRIDGE-AND-LINK-LOCAL-INPUT-ACCEPT): NFTBan
+# records the host's own addresses for SELF-BAN PROTECTION. Ownership alone grants NO kernel
+# whitelist accept. Returns 0 for a line NFTBan wrote only because the host owns the address:
+#   - 00-system-ip.conf (default-route source address, bare lines);
+#   - 00-system.conf with an ownership comment, or a bare line right after maintenance's
+#     "# Auto-added by maintenance:" / "# Auto-added IPv6 by maintenance:".
+# Anything else (operator, session, localhost, whitelistme, unknown origin) returns 1.
+# The Go twin is ownershipOnlyLine (internal/whitelist/loader.go); both MUST classify the same lines.
+nftban_whitelist_line_is_ownership_only() {
+    local base="${1:-}" line="${2:-}" prev="${3:-}"
+    case "$base" in
+        00-system-ip.conf) return 0 ;;
+        00-system.conf) ;;
+        *) return 1 ;;
+    esac
+    if [[ "$line" != *"#"* ]]; then
+        prev="${prev#"${prev%%[![:space:]]*}"}"
+        [[ "$prev" == "# Auto-added by maintenance:"* || "$prev" == "# Auto-added IPv6 by maintenance:"* ]]
+        return
+    fi
+    case "#${line#*#}" in
+        *"Server interface (auto-detected)"*|*"Server public IPv4 (auto-detected)"*|\
+        *"Server public IPv6 (auto-detected)"*|*"Server IPv4 (auto-detected)"*|*"Server IPv6 (auto-detected)"*)
+            return 0 ;;
+    esac
+    return 1
+}
+export -f nftban_whitelist_line_is_ownership_only
+
 # =============================================================================
 # STANDALONE EXECUTION (for testing)
 # =============================================================================
