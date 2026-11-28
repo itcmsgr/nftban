@@ -1987,14 +1987,14 @@ nftban_portscan_aggregate() {
 
         # Evidence already acted on does not act again: re-score only the events newer than this
         # address's most recent PortScan ban (bans.log). No ban yet -> all events are new.
-        local last_ban fresh="" ev
+        local last_ban agg_new_evts="" ev
         last_ban=$(_nftban_portscan_agg_last_ban_epoch "$src")
         if [[ "$last_ban" =~ ^[0-9]+$ ]]; then
             for ev in ${ip_evts[$src]}; do
-                (( ${ev%%:*} > last_ban )) && fresh+=" $ev"
+                (( ${ev%%:*} > last_ban )) && agg_new_evts+=" $ev"
             done
             read -r event_count unique_ports sensitive_hits span_hours score \
-                < <(_nftban_portscan_agg_score "$fresh")
+                < <(_nftban_portscan_agg_score "$agg_new_evts")
             if ! _nftban_portscan_agg_qualifies "$score" "$event_count" "$unique_ports" \
                     "$score_threshold" "$min_events" "$min_unique_ports"; then
                 acted_skip=$((acted_skip + 1))
