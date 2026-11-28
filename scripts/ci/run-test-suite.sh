@@ -8,7 +8,7 @@
 # meta:description="Index-driven shell-test runner: the authority index drives selection + isolated execution by gate"
 # meta:inventory.files="scripts/ci/test-authority-index.tsv,scripts/ci/test-authority.py"
 # meta:inventory.binaries="bash,git,awk,grep,sort,cut,realpath,timeout,printf,sed,python3"
-# meta:inventory.env_vars=""
+# meta:inventory.env_vars="GITHUB_STEP_SUMMARY,GITHUB_SHA"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
@@ -34,6 +34,13 @@
 #
 #   Exit: 0 = ok · 1 = a validation error / an executed test FAILED or TIMED OUT
 #         2 = usage / safety-refusal (bad root, malformed index, unsafe path).
+#
+#   v1.239 §1.0: a test may declare required named assertions
+#   (`# meta:ta.required_assertions="A,B"`, see declared_assertions below). An
+#   exit-0 test whose required PASS is missing, or which printed an explicit FAIL
+#   for one of them, is a FAIL. With GITHUB_STEP_SUMMARY set, the names and results
+#   (test id + commit, never test output) go to the Job Summary. The per-test
+#   status line, the RESULT line and the manifest keep their format.
 # =============================================================================
 set -Eeuo pipefail
 
@@ -156,6 +163,97 @@ load_quarantine() {
     done < "$file"
 }
 
+# --- required named assertions (v1.239 §1.0) -----------------------------------
+# A test MAY declare, in its comment header next to its meta:ta.* fields:
+#   # meta:ta.required_assertions="NAME_ONE,NAME_TWO"
+# Names match ^[A-Z][A-Z0-9_]*$. The test reports each one on its own output line as
+#   [PASS] NAME ...      or      [FAIL] NAME ...
+# (leading whitespace allowed; the name ends at the first character outside
+# [A-Za-z0-9_]). The header is read as inert text, like test-authority.py does:
+# comment lines up to the first executable line. Never sourced, never eval'd.
+#
+# Exit semantics (binding):
+#   (a) the test exits non-zero          -> its FAIL/TIMEOUT stands, whatever it printed;
+#   (b) exit 0, a required PASS missing  -> FAIL;
+#   (c) exit 0, an explicit [FAIL] NAME  -> FAIL (even if a [PASS] NAME is also present);
+#   (d) exit 0, every name PASS, no FAIL -> PASS.
+# A malformed or duplicate declaration is a FAIL (fail-closed), never "no declaration".
+# A test without the header is judged by its exit status alone, exactly as before.
+ASSERT_NAME_RE='^[A-Z][A-Z0-9_]*$'
+ASSERT_MALFORMED="__MALFORMED__"
+
+# Prints the declared names, one per line (nothing = no declaration).
+# Prints ASSERT_MALFORMED for a malformed or repeated declaration.
+declared_assertions() {
+    local abs="$1" line val name seen=0
+    local decl_re='^# meta:ta\.required_assertions="([^"]*)"[[:space:]]*$'
+    local -a names=()
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            '#!'*) continue ;;
+            '#'*) ;;
+            *) [ -z "${line//[[:space:]]/}" ] && continue; break ;;
+        esac
+        case "$line" in '# meta:ta.required_assertions='*) ;; *) continue ;; esac
+        if [ "$seen" -eq 1 ] || ! [[ "$line" =~ $decl_re ]]; then
+            printf '%s\n' "$ASSERT_MALFORMED"; return 0
+        fi
+        seen=1; val="${BASH_REMATCH[1]}"
+        [ -n "$val" ] || { printf '%s\n' "$ASSERT_MALFORMED"; return 0; }
+        IFS=',' read -r -a names <<< "$val"
+        for name in "${names[@]}"; do
+            [[ "$name" =~ $ASSERT_NAME_RE ]] || { printf '%s\n' "$ASSERT_MALFORMED"; return 0; }
+        done
+    done < "$abs"
+    [ "${#names[@]}" -gt 0 ] && printf '%s\n' "${names[@]}"
+    return 0
+}
+
+# Judges the declared names against the captured output. Prints one
+# "NAME<TAB>RESULT" line per name (RESULT = PASS | FAIL | MISSING; a malformed
+# declaration gives "DECLARATION<TAB>MALFORMED"). Returns 1 when any is not PASS.
+judge_assertions() {
+    local cap="$1"; shift
+    local name np nf bad=0
+    if [ "${1:-}" = "$ASSERT_MALFORMED" ]; then
+        printf 'DECLARATION\tMALFORMED\n'; return 1
+    fi
+    for name in "$@"; do
+        # grep -c reads the whole file (no pipe, no early exit); names are validated
+        # against ASSERT_NAME_RE, so they are literal inside the pattern.
+        np="$(grep -acE "^[[:space:]]*\\[PASS\\][[:space:]]+${name}([^A-Za-z0-9_]|\$)" "$cap" 2>/dev/null || true)"
+        nf="$(grep -acE "^[[:space:]]*\\[FAIL\\][[:space:]]+${name}([^A-Za-z0-9_]|\$)" "$cap" 2>/dev/null || true)"
+        if [ "${nf:-0}" -gt 0 ]; then printf '%s\tFAIL\n' "$name"; bad=1
+        elif [ "${np:-0}" -gt 0 ]; then printf '%s\tPASS\n' "$name"
+        else printf '%s\tMISSING\n' "$name"; bad=1; fi
+    done
+    return "$bad"
+}
+
+# GitHub Actions Job Summary: names + results + commit + test id only, never test
+# output. Written only when GITHUB_STEP_SUMMARY is set. Every failure here is
+# swallowed: the summary can never change a test verdict or the runner's rc.
+SUMMARY_STARTED=0
+summary_write() {
+    local root="$1" gates="$2" id="$3" status="$4" detail="$5"
+    [ -n "${GITHUB_STEP_SUMMARY:-}" ] || return 0
+    local sha="${GITHUB_SHA:-}"
+    [ -n "$sha" ] || sha="$(git -C "$root" rev-parse HEAD 2>/dev/null || printf 'unknown')"
+    local safe_id="${id//[^A-Za-z0-9._-]/?}" name result
+    {
+        if [ "$SUMMARY_STARTED" -eq 0 ]; then
+            printf '### Shell-test assertions (gate %s)\n\n' "${gates//[^A-Za-z0-9 ._-]/?}"
+            printf '| Test | Commit | Test result | Assertion | Result |\n|---|---|---|---|---|\n'
+        fi
+        while IFS=$'\t' read -r name result; do
+            [ -n "$name" ] || continue
+            printf '| `%s` | `%s` | %s | `%s` | %s |\n' "$safe_id" "${sha:0:12}" "$status" "$name" "$result"
+        done <<< "$detail"
+    } 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || return 0
+    SUMMARY_STARTED=1
+    return 0
+}
+
 cmd_run() {
     local root="$1"; shift
     local gates=("$@")
@@ -203,6 +301,18 @@ cmd_run() {
         local res status cap="$capdir/out"
         [ -n "${QID[$id]:-}" ] && qseen["$id"]=1
         res="$(run_one "$root" "$path" "${tmo:-0}" "$cap")"
+        # required named assertions: judged only for a test that actually ran. A
+        # non-zero exit keeps its verdict (a); an exit-0 test with a missing or
+        # explicitly failed required assertion becomes FAIL (b, c).
+        local -a adecl=()
+        local adetail="" aok=0 _an _ar
+        if [ "$res" != "SAFETY" ] && [ "$res" != "MISSING" ]; then
+            mapfile -t adecl < <(declared_assertions "$root/$path")
+        fi
+        if [ "${#adecl[@]}" -gt 0 ]; then
+            adetail="$(judge_assertions "$cap" "${adecl[@]}")" || aok=1
+            [ "$res" = "PASS" ] && [ "$aok" -ne 0 ] && res="FAIL"
+        fi
         if [ -n "${QID[$id]:-}" ]; then
             # quarantined: STILL EXECUTES + is REPORTED. A pass BLOCKS (needs
             # reconciliation / de-quarantine). A failure is accepted only if it
@@ -226,6 +336,18 @@ cmd_run() {
             esac
         fi
         printf '  %-12s %s\n' "$status" "$id" >&2
+        # extra lines ONLY when a required assertion is not PASS (the status line
+        # above keeps its exact format for every existing reader)
+        if [ "$aok" -ne 0 ]; then
+            {
+                while IFS=$'\t' read -r _an _ar; do
+                    [ "$_ar" = "PASS" ] || printf '        · required assertion %s: %s\n' "$_an" "$_ar"
+                done <<< "$adetail"
+            } >&2 || true
+        fi
+        if [ "${#adecl[@]}" -gt 0 ]; then
+            summary_write "$root" "${gates[*]}" "$id" "$status" "$adetail" || true
+        fi
         # diagnostic: on a BLOCKING (non-quarantined) failure, surface the test's
         # own failing lines + output tail so CI shows WHY without a re-run. The whole
         # block is `{ …; } || true` so a no-match grep cannot trip set -e / pipefail.
