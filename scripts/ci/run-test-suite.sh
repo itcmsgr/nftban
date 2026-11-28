@@ -199,7 +199,9 @@ declared_assertions() {
             printf '%s\n' "$ASSERT_MALFORMED"; return 0
         fi
         seen=1; val="${BASH_REMATCH[1]}"
-        [ -n "$val" ] || { printf '%s\n' "$ASSERT_MALFORMED"; return 0; }
+        # empty value or an empty element (leading, trailing or double comma): `read -a`
+        # would silently drop a trailing empty field, so reject it here
+        case ",$val," in *,,*) printf '%s\n' "$ASSERT_MALFORMED"; return 0 ;; esac
         IFS=',' read -r -a names <<< "$val"
         for name in "${names[@]}"; do
             [[ "$name" =~ $ASSERT_NAME_RE ]] || { printf '%s\n' "$ASSERT_MALFORMED"; return 0; }

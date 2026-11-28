@@ -265,7 +265,8 @@ test_assert_malformed_fail_closed() {
     echo test_assert_malformed_fail_closed
     local r rc
     for decl in '# meta:ta.required_assertions="alpha-one"' '# meta:ta.required_assertions=""' \
-                '# meta:ta.required_assertions="ALPHA_ONE,"' \
+                '# meta:ta.required_assertions="ALPHA_ONE,"' '# meta:ta.required_assertions=",ALPHA_ONE"' \
+                '# meta:ta.required_assertions="ALPHA_ONE,,BETA_TWO"' '# meta:ta.required_assertions="ALPHA_ONE BETA_TWO"' \
                 "$DECL\n# meta:ta.required_assertions=\"ALPHA_ONE\""; do
         r="$(mkrepo)"
         addtest "$r" a_test.sh "$decl\nprintf '  [PASS] ALPHA_ONE\\\\n  [PASS] BETA_TWO\\\\n'\nexit 0"
