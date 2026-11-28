@@ -378,8 +378,8 @@ _nft_fragment_obs_probe_ready() {
 
 # _nft_fragment_obs_errclass <stderr-file> <rc> — bounded, redacted evidence.
 _nft_fragment_obs_errclass() {
-    local _ef="$1" _rc="$2" _e=""
-    [[ -r "$_ef" ]] && _e="$(cat "$_ef" 2>/dev/null)" || _e=""
+    # v1.238.2: $1 is the captured stderr TEXT (no capture file any more).
+    local _e="$1" _rc="$2"
     if [[ "$_rc" -eq 124 ]]; then printf 'TIMEOUT'; return 0; fi
     if declare -F nftban_nft_probe_error_class >/dev/null 2>&1; then
         nftban_nft_probe_error_class "$_e" "$_rc"
@@ -414,18 +414,19 @@ nft_fragment_observe_chain() {
     fi
 
     local ef out rc=0 line in_tbl=0 seen_tbl=0 found=0
-    # v1.238.1: nftband reaches observe at start (PortScan/DDoS apply/teardown) under nftband_t with
-    # PrivateTmp, which may not create in /tmp — capture in the probe's labelled dir (lib/nft_probe.sh).
-    local _cd="${TMPDIR:-/tmp}"
-    declare -F _nftban_probe_capture_dir >/dev/null 2>&1 && _cd=$(_nftban_probe_capture_dir)
-    ef="$(mktemp "${_cd}/.nftban-obs.XXXXXXXXXX" 2>/dev/null)" || {
-        NFT_FRAGMENT_OBS_REASON="capture_failed"; return 1; }
+    # v1.238.2: captured WITHOUT a file (lib/nft_probe.sh _nftban_capture3). A capture FILE was
+    # first denied in /tmp (nftband_t, PrivateTmp) and then, in /run/nftban-writers, to nft running
+    # in iptables_t (boot units). A capture failure is a failed observation, never an absence.
+    if ! declare -F _nftban_capture3 >/dev/null 2>&1; then
+        NFT_FRAGMENT_OBS_REASON="capture_failed"; return 1
+    fi
 
     # STEP 2 — chain membership, from a listing that SUCCEEDED.
-    out="$(nft list chains "$fam" 2>"$ef")" || rc=$?
+    _nftban_capture3 out ef rc nft list chains "$fam" || {
+        NFT_FRAGMENT_OBS_REASON="capture_failed"; return 1; }
     if (( rc != 0 )); then
         NFT_FRAGMENT_OBS_REASON="list_chains_failed:$(_nft_fragment_obs_errclass "$ef" "$rc")"
-        rm -f "$ef"; return 1
+        return 1
     fi
     while IFS= read -r line; do
         if [[ "$line" =~ ^table[[:space:]]+([A-Za-z0-9_-]+)[[:space:]]+([A-Za-z0-9_-]+)[[:space:]]*\{ ]]; then
@@ -443,22 +444,22 @@ nft_fragment_observe_chain() {
         # The table was proven present a moment ago but the listing does not
         # show it: the listing is not a recognisable answer. Parser uncertainty
         # is not a finding.
-        NFT_FRAGMENT_OBS_REASON="list_chains_malformed"; rm -f "$ef"; return 1
+        NFT_FRAGMENT_OBS_REASON="list_chains_malformed"; return 1
     fi
     if (( found == 0 )); then
         NFT_FRAGMENT_OBS_STATE="ABSENT"; NFT_FRAGMENT_OBS_RULES=0
-        NFT_FRAGMENT_OBS_REASON="chain_absent"; rm -f "$ef"; return 0
+        NFT_FRAGMENT_OBS_REASON="chain_absent"; return 0
     fi
 
     # STEP 3 — the chain's rules. Depth-tracked so a rule printed across several
     # lines (a long anonymous set) is counted once.
     rc=0
-    out="$(nft list chain "$fam" "$tbl" "$chain" 2>"$ef")" || rc=$?
+    _nftban_capture3 out ef rc nft list chain "$fam" "$tbl" "$chain" || {
+        NFT_FRAGMENT_OBS_REASON="capture_failed"; return 1; }
     if (( rc != 0 )); then
         NFT_FRAGMENT_OBS_REASON="list_chain_failed:$(_nft_fragment_obs_errclass "$ef" "$rc")"
-        rm -f "$ef"; return 1
+        return 1
     fi
-    rm -f "$ef"
     local hdr=0 closed=0 depth=0 opens closes stripped n=0 text=""
     while IFS= read -r line; do
         if (( hdr == 0 )); then
@@ -503,18 +504,18 @@ nft_fragment_observe_jumps() {
         NFT_FRAGMENT_OBS_JUMPS=0; NFT_FRAGMENT_OBS_REASON="table_absent"; return 0
     fi
     local ef out rc=0 line hdr=0 closed=0 n=0 depth=0 opens closes
-    # v1.238.1: nftband reaches observe at start (PortScan/DDoS apply/teardown) under nftband_t with
-    # PrivateTmp, which may not create in /tmp — capture in the probe's labelled dir (lib/nft_probe.sh).
-    local _cd="${TMPDIR:-/tmp}"
-    declare -F _nftban_probe_capture_dir >/dev/null 2>&1 && _cd=$(_nftban_probe_capture_dir)
-    ef="$(mktemp "${_cd}/.nftban-obs.XXXXXXXXXX" 2>/dev/null)" || {
+    # v1.238.2: captured WITHOUT a file (lib/nft_probe.sh _nftban_capture3). A capture FILE was
+    # first denied in /tmp (nftband_t, PrivateTmp) and then, in /run/nftban-writers, to nft running
+    # in iptables_t (boot units). A capture failure is a failed observation, never an absence.
+    if ! declare -F _nftban_capture3 >/dev/null 2>&1; then
+        NFT_FRAGMENT_OBS_REASON="capture_failed"; return 1
+    fi
+    _nftban_capture3 out ef rc nft list chain "$fam" "$tbl" input || {
         NFT_FRAGMENT_OBS_REASON="capture_failed"; return 1; }
-    out="$(nft list chain "$fam" "$tbl" input 2>"$ef")" || rc=$?
     if (( rc != 0 )); then
         NFT_FRAGMENT_OBS_REASON="list_input_failed:$(_nft_fragment_obs_errclass "$ef" "$rc")"
-        rm -f "$ef"; return 1
+        return 1
     fi
-    rm -f "$ef"
     while IFS= read -r line; do
         if (( hdr == 0 )); then
             if [[ "$line" =~ ^[[:space:]]*chain[[:space:]]+input[[:space:]]*\{ ]]; then
@@ -566,18 +567,18 @@ nft_fragment_observe_set() {
         NFT_FRAGMENT_OBS_REASON="set_verdict_unrecognised"; return 1
     fi
     local ef out rc=0 line hdr=0 closed=0 depth=0 opens closes elems=0
-    # v1.238.1: nftband reaches observe at start (PortScan/DDoS apply/teardown) under nftband_t with
-    # PrivateTmp, which may not create in /tmp — capture in the probe's labelled dir (lib/nft_probe.sh).
-    local _cd="${TMPDIR:-/tmp}"
-    declare -F _nftban_probe_capture_dir >/dev/null 2>&1 && _cd=$(_nftban_probe_capture_dir)
-    ef="$(mktemp "${_cd}/.nftban-obs.XXXXXXXXXX" 2>/dev/null)" || {
+    # v1.238.2: captured WITHOUT a file (lib/nft_probe.sh _nftban_capture3). A capture FILE was
+    # first denied in /tmp (nftband_t, PrivateTmp) and then, in /run/nftban-writers, to nft running
+    # in iptables_t (boot units). A capture failure is a failed observation, never an absence.
+    if ! declare -F _nftban_capture3 >/dev/null 2>&1; then
+        NFT_FRAGMENT_OBS_REASON="capture_failed"; return 1
+    fi
+    _nftban_capture3 out ef rc nft list set "$fam" "$tbl" "$set" || {
         NFT_FRAGMENT_OBS_REASON="capture_failed"; return 1; }
-    out="$(nft list set "$fam" "$tbl" "$set" 2>"$ef")" || rc=$?
     if (( rc != 0 )); then
         NFT_FRAGMENT_OBS_REASON="list_set_failed:$(_nft_fragment_obs_errclass "$ef" "$rc")"
-        rm -f "$ef"; return 1
+        return 1
     fi
-    rm -f "$ef"
     while IFS= read -r line; do
         if (( hdr == 0 )); then
             if [[ "$line" =~ ^[[:space:]]*set[[:space:]]+([A-Za-z0-9_-]+)[[:space:]]*\{ ]] \
