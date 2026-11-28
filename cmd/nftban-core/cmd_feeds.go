@@ -152,6 +152,8 @@ func cmdFeeds(action string, cfg *nftbanconf.Config) error {
 		return cmdFeedsAbuseIPDBKey(cfg, sub)
 	case "abuseipdb-test":
 		return cmdFeedsAbuseIPDBTest(cfg)
+	case "abuseipdb-check":
+		return cmdFeedsAbuseIPDBCheck(cfg)
 	case "resolve":
 		// v1.236 (design §7): records the operator's master decision. Called by
 		// `nftban feeds enable|disable` without a feed name, after the switch is set.
@@ -172,7 +174,7 @@ func cmdFeeds(action string, cfg *nftbanconf.Config) error {
 		}
 		return cmdFeedsUpdate(feedsDir, feedsConfig, feedName, cfg)
 	default:
-		return fmt.Errorf("unknown feeds action: %s\nUsage: nftban-core feeds [list|load|stats|status [--json] [--all] [--feed NAME]|update [FEED_NAME]|enable|disable|sync|effective|abuseipdb-key <set|status|remove>|abuseipdb-test [--json]] [FEED_NAME]", action)
+		return fmt.Errorf("unknown feeds action: %s\nUsage: nftban-core feeds [list|load|stats|status [--json] [--all] [--feed NAME]|update [FEED_NAME]|enable|disable|sync|effective|abuseipdb-key <set|status|remove>|abuseipdb-test [--json]|abuseipdb-check <ip> [--json] [--max-age-days N]] [FEED_NAME]", action)
 	}
 }
 
@@ -754,6 +756,8 @@ type FeedConfig struct {
 	MinInterval       time.Duration // no new request sooner than this after the last success (0 = none)
 	ConfidenceMinimum int           // abuseipdb: 0 = provider default
 	Limit             int           // abuseipdb: 0 = provider default
+	// v1.239: the plan detected from the refresh record (refreshOne); not a config key.
+	ProviderPlan feeds.AbuseIPDBPlan
 }
 
 // FeedFormatAbuseIPDB selects the AbuseIPDB blacklist provider (key from abuseIPDBKeyFile).
@@ -908,6 +912,8 @@ func refreshOne(feed FeedConfig, feedsDir, configDir string, now time.Time) refr
 	var res *fetchResult
 	var err error
 	if feed.Format == FeedFormatAbuseIPDB {
+		// v1.239: adapt the request to the plan the record shows (unknown: configured values)
+		feed.ProviderPlan, _, _ = feeds.DetectedAbuseIPDBPlan(rec.Provider)
 		res, err = fetchAbuseIPDBFn(feed, configDir)
 	} else {
 		res, err = fetchPlainFn(feed.URL)
@@ -1111,6 +1117,11 @@ func fetchAbuseIPDB(feed FeedConfig, configDir string) (*fetchResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	return fetchAbuseIPDBWithKey(feed, key, nil)
+}
+
+// abuseIPDBConfiguredParams: the configured values with the provider defaults for 0 (unset).
+func abuseIPDBConfiguredParams(feed FeedConfig) feeds.AbuseIPDBParams {
 	p := feeds.AbuseIPDBParams{ConfidenceMinimum: feed.ConfidenceMinimum, Limit: feed.Limit}
 	if p.ConfidenceMinimum == 0 {
 		p.ConfidenceMinimum = feeds.AbuseIPDBDefaultConfidence
@@ -1118,13 +1129,26 @@ func fetchAbuseIPDB(feed FeedConfig, configDir string) (*fetchResult, error) {
 	if p.Limit == 0 {
 		p.Limit = feeds.AbuseIPDBDefaultLimit
 	}
+	return p
+}
+
+// fetchAbuseIPDBWithKey: the blacklist download with the effective values for the plan recorded
+// before it (feed.ProviderPlan, set by refreshOne from the refresh record; no extra request).
+// Unknown plan = the configured values unchanged. The configuration is never written. client nil
+// = the production client (tests pass the mock's client).
+func fetchAbuseIPDBWithKey(feed FeedConfig, key string, client *http.Client) (*fetchResult, error) {
 	base := feed.URL
 	if base == "" {
 		base = feeds.AbuseIPDBDefaultURL
 	}
+	p := feeds.EffectiveAbuseIPDBParams(abuseIPDBConfiguredParams(feed), feed.ProviderPlan)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	res, err := feeds.FetchAbuseIPDB(ctx, &http.Client{Timeout: 2 * time.Minute}, base, key, p, 0)
+	bc := &http.Client{Timeout: 2 * time.Minute}
+	if client != nil {
+		bc = client
+	}
+	res, err := feeds.FetchAbuseIPDB(ctx, bc, base, key, p, 0)
 	if err != nil {
 		return nil, err
 	}

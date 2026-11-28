@@ -9,7 +9,8 @@ package feeds
 //     replaces the snapshot. Expiry (expiry.go) and the stale state are computed from it.
 //   - last download outcome: <feeds>/<feed>.status, written only by the downloader
 //     (`nftban-core feeds update`) after a real request. A failed request records the failure
-//     and never advances the success time; an API test (`feeds abuseipdb test`) writes nothing.
+//     and never advances the success time. An API test (`feeds abuseipdb test`) or a v1.239
+//     reputation lookup writes only the check-endpoint quota into it (RecordCheckQuota).
 //   - last full-sync outcome: <feeds>/full-sync.status, written only by the daemon at the end of
 //     every full sync, whoever asked for it. A failed sync stays visible even when the download
 //     before it succeeded.
@@ -65,6 +66,24 @@ type ProviderStats struct {
 	QuotaRemaining      int       `json:"quota_remaining,omitempty"`
 	QuotaResetAt        time.Time `json:"quota_reset_at,omitempty"`
 	QuotaSeenAt         time.Time `json:"quota_seen_at,omitempty"`
+	// v1.239: the check endpoint's quota as last stated to `feeds abuseipdb test` or the
+	// reputation lookup (RecordCheckQuota); carried across downloads. The plan is derived from
+	// it, or from the blacklist quota above (DetectedAbuseIPDBPlan). The Requested* values are
+	// the effective values sent on the plan known at that download.
+	CheckQuotaKnown     bool      `json:"check_quota_known,omitempty"`
+	CheckQuotaLimit     int       `json:"check_quota_limit,omitempty"`
+	CheckQuotaRemaining int       `json:"check_quota_remaining,omitempty"`
+	CheckQuotaResetAt   time.Time `json:"check_quota_reset_at,omitempty"`
+	CheckQuotaSeenAt    time.Time `json:"check_quota_seen_at,omitempty"`
+}
+
+// carryCheckQuota copies the check-endpoint quota from prev (a download does not see it).
+func (p *ProviderStats) carryCheckQuota(prev *ProviderStats) {
+	if p == nil || prev == nil || !prev.CheckQuotaKnown {
+		return
+	}
+	p.CheckQuotaKnown, p.CheckQuotaLimit, p.CheckQuotaRemaining = true, prev.CheckQuotaLimit, prev.CheckQuotaRemaining
+	p.CheckQuotaResetAt, p.CheckQuotaSeenAt = prev.CheckQuotaResetAt, prev.CheckQuotaSeenAt
 }
 
 // SetQuota records a provider quota statement (only when the provider sent one).
@@ -241,6 +260,7 @@ func RecordSuccess(feedsDir, feed string, entries int, providerGeneratedAt strin
 	if prev.ConsecutiveFailures > 0 {
 		tr = TransitionRecovery
 	}
+	prov.carryCheckQuota(prev.Provider) // v1.239: the lookup quota survives a download
 	r := RefreshRecord{
 		Feed:                strings.ToLower(feed),
 		LastSuccessAt:       now.UTC(),
@@ -287,6 +307,31 @@ func RecordFailure(feedsDir, feed, reason string, notBefore time.Time, rl RateLi
 		r.Provider = &p
 	}
 	return tr, writeJSON(feedsDir, recordName(feed), r)
+}
+
+// RecordCheckQuota records the check endpoint's quota (v1.239: `feeds abuseipdb test` and the
+// reputation lookup). Only the CheckQuota* fields change: the success time, the last attempt, the
+// back-off and the download figures stay exactly as they were, so a test or a lookup can never
+// make a snapshot look fresher or clear a back-off. Nothing is written when the provider stated
+// no quota. An unreadable or corrupt record is left alone (the next download replaces it).
+func RecordCheckQuota(feedsDir, feed string, rl RateLimitInfo, now time.Time) error {
+	if !rl.Known {
+		return nil
+	}
+	prev, _, err := ReadRefresh(feedsDir, feed)
+	if err != nil {
+		return err
+	}
+	r := prev
+	r.Feed = strings.ToLower(feed)
+	p := ProviderStats{MinScore: -1, MaxScore: -1}
+	if prev.Provider != nil {
+		p = *prev.Provider
+	}
+	p.CheckQuotaKnown, p.CheckQuotaLimit, p.CheckQuotaRemaining = true, rl.Limit, rl.Remaining
+	p.CheckQuotaResetAt, p.CheckQuotaSeenAt = rl.ResetAt, now.UTC()
+	r.Provider = &p
+	return writeJSON(feedsDir, recordName(feed), r)
 }
 
 // NextPermitted is the earliest time a new request may be sent: the provider's back-off and the

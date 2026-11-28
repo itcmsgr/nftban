@@ -12,8 +12,9 @@ package main
 //   nftban-core feeds abuseipdb-key remove
 //   nftban-core feeds abuseipdb-test [--json]  ONE GET /api/v2/check (check quota, not blacklist)
 //
-// The test never writes the snapshot or the refresh record: a passing test cannot make an old
-// enforced list look fresh.
+// The test never writes the snapshot and never touches the refresh record's success, attempt or
+// back-off fields: a passing test cannot make an old enforced list look fresh. v1.239: it records
+// only the check-endpoint quota there (feeds.RecordCheckQuota), from which status derives the plan.
 
 import (
 	"context"
@@ -79,12 +80,31 @@ type keyTestReport struct {
 	Error     string `json:"error,omitempty"`
 	Quota     string `json:"check_quota"`
 	NotBefore string `json:"retry_not_before,omitempty"`
+	// v1.239: facts from the stated check limit, and what the next download sends
+	Plan             string `json:"plan"`
+	PlanKnown        bool   `json:"plan_known"`
+	EffectiveConfMin int    `json:"effective_confidence_minimum,omitempty"`
+	EffectiveLimit   int    `json:"effective_limit,omitempty"`
+	PlanMaximum      int    `json:"plan_blacklist_maximum,omitempty"`
+	RecordNote       string `json:"record_note,omitempty"`
+}
+
+// keyTestPlan fills the plan facts from the stated check limit and the configured feed.
+func keyTestPlan(cfg *nftbanconf.Config, rep *keyTestReport, rl feeds.RateLimitInfo) {
+	plan := feeds.AbuseIPDBPlanFromCheckLimit(rl)
+	rep.Plan, rep.PlanKnown, rep.PlanMaximum = plan.Label, plan.Known, plan.BlacklistMax
+	if fc, ok := abuseIPDBConfiguredFeed(cfg); ok {
+		eff := feeds.EffectiveAbuseIPDBParams(abuseIPDBConfiguredParams(fc), plan)
+		rep.EffectiveConfMin, rep.EffectiveLimit = eff.ConfidenceMinimum, eff.Limit
+	}
+	rep.RecordNote = recordAbuseIPDBCheckQuota(cfg, rl)
 }
 
 const keyTestCost = "one request against the check endpoint's daily limit; the separate blacklist download limit is not used"
 
 func cmdFeedsAbuseIPDBTest(cfg *nftbanconf.Config) error {
-	rep := keyTestReport{Endpoint: "GET " + feeds.AbuseIPDBCheckURL + "?ipAddress=127.0.0.1&maxAgeInDays=1", Cost: keyTestCost, Quota: "unknown"}
+	rep := keyTestReport{Endpoint: "GET " + feeds.AbuseIPDBCheckURL + "?ipAddress=127.0.0.1&maxAgeInDays=1", Cost: keyTestCost, Quota: "unknown",
+		Plan: feeds.AbuseIPDBPlanFromCheckLimit(feeds.RateLimitInfo{}).Label}
 	key, err := feeds.ReadCredentialFile(abuseIPDBKeyPath(cfg))
 	if err == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
@@ -94,6 +114,7 @@ func cmdFeedsAbuseIPDBTest(cfg *nftbanconf.Config) error {
 		if err == nil {
 			rep.OK, rep.Status = true, res.Status
 			rep.Quota = quotaText(res.RateLimit)
+			keyTestPlan(cfg, &rep, res.RateLimit)
 		}
 	}
 	if err != nil {
@@ -105,6 +126,7 @@ func cmdFeedsAbuseIPDBTest(cfg *nftbanconf.Config) error {
 			if !pe.NotBefore.IsZero() {
 				rep.NotBefore = pe.NotBefore.UTC().Format(time.RFC3339)
 			}
+			keyTestPlan(cfg, &rep, pe.RateLimit)
 		}
 	}
 	if hasFlag("--json") {
@@ -123,12 +145,30 @@ func cmdFeedsAbuseIPDBTest(cfg *nftbanconf.Config) error {
 			fmt.Printf("  Result:  FAILED: %s\n", rep.Error)
 		}
 		fmt.Printf("  Check-endpoint quota: %s\n", rep.Quota)
+		fmt.Printf("  Plan:    %s\n", keyTestPlanText(rep))
+		if rep.EffectiveLimit > 0 {
+			mx := "plan maximum unknown: the configured values are sent"
+			if rep.PlanMaximum > 0 {
+				mx = fmt.Sprintf("plan maximum %d", rep.PlanMaximum)
+			}
+			fmt.Printf("  Next download sends: confidence >= %d, limit %d (%s)\n", rep.EffectiveConfMin, rep.EffectiveLimit, mx)
+		}
+		if rep.RecordNote != "" {
+			fmt.Printf("  Check-endpoint quota %s\n", rep.RecordNote)
+		}
 		fmt.Println("  The test downloads nothing: the feed snapshot and its last successful refresh are unchanged.")
 	}
 	if !rep.OK {
 		return errors.New("AbuseIPDB key test failed")
 	}
 	return nil
+}
+
+func keyTestPlanText(rep keyTestReport) string {
+	if rep.PlanKnown {
+		return rep.Plan + " (detected from the check endpoint's daily limit)"
+	}
+	return rep.Plan
 }
 
 func quotaText(rl feeds.RateLimitInfo) string {
