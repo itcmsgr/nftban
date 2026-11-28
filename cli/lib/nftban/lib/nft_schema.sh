@@ -1657,7 +1657,7 @@ export -f nftban_nft_report_status
 #     udp dport @udp_ports_in accept comment "UDP services"
 #
 #     # 11. DEFAULT DENY (log dropped packets)
-#     log prefix "nftban: drop: " limit rate 10/minute
+#     limit rate 10/minute log prefix "nftban: drop: "
 #     drop comment "default deny"
 #   }
 #

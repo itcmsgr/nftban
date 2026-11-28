@@ -539,7 +539,7 @@ __FWD_PUBLISH_UDP4_ELEMENTS__
         counter name anchor_final comment "NFTBAN_ANCHOR:ANCHOR_FINAL"
 
         # 9. Log drops (rate limited) — unmatched traffic hits policy drop
-        counter name total_input_drop log prefix "nftban: drop: " limit rate 10/minute
+        counter name total_input_drop limit rate 10/minute log prefix "nftban: drop: "
     }
 
     # =========================================================================
@@ -1029,7 +1029,7 @@ __FWD_PUBLISH_UDP6_ELEMENTS__
         counter name anchor_final comment "NFTBAN_ANCHOR:ANCHOR_FINAL"
 
         # 9. Log drops (rate limited) — unmatched traffic hits policy drop
-        counter name total_input_drop log prefix "nftban: drop: " limit rate 10/minute
+        counter name total_input_drop limit rate 10/minute log prefix "nftban: drop: "
     }
 
     # =========================================================================
