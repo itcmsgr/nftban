@@ -219,6 +219,17 @@ nftban_portscan_suricata_eve_active() {
     [[ $age -le $freshness_threshold ]]
 }
 
+# v1.238.2 (owner 2026-11-28, RC row 11): readiness for an EXPLICIT PortScan suricata mode.
+# The binary is present and the service is running. EVE freshness is NOT part of it: the alert
+# file changes only when an alert is written, so on a quiet host it is "stale" while Suricata
+# works. Freshness stays a criterion for `auto` (nftban_portscan_suricata_is_available).
+# ONE definition, used by the plan resolver (module_authority.sh) and by enable below, so the
+# plan never says suricata while enable would refuse it (row 11: enable refused AFTER the classic
+# projection was removed, and neither detector ran).
+nftban_portscan_suricata_ready() {
+    nftban_portscan_suricata_binary_exists && nftban_portscan_suricata_service_running
+}
+
 # Combined availability check
 nftban_portscan_suricata_is_available() {
     local check_binary="${PORTSCAN_AUTO_CHECK_BINARY:-true}"
@@ -977,9 +988,10 @@ nftban_portscan_suricata_cleanup() {
 nftban_portscan_suricata_enable() {
     _nftban_portscan_suricata_log "INFO" "Enabling Suricata portscan detection"
 
-    # Check if Suricata is available
-    if ! nftban_portscan_suricata_is_available; then
-        _nftban_portscan_suricata_log "ERROR" "Suricata is not available"
+    # v1.238.2 (RC row 11): the same readiness the plan resolver used (binary + service), not the
+    # auto criterion with EVE freshness, so a resolved suricata plan is never refused here.
+    if ! nftban_portscan_suricata_ready; then
+        _nftban_portscan_suricata_log "ERROR" "Suricata is not ready (binary: ${_PORTSCAN_SURICATA_BINARY_SELECTED:-not found}; service: $(nftban_portscan_suricata_service_running && echo running || echo not running))"
         return 1
     fi
 

@@ -405,7 +405,24 @@ nftban_module_resolve_plan() {
     else
         case "$configured" in
             classic)  effective="classic";  basis="configured_classic" ;;
-            suricata) effective="suricata"; basis="configured_suricata" ;;
+            suricata)
+                effective="suricata"; basis="configured_suricata"
+                # v1.238.2 (owner 2026-11-28, RC row 11): an explicit PortScan switch to suricata
+                # removed the classic projection, then enable refused (Suricata not ready) and
+                # neither detector ran for 19+ min while mode set + restart returned 0. The working
+                # mode is now KEPT and the transition is reported incomplete: the plan says
+                # effective classic with an explicit basis. Same readiness as enable
+                # (nftban_portscan_suricata_ready). DDoS is unchanged (owner scope: row 11).
+                if [[ "$module" == "portscan" ]]; then
+                    if [[ "$(type -t nftban_portscan_suricata_ready || true)" != "function" ]]; then
+                        effective="classic"; basis="configured_suricata_module_not_loaded_kept_classic"
+                    elif ! nftban_portscan_suricata_ready >/dev/null 2>&1; then
+                        effective="classic"; basis="configured_suricata_unavailable_kept_classic"
+                    fi
+                    [[ "$effective" == "classic" ]] && \
+                        echo "nftban: WARN portscan: configured mode suricata is not ready (${basis}); classic stays active — mode transition INCOMPLETE" >&2
+                fi
+                ;;
             hybrid)
                 # ⛔ LEGACY INPUT -- ACCEPTED FOR OBSERVATION, NEVER REINTERPRETED.
                 # The frozen model has no fourth effective mode, but that does
