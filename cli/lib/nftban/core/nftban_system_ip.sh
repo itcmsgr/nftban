@@ -247,6 +247,14 @@ HEADER
         _file_added="true"
     fi
 
+    # v1.238.2: an address recorded only because the host owns it keeps self-ban protection (the
+    # file above; every guard reads the files) but is NOT added to the kernel accept set.
+    if declare -F nftban_whitelist_line_is_ownership_only >/dev/null 2>&1 \
+       && nftban_whitelist_line_is_ownership_only "${NFTBAN_WHITELIST_SYSTEM##*/}" "$ip  # $comment"; then
+        echo "[ADD] Recorded: $ip ($comment) [self-ban protection; no INPUT accept]"
+        return 0
+    fi
+
     # DECISION 2: Should I add to nft set? (set-only truth)
     if nftban_is_ip_in_whitelist_set "$ip"; then
         _nft_added="true"  # Already in set, no add needed
