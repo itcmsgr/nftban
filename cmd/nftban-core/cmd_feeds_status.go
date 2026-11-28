@@ -113,6 +113,8 @@ type feedStatusView struct {
 	// provider feeds only
 	Credential string               `json:"credential,omitempty"` // absent / ok / unsafe: <reason>; never the key
 	Provider   *feeds.ProviderStats `json:"provider,omitempty"`
+	// v1.239: plan detected from the key's daily limits, lookup quota, effective request
+	AbuseIPDB *abuseIPDBStatusView `json:"abuseipdb,omitempty"`
 }
 
 type syncView struct {
@@ -214,6 +216,13 @@ func buildFeedsStatus(configDir, dataDir string, master bool, configs []FeedConf
 		}
 		if fc.Format == FeedFormatAbuseIPDB {
 			v.Credential = feeds.CredentialStatus(filepath.Join(configDir, abuseIPDBKeyName))
+		}
+		if fc.Format == FeedFormatAbuseIPDB {
+			var prov *feeds.ProviderStats
+			if hasRec {
+				prov = rec.Provider
+			}
+			v.AbuseIPDB = abuseIPDBStatusFor(fc, prov)
 		}
 		if hasRec {
 			v.Provider = rec.Provider
@@ -503,6 +512,7 @@ func printFeedsStatus(rep feedsStatusReport, all bool) {
 			}
 			fmt.Printf("  Download quota:          %s\n", quota)
 		}
+		printAbuseIPDBPlanLines(os.Stdout, v.AbuseIPDB)
 		fmt.Printf("  Snapshot:                %s\n", v.StateText)
 		if v.ExpiresAt != nil && v.State != feedStateExpired {
 			fmt.Printf("  Expiry:                  excluded by the authority after %s; its contribution leaves the kernel sets at the next successful full sync\n", v.ExpiresAt.Format("2006-01-02 15:04 UTC"))
