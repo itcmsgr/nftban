@@ -1852,10 +1852,12 @@ nftban_portscan_classic_run() {
 # v1.238.2: the existing scoring, computed from one event list so it can be applied to all in-window
 # events and again to the events newer than the last ban. Formula unchanged.
 _nftban_portscan_agg_score() {
-    local IFS=$' \t\n'   # the module runs under IFS=$'\n\t'; this list is space-separated
     local list="$1" ev ep port first="" last="" n=0 sens=0 span=0 score=0
     local -A seen=()
-    for ev in $list; do
+    local -a agg_list_arr=()
+    # The module runs under IFS=$'\n\t'; this list is space-separated (split per command, as at 1384).
+    IFS=$' \t\n' read -ra agg_list_arr <<< "$list"
+    for ev in "${agg_list_arr[@]}"; do
         ep=${ev%%:*}; port=${ev#*:}
         n=$((n + 1))
         [[ -z "$first" || $ep -lt $first ]] && first=$ep
@@ -1891,7 +1893,6 @@ _nftban_portscan_agg_last_ban_epoch() {
 
 # Aggregation function - called by maintenance.sh every 15 min
 nftban_portscan_aggregate() {
-    local IFS=$' \t\n'   # v1.238.2: event lists and `read -r a b c` split on spaces (module IFS is $'\n\t')
     local since="${1:---since 24h}"
     local do_ban=false
     [[ "$*" == *"--ban"* ]] && do_ban=true
@@ -1980,7 +1981,7 @@ nftban_portscan_aggregate() {
         # Score the in-window events (scoring unchanged: +1/event, +0.3/unique port,
         # +2/sensitive port, +3 and +2 for a span of 6 h or more).
         local event_count unique_ports sensitive_hits span_hours score
-        read -r event_count unique_ports sensitive_hits span_hours score \
+        IFS=$' \t\n' read -r event_count unique_ports sensitive_hits span_hours score \
             < <(_nftban_portscan_agg_score "${ip_evts[$src]}")
         _nftban_portscan_agg_qualifies "$score" "$event_count" "$unique_ports" \
             "$score_threshold" "$min_events" "$min_unique_ports" || continue
@@ -1990,10 +1991,12 @@ nftban_portscan_aggregate() {
         local last_ban agg_new_evts="" ev
         last_ban=$(_nftban_portscan_agg_last_ban_epoch "$src")
         if [[ "$last_ban" =~ ^[0-9]+$ ]]; then
-            for ev in ${ip_evts[$src]}; do
+            local -a agg_src_arr=()
+            IFS=$' \t\n' read -ra agg_src_arr <<< "${ip_evts[$src]}"
+            for ev in "${agg_src_arr[@]}"; do
                 (( ${ev%%:*} > last_ban )) && agg_new_evts+=" $ev"
             done
-            read -r event_count unique_ports sensitive_hits span_hours score \
+            IFS=$' \t\n' read -r event_count unique_ports sensitive_hits span_hours score \
                 < <(_nftban_portscan_agg_score "$agg_new_evts")
             if ! _nftban_portscan_agg_qualifies "$score" "$event_count" "$unique_ports" \
                     "$score_threshold" "$min_events" "$min_unique_ports"; then
